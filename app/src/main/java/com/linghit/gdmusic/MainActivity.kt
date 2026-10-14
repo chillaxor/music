@@ -292,10 +292,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         playlistPanel.visibility=if(search) View.GONE else View.VISIBLE
         searchPanel.visibility=if(search) View.VISIBLE else View.GONE
         syncPlayerBar()
-        tabPlaylist.setBackgroundResource(if(search) R.drawable.bg_pill_surface else R.drawable.bg_pill_primary)
-        tabPlaylist.setTextColor(ContextCompat.getColor(this, if(search) R.color.on_surface_variant else R.color.on_primary))
-        tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_primary else R.drawable.bg_pill_surface)
-        tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.on_primary else R.color.on_surface_variant))
+        tabPlaylist.setBackgroundResource(if(search) R.drawable.bg_pill_glass else R.drawable.bg_pill_white)
+        tabPlaylist.setTextColor(ContextCompat.getColor(this, if(search) R.color.on_primary else R.color.primary))
+        tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_white else R.drawable.bg_pill_glass)
+        tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.primary else R.color.on_primary))
         if(!search) refreshQueue()
     }
 

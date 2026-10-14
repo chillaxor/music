@@ -5,31 +5,36 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- 顶部标题栏：渐变背景 + 圆角（标题已去掉，只留右侧图标入口，压扁高度） -->
+    <!-- 顶部：渐变头部 + 分段页签合成一个设计块（去标题后单独一行图标太秃，把页签收进来） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:background="@drawable/bg_header_gradient"
-        android:paddingStart="20dp"
+        android:paddingStart="16dp"
         android:paddingEnd="10dp"
         android:paddingTop="10dp"
-        android:paddingBottom="10dp">
+        android:paddingBottom="14dp">
 
-        <!-- 标题行：左侧留空，右侧图标入口 -->
+        <!-- 图标入口行：左侧 logo 平衡构图，右侧三个入口 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:src="@mipmap/ic_launcher"
+                android:contentDescription="GD音乐"/>
             <View
                 android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:layout_weight="1"/>
             <ImageButton
                 android:id="@+id/openFavorites"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_favorite"
                 android:tint="@color/on_primary"
@@ -37,8 +42,8 @@
                 android:contentDescription="收藏"/>
             <ImageButton
                 android:id="@+id/openDownloads"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_download"
                 android:tint="@color/on_primary"
@@ -46,48 +51,45 @@
                 android:contentDescription="已下载"/>
             <ImageButton
                 android:id="@+id/openSettings"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_settings"
                 android:tint="@color/on_primary"
                 android:scaleType="centerInside"
                 android:contentDescription="设置"/>
         </LinearLayout>
-    </LinearLayout>
 
-    <!-- 分段切换：播放列表 / 搜索 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="4dp">
-        <TextView
-            android:id="@+id/tabPlaylist"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="播放列表"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:background="@drawable/bg_pill_primary"
-            android:textColor="@color/on_primary"/>
-        <TextView
-            android:id="@+id/tabSearch"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="10dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="🔍 搜索歌曲"
-            android:textSize="14sp"
-            android:background="@drawable/bg_pill_surface"
-            android:textColor="?attr/colorOnSurfaceVariant"/>
+        <!-- 分段页签：选中=白底橙字，未选=半透明白底白字（渐变上的经典分段控件） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="10dp">
+            <TextView
+                android:id="@+id/tabPlaylist"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="播放列表"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_white"
+                android:textColor="@color/primary"/>
+            <TextView
+                android:id="@+id/tabSearch"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="🔍 搜索歌曲"
+                android:textSize="14sp"
+                android:background="@drawable/bg_pill_glass"
+                android:textColor="@color/on_primary"/>
+        </LinearLayout>
     </LinearLayout>
 
     <!-- 主体 -->
