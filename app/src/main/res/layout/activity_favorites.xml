@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/primary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="16dp">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/backBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="‹ 返回"
+                android:textSize="16sp"
+                android:textColor="@color/on_primary"
+                android:paddingEnd="12dp"/>
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="❤ 收藏"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"/>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/newPlaylistBtn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="＋ 新建"/>
+        </LinearLayout>
+        <!-- 歌单 tab -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingTop="12dp">
+            <LinearLayout
+                android:id="@+id/playlistTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"/>
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <!-- 播放全部 + 总数 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp">
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/playAllBtn"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:text="▶ 播放全部"
+            app:icon="@drawable/ic_playlist"/>
+        <TextView
+            android:id="@+id/totalText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text=""
+            android:textSize="13sp"
+            android:textColor="?attr/colorOnSurfaceVariant"/>
+    </LinearLayout>
+
+    <!-- 列表 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/favList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"
+        android:clipToPadding="false"/>
+
+    <TextView
+        android:id="@+id/emptyText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="这个歌单还是空的\n在搜索结果里点 ☆ 即可收藏到这里"
+        android:textSize="15sp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone"/>
+</LinearLayout>

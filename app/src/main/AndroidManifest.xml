@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- WifiLock 必需：缺此权限时 wifiLock.acquire() 会抛 SecurityException 直接崩进程 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 桌面歌词悬浮窗：在其他 App 之上显示歌词，需用户在设置里授权 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <application
+        android:theme="@style/AppTheme"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:label="@string/app_name" android:screenOrientation="portrait" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity android:name=".DownloadedActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <activity android:name=".FavoritesActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <receiver android:name=".PlayerBroadcastReceiver" android:exported="false"/>
+    </application>
+</manifest>

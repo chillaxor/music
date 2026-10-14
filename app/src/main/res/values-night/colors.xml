@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#7C6DFF</color>
+    <color name="primary_dark">#4A3BE0</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="background">#0F0F1A</color>
+    <color name="surface">#1C1C2B</color>
+    <color name="surface_variant">#2A2A3D</color>
+    <color name="on_surface">#EDEDF5</color>
+    <color name="on_surface_variant">#A0A0B8</color>
+    <color name="outline">#33334A</color>
+    <color name="star_on">#FFC640</color>
+    <color name="star_off">#5A5A6E</color>
+    <color name="download_done">#4CC38A</color>
+    <color name="download_err">#FF6B6F</color>
+</resources>

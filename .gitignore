@@ -1,0 +1,23 @@
+# Gradle / Android 构建产物
+.gradle/
+build/
+app/build/
+.gdgradle/
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# 工作笔记（私有，不进公开仓库）
+.workbuddy/
+
+# 构建日志与 APK 产物
+build_log*.txt
+*.apk
+*.aab
+
+# 系统杂项
+.DS_Store
+Thumbs.db
