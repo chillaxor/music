@@ -22,11 +22,16 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@mipmap/ic_launcher"
-                android:contentDescription="GD音乐"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="♪ 彬冰颢涵 ♪"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:maxLines="1"
+                android:letterSpacing="0.08"
+                android:includeFontPadding="false"/>
             <View
                 android:layout_width="0dp"
                 android:layout_height="1dp"
