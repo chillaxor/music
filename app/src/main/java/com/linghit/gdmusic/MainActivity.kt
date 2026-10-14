@@ -1,4 +1,4 @@
-package com.example.gdmusic
+package com.linghit.gdmusic
 
 import android.Manifest
 import android.content.Context
@@ -233,6 +233,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
         findViewById<View>(R.id.openSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        // 净资产记账（移植的 WebView 记账页）：播放列表面板顶部的入口卡片
+        findViewById<View>(R.id.openNetAsset).setOnClickListener {
+            startActivity(Intent(this, NetAssetActivity::class.java))
         }
         findViewById<Button>(R.id.sourceAll).setOnClickListener { selectedSources=sources; status.text="全部音源"; updateSourceChips() }
         findViewById<Button>(R.id.sourceNetease).setOnClickListener { choose("netease") }

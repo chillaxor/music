@@ -1,4 +1,4 @@
-package com.example.gdmusic
+package com.linghit.gdmusic
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
@@ -13,7 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.gdmusic.PlaylistStore.Playlist
+import com.linghit.gdmusic.PlaylistStore.Playlist
 
 class FavoritesActivity : AppCompatActivity() {
 

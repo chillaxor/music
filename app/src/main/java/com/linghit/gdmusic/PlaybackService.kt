@@ -1,4 +1,4 @@
-package com.example.gdmusic
+package com.linghit.gdmusic
 
 import android.app.Service
 import android.content.Intent

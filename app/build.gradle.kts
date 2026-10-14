@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.gdmusic"
+    namespace = "com.linghit.gdmusic"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.gdmusic"
+        applicationId = "com.linghit.gdmusic"
         minSdk = 24
         targetSdk = 34
         versionCode = 2
