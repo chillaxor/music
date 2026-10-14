@@ -44,7 +44,6 @@ class DownloadedActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.backBtn).setOnClickListener { finish() }
-        findViewById<TextView>(R.id.clearAllBtn).setOnClickListener { clearAll() }
         findViewById<View>(R.id.playAllBtn).setOnClickListener { playAll() }
         findViewById<View>(R.id.importBtn).setOnClickListener {
             importLauncher.launch(null)
@@ -96,11 +95,6 @@ class DownloadedActivity : AppCompatActivity() {
 
     private fun deleteItem(item: DownloadedItem) {
         DownloadStore.delete(this, item.key)
-        refresh()
-    }
-
-    private fun clearAll() {
-        DownloadStore.clearAll(this)
         refresh()
     }
 

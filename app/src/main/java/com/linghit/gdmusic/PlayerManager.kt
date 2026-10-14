@@ -198,12 +198,14 @@ object PlayerManager {
     }
     fun seekTo(ms: Long) = runCatching { player.seekTo(ms) }
 
-    fun skipNext() { val n = computeNext(); if (n in queue.indices) playInternal(queue[n], queue, n) }
+    // 必须传 queue.toList() 拷贝：playInternal 里会 queue.clear() 再 addAll(queueSongs)，
+    // 直接传实时 queue 等于把列表传进去后被自己清空，切完歌播放列表就空了
+    fun skipNext() { val n = computeNext(); if (n in queue.indices) playInternal(queue[n], queue.toList(), n) }
     fun skipPrev() {
         if (player.currentPosition > 3000) { player.seekTo(0); return }
         val p = if (queueIndex - 1 >= 0) queueIndex - 1
         else if (playMode == 1 && queue.isNotEmpty()) queue.size - 1 else 0
-        if (p in queue.indices) playInternal(queue[p], queue, p)
+        if (p in queue.indices) playInternal(queue[p], queue.toList(), p)
     }
     fun setMode(mode: Int) { playMode = mode; uiListener?.onModeChanged(mode) }
 

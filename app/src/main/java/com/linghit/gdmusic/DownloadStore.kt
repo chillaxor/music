@@ -193,17 +193,9 @@ object DownloadStore {
         saveIndex(ctx, arr)
     }
 
-    /** 清空全部 */
-    fun clearAll(ctx: Context) {
-        val arr = loadIndex(ctx)
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            deleteUri(ctx, Uri.parse(o.optString("uri")), o.optString("kind"))
-            o.optString("lyricUri").takeIf { it.isNotBlank() }
-                ?.let { deleteUri(ctx, Uri.parse(it), "manual") }
-        }
-        saveIndex(ctx, JSONArray())
-    }
+    // 原 clearAll() 已移除：它会遍历索引把底层文件全删了——导入的歌删的是用户
+    // 手机文件夹里的原文件，缓存歌删缓存文件，误触代价太大。需要批量清理请引导
+    // 用户在列表里逐条操作，或后续做成「只清索引不删文件」。
 
     private fun deleteUri(ctx: Context, uri: Uri, kind: String) {
         runCatching {

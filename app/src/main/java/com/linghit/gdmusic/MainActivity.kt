@@ -81,8 +81,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var cover:ImageView
     // 播放器已从 Activity 成员改为全局单例（PlayerManager），从根本上避免息屏被回收导致停播
     private val player get() = PlayerManager.getPlayer()
-    private lateinit var playPauseBtn:ImageButton; private lateinit var seekBar:SeekBar
-    private lateinit var curTime:TextView; private lateinit var totalTime:TextView
+    private lateinit var playPauseBtn:ImageButton
+    private lateinit var prevBtn:ImageButton
+    private lateinit var nextBtn:ImageButton
     private lateinit var modeBtn:ImageButton
     private lateinit var lyricFloatBtn:ImageButton
     private lateinit var playerBar:View
@@ -97,7 +98,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var queueAdapter:QueueAdapter
     private var showSearch=false
     private val uiHandler=Handler(Looper.getMainLooper())
-    private var seeking=false
     private lateinit var adapter:SongAdapter
     private var selectedSources=sources
     private val prefs by lazy { getSharedPreferences("music",Context.MODE_PRIVATE) }
@@ -167,8 +167,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         PlayerManager.init(this) // 初始化全局播放管理器（幂等）
         // 通知权限（Android 13+ 必须，否则播放时前台服务 startForeground 会崩溃）
         syncNotificationPermission()
-        playPauseBtn=findViewById(R.id.playPauseBtn); seekBar=findViewById(R.id.seekBar)
-        curTime=findViewById(R.id.curTime); totalTime=findViewById(R.id.totalTime)
+        playPauseBtn=findViewById(R.id.playPauseBtn)
+        prevBtn=findViewById(R.id.prevBtn)
+        nextBtn=findViewById(R.id.nextBtn)
         modeBtn=findViewById(R.id.modeBtn)
         lyricFloatBtn=findViewById(R.id.lyricFloatBtn)
         playerBar=findViewById(R.id.playerBar)
@@ -177,6 +178,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             if(player.isPlaying){ player.pause() }
             else { if(player.duration>0 && player.currentPosition>=player.duration) player.seekTo(0); player.play() }
         }
+        // 播放条切歌：上一首/下一首（与歌词页、桌面歌词共用 PlayerManager 队列）
+        prevBtn.setOnClickListener { PlayerManager.skipPrev() }
+        nextBtn.setOnClickListener { PlayerManager.skipNext() }
         modeBtn.setOnClickListener {
             val m = (PlayerManager.playMode + 1) % 3
             PlayerManager.setMode(m)
@@ -197,11 +201,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         refreshLyricBtn()
         // 上次开着桌面歌词的话，重启后自动恢复（进程被杀窗口也会没，需重建）
         if (DesktopLyric.enabled && DesktopLyric.hasPermission()) DesktopLyric.show()
-        seekBar.setOnSeekBarChangeListener(object:android.widget.SeekBar.OnSeekBarChangeListener{
-            override fun onProgressChanged(sb:android.widget.SeekBar?,p:Int,fromUser:Boolean){ if(fromUser) curTime.text=fmt(p.toLong()) }
-            override fun onStartTrackingTouch(sb:android.widget.SeekBar?){ seeking=true }
-            override fun onStopTrackingTouch(sb:android.widget.SeekBar?){ seeking=false; sb?.let{ player.seekTo(it.progress.toLong()) } }
-        })
         uiHandler.post(progressRunnable)
 
         adapter=SongAdapter(
@@ -628,20 +627,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         override fun run(){ updateProgress(); uiHandler.postDelayed(this,500) }
     }
     private fun updateProgress(){
-        val d=player.duration
-        if(d>0){
-            seekBar.max=d.toInt()
-            if(!seeking) seekBar.progress=player.currentPosition.toInt()
-            curTime.text=fmt(player.currentPosition); totalTime.text=fmt(d)
-        }else{
-            curTime.text=fmt(player.currentPosition); totalTime.text="00:00"
-        }
+        // 歌曲进度条已从播放条去掉，这里只维护播放/暂停图标与桌面歌词进度
         playPauseBtn.setImageResource(if(player.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         DesktopLyric.onProgress(player.currentPosition) // 桌面歌词按进度滚动到当前行
-    }
-    private fun fmt(ms:Long):String{
-        if(ms<0) return "00:00"
-        val s=(ms/1000).toInt(); val m=s/60; return "%02d:%02d".format(m,s%60)
     }
 
     /** 把用户填写的接口地址归一化：去掉首尾空白与末尾斜杠，确保以 /api.php 结尾 */

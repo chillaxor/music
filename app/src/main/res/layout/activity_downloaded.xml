@@ -36,12 +36,7 @@
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:textColor="@color/on_primary"/>
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/clearAllBtn"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="清空全部"/>
+            <!-- 原「清空全部」已移除：它会连手机文件夹里的歌曲原文件一起删掉 -->
         </LinearLayout>
         <TextView
             android:id="@+id/totalText"
