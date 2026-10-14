@@ -22,3 +22,6 @@ build_log*.txt
 .DS_Store
 Thumbs.db
 icon_preview.png
+
+# 调试截图（临时验证用）
+.dbg/

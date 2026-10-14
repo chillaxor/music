@@ -1,19 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 歌词页入口：圆角纸页 + 三行文字（evenOdd 挖空成透字行，单色填充保证 tint 后是纯色剪影） -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        d="M6,4.5h12c0.8,0 1.5,0.7 1.5,1.5v12c0,0.8 -0.7,1.5 -1.5,1.5H6c-0.8,0 -1.5,-0.7 -1.5,-1.5V6c0,-0.8 0.7,-1.5 1.5,-1.5z"/>
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        d="M8.5,9h7 M8.5,12h7 M8.5,15h4"/>
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M7.5 4h9c1.4 0 2.5 1.1 2.5 2.5v11c0 1.4-1.1 2.5-2.5 2.5h-9C6.1 20 5 18.9 5 17.5v-11C5 5.1 6.1 4 7.5 4zM8.5 7.5h7v1.7h-7zM8.5 10.7h7v1.7h-7zM8.5 13.9h4v1.7h-4z"/>
 </vector>
