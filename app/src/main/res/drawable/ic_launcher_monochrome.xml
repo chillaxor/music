@@ -4,30 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- themed icon (Android 13+): system tints this layer; note geometry same as foreground -->
+    <!-- 主题图标（Android 13+）：纯色 squircle 剪影，圆角与原图一致（19%） -->
     <path
         android:fillColor="#000000"
-        android:pathData="M47,39 L51,39 L51,75 L47,75 Z" />
-    <path
-        android:fillColor="#000000"
-        android:pathData="M73,33 L77,33 L77,69 L73,69 Z" />
-    <path
-        android:fillColor="#000000"
-        android:pathData="M47,39 L77,33 L77,41.5 L47,47.5 Z" />
-    <group
-        android:pivotX="39.5"
-        android:pivotY="73"
-        android:rotation="-18">
-        <path
-            android:fillColor="#000000"
-            android:pathData="M39.5,66.2 m-8.5,0 a8.5,6.8 0 1,0 17,0 a8.5,6.8 0 1,0 -17,0 Z" />
-    </group>
-    <group
-        android:pivotX="65.5"
-        android:pivotY="67"
-        android:rotation="-18">
-        <path
-            android:fillColor="#000000"
-            android:pathData="M65.5,60.2 m-8.5,0 a8.5,6.8 0 1,0 17,0 a8.5,6.8 0 1,0 -17,0 Z" />
-    </group>
+        android:pathData="M20.5,0 L87.5,0 C99.2,0 108,8.8 108,20.5 L108,87.5 C108,99.2 99.2,108 87.5,108 L20.5,108 C8.8,108 0,99.2 0,87.5 L0,20.5 C0,8.8 8.8,0 20.5,0 Z" />
 </vector>
