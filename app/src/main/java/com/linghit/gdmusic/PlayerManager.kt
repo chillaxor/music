@@ -160,15 +160,6 @@ object PlayerManager {
             ensureForegroundStarted()
             runCatching {
                 player.setMediaItem(MediaItem.fromUri(local)); player.prepare(); player.play()
-                // 本地文件没有 lyricId（导入的本地音乐）：改读文件内嵌的歌词标签
-                if (song.lyricId.isBlank() && local.scheme == "file") {
-                    scope.launch(Dispatchers.IO) {
-                        val lrc = AudioTagUtil.readLyric(local.path ?: return@launch)
-                        if (!lrc.isNullOrBlank()) withContext(Dispatchers.Main) {
-                            uiListener?.onLyrics(lrc)
-                        }
-                    }
-                }
             }.onFailure {
                 // 明确起播失败：停掉上一首，别让用户以为「还是固定那一首在响」
                 runCatching { player.pause() }
@@ -287,14 +278,71 @@ object PlayerManager {
             }.onFailure { withContext(Dispatchers.Main) { uiListener?.onCover(null) } }
         }
     }
+    // ---------- 歌词状态（全屏歌词页 + 桌面歌词悬浮窗的唯一数据源） ----------
+    /** 当前歌词原文（LRC 或纯文本），空串 = 暂无歌词 */
+    var lyricRaw: String = ""
+        private set
+    /** 解析后的歌词行；纯文本歌词（无时间戳）为空列表，由展示端按整段显示 */
+    var lyricLines: List<LrcLine> = emptyList()
+        private set
+
+    /** 播放位置对应的歌词行下标，-1 = 没有可显示的行 */
+    fun lyricIndexAt(posMs: Long): Int {
+        if (lyricLines.isEmpty()) return -1
+        var lo = 0; var hi = lyricLines.size - 1; var ans = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) / 2
+            if (lyricLines[mid].timeMs <= posMs) { ans = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        return ans
+    }
+
+    private fun setLyricsState(raw: String) {
+        lyricRaw = raw
+        lyricLines = parseLrc(raw)
+        uiListener?.onLyrics(raw)
+    }
+
+    /** 重试加载歌词（歌词页无歌词时点重试走这里；会重新走三层查找） */
+    fun reloadLyrics() { val s = current ?: return; loadLyrics(s) }
+
+    /**
+     * 歌词加载，三层递补：
+     *  ① 音频文件内嵌歌词（jaudiotagger 只认真实文件路径，content:// 不支持）
+     *  ② 伴生 .lrc（下载时随音频一并落盘：索引 lyricUri → 缓存目录同名文件）
+     *  ③ 在线 API 按 source/id 拉（拉到的顺手存缓存目录，下次离线也能看）
+     * 导入的本地歌没有 source/id，API 那层直接跳过，只靠①②。
+     */
     private fun loadLyrics(s: Song) {
-        val apiBase = readApi()
         scope.launch {
+            // ① 内嵌歌词
+            val local = runCatching { DownloadStore.localUri(appContext, s) }.getOrNull()
+            if (local != null && local.scheme == "file") {
+                val embedded = withContext(Dispatchers.IO) {
+                    runCatching { AudioTagUtil.readLyric(local.path ?: "") }.getOrNull()
+                }
+                if (!embedded.isNullOrBlank()) { setLyricsState(embedded); return@launch }
+            }
+            // ② 伴生 .lrc
+            val sidecar = withContext(Dispatchers.IO) {
+                DownloadStore.lyricUriOf(appContext, s)?.let { LyricFiles.read(appContext, it) }
+                    ?: LyricFiles.readCacheSidecar(appContext, s)
+            }
+            if (!sidecar.isNullOrBlank()) { setLyricsState(sidecar); return@launch }
+            // ③ 在线 API（无 source/id 的本地歌跳过，拉了也是报错）
+            if (s.source.isBlank() || s.lyricId.isBlank()) { setLyricsState(""); return@launch }
+            val apiBase = readApi()
             runCatching {
-                val o = withContext(Dispatchers.IO) { JSONObject(get(apiBase, "$apiBase?types=lyric&source=${enc(s.source)}&id=${enc(s.lyricId)}")) }
+                val o = withContext(Dispatchers.IO) {
+                    JSONObject(get(apiBase, "$apiBase?types=lyric&source=${enc(s.source)}&id=${enc(s.lyricId)}"))
+                }
                 val l = o.optString("lyric")
-                withContext(Dispatchers.Main) { uiListener?.onLyrics(if (l.isBlank()) "暂无歌词" else l) }
-            }.onFailure { withContext(Dispatchers.Main) { uiListener?.onLyrics("暂无歌词") } }
+                if (l.isNotBlank()) {
+                    // 顺手存盘：同一首歌离线再放也能找到歌词
+                    withContext(Dispatchers.IO) { LyricFiles.writeToCacheDir(appContext, s, l) }
+                }
+                setLyricsState(l)
+            }.onFailure { setLyricsState("") }
         }
     }
 
@@ -321,14 +369,20 @@ object PlayerManager {
                 resp.body?.byteStream()?.use { inp -> FileOutputStream(tmp).use { inp.copyTo(it) } }
                 resp.close()
                 if (tmp.exists() && tmp.length() > 0) tmp.renameTo(out)
-                DownloadStore.add(appContext, s, Uri.fromFile(out), "cache", "应用缓存", out.length())
+                // 歌词随音频一并落盘（失败不影响音频；几 KB 文本）
+                val lrcPath = if (s.source.isNotBlank() && s.lyricId.isNotBlank()) runCatching {
+                    val lo = JSONObject(get(apiBase, "$apiBase?types=lyric&source=${enc(s.source)}&id=${enc(s.lyricId)}"))
+                    lo.optString("lyric").takeIf { it.isNotBlank() }
+                        ?.let { LyricFiles.writeToCacheDir(appContext, s, it) }
+                }.getOrNull() else null
+                DownloadStore.add(appContext, s, Uri.fromFile(out), "cache", "应用缓存", out.length(), lrcPath ?: "")
                 // 回调会触发 MainActivity 的 adapter.notifyDataSetChanged，必须回主线程，
                 // 否则 RecyclerView 在 IO 线程 requestLayout 直接崩
                 withContext(Dispatchers.Main) { uiListener?.onCacheStateChanged(k, "done") }
             } catch (e: Exception) { /* 缓存失败不影响播放 */ }
         }
     }
-    private fun baseName(s: Song) = s.key().replace(Regex("[^a-zA-Z0-9]"), "_")
+    private fun baseName(s: Song) = LyricFiles.baseName(s)
     private fun extFrom(url: String, ct: String?): String {
         val p = url.substringBefore('?').substringAfterLast('.', "")
         if (p.length in 2..4) return p.lowercase()

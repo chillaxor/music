@@ -140,11 +140,15 @@ class DownloadedActivity : AppCompatActivity() {
                             }
                             val song = Song("", name, artist, album, "", "", "", child.uri.toString())
                             val key = song.key()
+                            // 同名伴生歌词：拷贝音乐时最常见的歌词载体（.lrc 优先，其次 .txt）
+                            val base = nm.substringBeforeLast('.')
+                            val lrcDoc = dir.findFile("$base.lrc") ?: dir.findFile("$base.txt")
                             items.add(
                                 DownloadedItem(
                                     key, song, child.uri,
                                     path.ifBlank { root?.name ?: "导入" },
-                                    "manual", child.length()
+                                    "manual", child.length(),
+                                    lrcDoc?.uri?.toString() ?: ""
                                 )
                             )
                         }

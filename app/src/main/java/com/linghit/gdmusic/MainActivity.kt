@@ -185,6 +185,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             Toast.makeText(this, tip, Toast.LENGTH_SHORT).show()
         }
         lyricFloatBtn.setOnClickListener { toggleDesktopLyric() }
+        // 全屏歌词页：从播放条进入看大字号歌词（下载的歌靠一并落盘的 .lrc 离线可看）
+        findViewById<View>(R.id.lyricPageBtn).setOnClickListener {
+            if (PlayerManager.current == null) {
+                Toast.makeText(this, "先播放一首歌", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            startActivity(Intent(this, LyricActivity::class.java))
+        }
         applyPlayMode()
         refreshLyricBtn()
         // 上次开着桌面歌词的话，重启后自动恢复（进程被杀窗口也会没，需重建）
@@ -487,7 +495,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     // ---- 离线下载 ----
-    private fun baseName(s:Song)=s.key().replace(Regex("[^a-zA-Z0-9]"),"_")
+    private fun baseName(s:Song)=LyricFiles.baseName(s)
     private fun localUri(s:Song):Uri? = DownloadStore.localUri(this, s)
     private fun isDownloaded(s:Song)=localUri(s)!=null
 
@@ -523,7 +531,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             resp.body?.byteStream()?.use{ inp-> os.use{ inp.copyTo(it) } }
             resp.close()
             val size=doc.length()
-            DownloadStore.add(this, s, doc.uri, "manual", folderName, size)
+            // 歌词随音频一并下载到同一目录（失败不影响音频；纯离线时靠它显示歌词）
+            val lrc=if(s.source.isNotBlank() && s.lyricId.isNotBlank()) runCatching{
+                val lo=JSONObject(get("$api?types=lyric&source=${enc(s.source)}&id=${enc(s.lyricId)}"))
+                lo.optString("lyric").takeIf{ it.isNotBlank() }
+            }.getOrNull() else null
+            val lrcUri=if(lrc!=null && tree!=null) LyricFiles.writeToTree(this, tree, safeName, lrc) else null
+            DownloadStore.add(this, s, doc.uri, "manual", folderName, size, lrcUri ?: "")
             setDl(k,"done")
         }catch(e:Exception){ setDl(k,"error") }
     }

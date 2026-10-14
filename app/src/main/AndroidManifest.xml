@@ -22,6 +22,8 @@
             </intent-filter>
         </activity>
         <activity android:name=".DownloadedActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 全屏歌词页：从底部播放条的歌词按钮进入 -->
+        <activity android:name=".LyricActivity" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".FavoritesActivity" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 净资产记账（移植自「净资产快照」WebView 工程）：不锁方向，横竖屏都用 -->

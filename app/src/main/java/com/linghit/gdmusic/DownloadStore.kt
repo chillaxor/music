@@ -57,22 +57,24 @@ object DownloadStore {
         saveIndex(ctx, arr)
     }
 
-    private fun recordOf(song: Song, uri: String, kind: String, folder: String, size: Long) =
+    private fun recordOf(song: Song, uri: String, kind: String, folder: String, size: Long, lyricUri: String = "") =
         JSONObject().apply {
             put("key", song.key()); put("id", song.id); put("name", song.name)
             put("artist", song.artist); put("album", song.album); put("source", song.source)
             put("picId", song.picId); put("lyricId", song.lyricId); put("localUri", song.localUri)
             put("uri", uri); put("kind", kind); put("folder", folder); put("size", size)
+            // 下载时一并落盘的 .lrc 地址（旧索引没有此字段，为空则播放时按内嵌/在线递补）
+            put("lyricUri", lyricUri)
         }
 
     /** 记录一首已下载歌曲（同 key 覆盖更新） */
-    fun add(ctx: Context, song: Song, uri: Uri, kind: String, folder: String, size: Long = 0) {
+    fun add(ctx: Context, song: Song, uri: Uri, kind: String, folder: String, size: Long = 0, lyricUri: String = "") {
         val arr = loadIndex(ctx)
         for (i in 0 until arr.length()) {
             if (matches(arr.getJSONObject(i), song)) { arr.remove(i); break }
         }
         val finalSize = if (size > 0) size else sizeOf(ctx, uri)
-        arr.put(recordOf(song, uri.toString(), kind, folder, finalSize))
+        arr.put(recordOf(song, uri.toString(), kind, folder, finalSize, lyricUri))
         saveIndex(ctx, arr)
     }
 
@@ -121,10 +123,21 @@ object DownloadStore {
                 uri = Uri.parse(uriStr),
                 folder = o.optString("folder", "本地"),
                 kind = o.optString("kind", "cache"),
-                sizeBytes = o.optLong("size", 0L)
+                sizeBytes = o.optLong("size", 0L),
+                lyricUri = o.optString("lyricUri")
             )
         }
         return out
+    }
+
+    /** 某首歌的歌词文件 uri（下载时一并落盘的 .lrc），无则 null。同样走 matches 多路匹配 */
+    fun lyricUriOf(ctx: Context, song: Song): String? {
+        val arr = loadIndex(ctx)
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (matches(o, song)) return o.optString("lyricUri").takeIf { it.isNotBlank() }
+        }
+        return null
     }
 
     /** 返回某首歌的离线 Uri（file:// 缓存或 content:// 手动目录），无则 null。
@@ -148,7 +161,7 @@ object DownloadStore {
         for (it in items) {
             val u = it.uri.toString()
             if (u in have) continue
-            arr.put(recordOf(it.song, u, it.kind, it.folder, it.sizeBytes))
+            arr.put(recordOf(it.song, u, it.kind, it.folder, it.sizeBytes, it.lyricUri))
             have.add(u)
         }
         saveIndex(ctx, arr)
@@ -170,6 +183,9 @@ object DownloadStore {
             val uriStr = o.optString("uri")
             if (o.optString("key") == key || songOf(o).key() == key) {
                 deleteUri(ctx, Uri.parse(uriStr), o.optString("kind"))
+                // 伴生歌词文件一并删掉，别在用户目录里留孤儿
+                o.optString("lyricUri").takeIf { it.isNotBlank() }
+                    ?.let { deleteUri(ctx, Uri.parse(it), "manual") }
                 arr.remove(i)
                 break
             }
@@ -183,6 +199,8 @@ object DownloadStore {
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             deleteUri(ctx, Uri.parse(o.optString("uri")), o.optString("kind"))
+            o.optString("lyricUri").takeIf { it.isNotBlank() }
+                ?.let { deleteUri(ctx, Uri.parse(it), "manual") }
         }
         saveIndex(ctx, JSONArray())
     }
@@ -215,5 +233,7 @@ data class DownloadedItem(
     val uri: Uri,
     val folder: String,
     val kind: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    /** 伴生 .lrc 歌词地址（导入时探测同名文件 / 下载时一并写盘），空则没有 */
+    val lyricUri: String = ""
 )

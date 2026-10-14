@@ -440,6 +440,16 @@
                     android:scaleType="centerInside"
                     android:contentDescription="播放模式"/>
                 <ImageButton
+                    android:id="@+id/lyricPageBtn"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="2dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_lyric_page"
+                    android:tint="@color/primary"
+                    android:scaleType="centerInside"
+                    android:contentDescription="歌词页"/>
+                <ImageButton
                     android:id="@+id/lyricFloatBtn"
                     android:layout_width="38dp"
                     android:layout_height="38dp"
