@@ -78,7 +78,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
 
     private lateinit var input:EditText; private lateinit var status:TextView
     private lateinit var nowPlaying:TextView; private lateinit var nowArtist:TextView
-    private lateinit var cover:ImageView
     // 播放器已从 Activity 成员改为全局单例（PlayerManager），从根本上避免息屏被回收导致停播
     private val player get() = PlayerManager.getPlayer()
     private lateinit var playPauseBtn:ImageButton
@@ -159,7 +158,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         super.onCreate(b); setContentView(R.layout.activity_main)
         input=findViewById(R.id.searchInput); status=findViewById(R.id.statusText)
         nowPlaying=findViewById(R.id.nowPlaying); nowArtist=findViewById(R.id.nowArtist)
-        cover=findViewById(R.id.coverImage)
         CrashHandler.init(this) // 崩溃捕获：闪退后重开 App 进「设置 → 崩溃日志」即可查看（免 adb）
         showCrashLogIfAny()     // 上次崩过则直接弹窗显示堆栈，可一键复制
         DesktopLyric.init(this) // 桌面歌词（悬浮窗）控制器
@@ -667,16 +665,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         syncPlayerBar()
         nowPlaying.text = song.name
         nowArtist.text = "${song.artist} · ${song.album}"
-        cover.setImageBitmap(null)
         status.text = statusText
         // 关键：播放条换了歌，播放列表的「播放中」标记必须同步刷新，
         // 否则自动切歌/点歌后高亮停在旧歌，出现「显示在播 A、实际响 B」
         refreshQueue()
     }
-    override fun onCover(bitmap: Bitmap?) {
-        if (bitmap != null) cover.setImageBitmap(bitmap)
-        else cover.setImageResource(android.R.color.transparent)
-    }
+    // 播放条已去掉封面图（单行布局），封面回调不再使用
+    override fun onCover(bitmap: Bitmap?) {}
     override fun onLyrics(text: String) { DesktopLyric.setLyrics(text) }
     override fun onStatus(text: String) { status.text = text }
     override fun onPlayStateChanged(isPlaying: Boolean) {
