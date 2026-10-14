@@ -75,6 +75,12 @@ object PlayerManager {
     var queueIndex = 0
         private set
     var playMode = 0 // 0 顺序播完停，1 列表循环，2 随机
+    /**
+     * 临时播放中：当前播放的歌不在播放列表里（点了搜索/导入/收藏里的单首）。
+     * 此期间队列原样不动，这首播完或被切走时，自动回到队列里原来那首接着播。
+     */
+    var tempPlaying = false
+        private set
     private var currentIsLocal = false
     private var lastStatusText = ""
 
@@ -97,6 +103,13 @@ object PlayerManager {
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             if (state != Player.STATE_ENDED) return
+            if (tempPlaying) {
+                // 临时点的歌播完：回到播放列表里原来那首接着播（队列全程没被碰过）
+                tempPlaying = false
+                if (queueIndex in queue.indices) playInternal(queue[queueIndex], queue.toList(), queueIndex)
+                else runCatching { player.pause() }
+                return
+            }
             if (queue.isEmpty()) return
             val next = computeNext()
             // 必须传拷贝：playInternal 里会 queue.clear() 再 addAll(queueSongs)，
@@ -143,11 +156,44 @@ object PlayerManager {
         playInternal(list[0], list, 0)
     }
 
+    /**
+     * 队列播放：用 queueSongs 整体替换播放列表，从 index 首开始播。
+     * 「播放全部」类入口走这里——覆盖播放列表正是预期行为。
+     */
     fun playInternal(song: Song, queueSongs: List<Song>, index: Int) {
-        val apiBase = readApi()
         queue.clear(); queue.addAll(queueSongs); queueIndex = index
+        tempPlaying = false
         current = song
         persistQueue()
+        persistTemp(null)
+        startPlayback(song)
+    }
+
+    /**
+     * 临时播放：只播这一首，播放列表原样不动（点搜索/导入/收藏里的单首走这里）。
+     * 这首播完或被切歌切走时，自动回到队列里原来那首；期间不碰队列、不持久化队列。
+     */
+    fun playTemp(song: Song) {
+        tempPlaying = true
+        current = song
+        persistTemp(song)
+        startPlayback(song)
+    }
+
+    /** 插播：插到播放列表最前面并直接播放（搜索/导入行的「⏫ 插入」按钮） */
+    fun insertFrontAndPlay(song: Song) {
+        queue.removeAll { it.key() == song.key() } // 队列里已有同首：挪到最前，别堆一份重复的
+        queue.add(0, song)
+        queueIndex = 0
+        tempPlaying = false
+        current = song
+        persistQueue()
+        persistTemp(null)
+        startPlayback(song)
+    }
+
+    /** 三种入口共用：解析本地/在线地址并真正起播，不碰队列 */
+    private fun startPlayback(song: Song) {
         val local = runCatching { DownloadStore.localUri(appContext, song) }.getOrNull()
         if (local != null) {
             currentIsLocal = true
@@ -170,6 +216,7 @@ object PlayerManager {
         currentIsLocal = false
         lastStatusText = "正在获取播放地址……"
         uiListener?.onSongStart(song, false, lastStatusText)
+        val apiBase = readApi()
         scope.launch {
             try {
                 val o = withContext(Dispatchers.IO) {
@@ -200,8 +247,27 @@ object PlayerManager {
 
     // 必须传 queue.toList() 拷贝：playInternal 里会 queue.clear() 再 addAll(queueSongs)，
     // 直接传实时 queue 等于把列表传进去后被自己清空，切完歌播放列表就空了
-    fun skipNext() { val n = computeNext(); if (n in queue.indices) playInternal(queue[n], queue.toList(), n) }
+    // 临时播放期间把临时那首当作「占着 queueIndex 的位置」来导航：
+    // 下一首=队列里原来那首往后，上一首=往前，播完=回到 queueIndex 那首
+    fun skipNext() {
+        if (tempPlaying) {
+            tempPlaying = false
+            val n = computeNext()
+            if (n in queue.indices) playInternal(queue[n], queue.toList(), n)
+            else runCatching { player.pause() } // 队列空：没得可切，停下
+            return
+        }
+        val n = computeNext(); if (n in queue.indices) playInternal(queue[n], queue.toList(), n)
+    }
     fun skipPrev() {
+        if (tempPlaying) {
+            tempPlaying = false
+            val p = if (queueIndex - 1 >= 0) queueIndex - 1
+            else if (playMode == 1 && queue.isNotEmpty()) queue.size - 1 else 0
+            if (p in queue.indices) playInternal(queue[p], queue.toList(), p)
+            else runCatching { player.pause() }
+            return
+        }
         if (player.currentPosition > 3000) { player.seekTo(0); return }
         val p = if (queueIndex - 1 >= 0) queueIndex - 1
         else if (playMode == 1 && queue.isNotEmpty()) queue.size - 1 else 0
@@ -242,9 +308,44 @@ object PlayerManager {
         }
     }
 
+    /**
+     * 临时播放状态持久化：进程被杀后重进 App，UI 要显示临时那首（而不是队列里的旧歌），
+     * 队列本身照旧恢复——临时播放从头到尾没碰过队列。
+     */
+    private fun persistTemp(song: Song?) {
+        runCatching {
+            prefs.edit()
+                .putBoolean("play_temp_v1", song != null)
+                .putString("play_temp_song_v1", if (song != null) FavoritesStore.songToJson(song) else "")
+                .apply()
+        }
+    }
+
     /** 内存队列为空时恢复上次的播放列表（有活队列则不碰，避免覆盖当前会话） */
     fun restoreQueueIfEmpty() {
         if (queue.isNotEmpty()) return
+        // 临时播放优先：被杀时正在播临时歌，先恢复那首的显示，再恢复队列内容
+        if (prefs.getBoolean("play_temp_v1", false)) {
+            val s = runCatching {
+                prefs.getString("play_temp_song_v1", null)?.let { FavoritesStore.fromJsonStr(it) }
+            }.getOrNull()
+            if (s != null) {
+                tempPlaying = true
+                current = s
+                val json = prefs.getString("play_queue_v1", null)
+                val list = runCatching { json?.let { songsFromJsonArray(it) } }.getOrNull()
+                if (!list.isNullOrEmpty()) {
+                    queue.clear(); queue.addAll(list)
+                    queueIndex = prefs.getInt("play_index_v1", 0).coerceIn(0, list.size - 1)
+                }
+                // 恢复「是否本地」状态：能让播放条显示对的状态文案（本地/在线）
+                currentIsLocal = runCatching { DownloadStore.localUri(appContext, s) }.getOrNull() != null
+                lastStatusText = if (currentIsLocal) "离线播放 · 本地文件" else "在线播放"
+                uiListener?.onQueueChanged()
+                uiListener?.onSongStart(s, currentIsLocal, lastStatusText)
+                return
+            }
+        }
         val json = prefs.getString("play_queue_v1", null) ?: return
         val list = runCatching { songsFromJsonArray(json) }.getOrNull() ?: return
         if (list.isEmpty()) return

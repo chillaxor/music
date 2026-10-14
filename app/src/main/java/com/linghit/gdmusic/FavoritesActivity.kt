@@ -120,15 +120,17 @@ class FavoritesActivity : AppCompatActivity() {
             if (items.isEmpty()) View.GONE else View.VISIBLE
     }
 
+    /** 点某首：临时播放——只播这一首，不动现有播放列表；播完自动回到列表里原来那首。
+     *  想连整个歌单一起播用上面的「播放全部」（会覆盖播放列表）。 */
     private fun playSong(s: Song) {
-        val songs = PlaylistStore.getSongs(this, currentPlaylistId)
-        val idx = songs.indexOfFirst { it.key() == s.key() }.coerceAtLeast(0)
-        val intent = Intent(this, MainActivity::class.java).apply {
-            putExtra("play_queue_json", songsToJsonArray(songs))
-            putExtra("play_index", idx)
+        // 冷启动直接落到本页时 MainActivity 还没初始化过播放器：init 幂等补上，
+        // restoreQueueIfEmpty 把上次的播放列表恢复回内存，别让旧列表凭空消失
+        PlayerManager.init(applicationContext)
+        PlayerManager.restoreQueueIfEmpty()
+        PlayerManager.playTemp(s)
+        startActivity(Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        startActivity(intent)
+        })
         finish()
     }
 

@@ -65,6 +65,16 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/dlInsert"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:textSize="20sp"
+            android:text="⏫"
+            android:textColor="@color/primary"
+            android:contentDescription="插入播放列表最前面并播放"/>
+
+        <TextView
             android:id="@+id/dlDelete"
             android:layout_width="44dp"
             android:layout_height="44dp"

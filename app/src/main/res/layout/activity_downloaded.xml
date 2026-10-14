@@ -70,6 +70,22 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- 文件夹 Tab：切换只播/只看某个文件夹；「播放全部」灌的是当前 Tab 的歌 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="2dp">
+        <LinearLayout
+            android:id="@+id/folderTabs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"/>
+    </HorizontalScrollView>
+
     <!-- 列表 -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/downloadedList"

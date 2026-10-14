@@ -204,13 +204,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         uiHandler.post(progressRunnable)
 
         adapter=SongAdapter(
-            onPlay = { PlayerManager.playFromList(adapter.snapshot(), it) },
+            // 点单首=临时播放：只播这首，不动播放列表（要进列表用每行的 ⏫ 插入）
+            onPlay = { PlayerManager.playTemp(it) },
             onFavorite = { s -> onStarClick(s); adapter.notifyDataSetChanged() },
             isFavorite = { isFavorite(it) },
             onDownload = { requestManualDownload(it) },
-            dlState = { dlStates[it.key()] ?: if (isDownloaded(it)) "done" else "none" }
+            dlState = { dlStates[it.key()] ?: if (isDownloaded(it)) "done" else "none" },
+            onInsert = { PlayerManager.insertFrontAndPlay(it) }
         )
-        handlePlayIntent()
         findViewById<RecyclerView>(R.id.songList).apply {
             val lm=LinearLayoutManager(this@MainActivity)
             layoutManager=lm; adapter=this@MainActivity.adapter
@@ -280,6 +281,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
         switchTab(false) // 默认进入播放列表
 
+        // 外部播放意图（下载页/收藏页的播放全部）必须放到所有视图初始化之后：
+        // 它会走 refreshQueue()，而 queueCount/queueList 是 lateinit，
+        // 早于 findViewById 调用会抛 UninitializedPropertyAccessException 直接崩
+        // （冷启动直接进下载页再点播放全部就会触发）
+        handlePlayIntent()
+
         // 注册为播放 UI 监听，并把当前播放状态同步到播放条（用于息屏后重新打开 App）
         PlayerManager.uiListener = this
         // 进程上次被杀过：恢复上次的播放列表和高亮（不自动播放），
@@ -308,9 +315,15 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
 
     /** 刷新播放列表页：标题计数 + 空状态显隐。线程免疫（onSongStart 可能来自播放器回调线程） */
     private fun refreshQueue(){
+        if (!::queueCount.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
         val block={
             val q=PlayerManager.queueSnapshot()
-            queueCount.text = if(q.isEmpty()) "播放列表" else "播放列表 · ${q.size} 首"
+            queueCount.text = when {
+                // 临时播放中：明确告诉用户列表没被碰，避免以为点首歌列表就乱了
+                PlayerManager.tempPlaying -> "播放列表 · ${q.size} 首 · 临时播放中（不动列表）"
+                q.isEmpty() -> "播放列表"
+                else -> "播放列表 · ${q.size} 首"
+            }
             queueAdapter.submit(q)
             queueEmpty.visibility=if(q.isEmpty()) View.VISIBLE else View.GONE
             queueList.visibility=if(q.isEmpty()) View.GONE else View.VISIBLE
@@ -612,14 +625,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             PlayerManager.playInternal(song, listOf(song), 0)
             return
         }
-        // 3) 单首在线播放
+        // 3) 单首在线播放（临时播放：不动播放列表）
         val json=intent.getStringExtra("play_song_json") ?: return
         runCatching{
             val o=JSONObject(json)
             val s=Song(o.optString("id"),o.optString("name"),o.optString("artist"),
                 o.optString("album"),o.optString("source"),o.optString("picId"),
                 o.optString("lyricId",o.optString("id")))
-            PlayerManager.playFromList(listOf(s), s)
+            PlayerManager.playTemp(s)
         }
     }
 
@@ -692,7 +705,8 @@ class SongAdapter(
     private val onFavorite:(Song)->Unit,
     private val isFavorite:(Song)->Boolean,
     private val onDownload:(Song)->Unit,
-    private val dlState:(Song)->String
+    private val dlState:(Song)->String,
+    private val onInsert:(Song)->Unit
 ):RecyclerView.Adapter<SongAdapter.VH>(){
     private val data=mutableListOf<Song>()
     fun submit(l:List<Song>){data.clear();data.addAll(l);notifyDataSetChanged()}
@@ -711,6 +725,7 @@ class SongAdapter(
         private val s=v.findViewById<TextView>(R.id.songSource)
         private val dl=v.findViewById<TextView>(R.id.dlBtn)
         private val fav=v.findViewById<TextView>(R.id.favBtn)
+        private val ins=v.findViewById<TextView>(R.id.insertBtn)
         fun bind(x:Song){
             n.text=x.name
             a.text="${x.artist} · ${x.album}"
@@ -728,6 +743,7 @@ class SongAdapter(
             }))
             content.setOnClickListener{ onPlay(x) }
             fav.setOnClickListener{ onFavorite(x) }
+            ins.setOnClickListener{ onInsert(x) }
             dl.setOnClickListener{ if(dlState(x)!="done" && dlState(x)!="downloading") onDownload(x) }
         }
     }
@@ -752,9 +768,10 @@ class QueueAdapter(
         fun bind(x:Song, position:Int){
             // 高亮「正在播放」：优先对象 identity（队列里就是 current 那个对象），
             // 再退按键匹配。不能只按键——同一首歌在队列里出现两次时按键会撞车，
-            // 高亮落到第一首上，而实际播的是第二首（用户看到「显示在播 A、实际响 B」）
+            // 高亮落到第一首上，而实际播的是第二首（用户看到「显示在播 A、实际响 B」）。
+            // 临时播放期间不高亮任何一项：响的是队列外的歌，列表原样没动。
             val cur=PlayerManager.current
-            val isCur=cur!=null && (cur===x || cur.key()==x.key())
+            val isCur=!PlayerManager.tempPlaying && cur!=null && (cur===x || cur.key()==x.key())
             idx.text=(position+1).toString()
             idx.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_surface_variant))
             n.text=x.name
