@@ -2,6 +2,7 @@ package com.linghit.gdmusic
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
@@ -17,11 +18,18 @@ import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import okhttp3.Call
 import okhttp3.Callback
@@ -38,8 +46,9 @@ import java.nio.charset.StandardCharsets
  *  - UI 是一张内置在 assets/video.html 的网页（暗色 TVBox 风格），负责接口源管理、
  *    分类 / 搜索 / 详情 / 选集等全部交互；
  *  - 原生端只提供能力桥：跨域抓取（OkHttp，绕过 WebView 的 CORS 限制）、播放、
- *    外部播放器唤起、源配置持久化；
- *  - 点选集时用原生 ExoPlayer（已带 HLS/DASH 模块）硬解 m3u8/mp4，体验比 WebView 内嵌视频好。
+ *    源配置持久化；
+ *  - 点选集时用原生 ExoPlayer（已带 HLS/DASH 模块）硬解 m3u8/mp4——**一律在本 App
+ *    内播放**，不跳外部播放器；播放时强制横屏 + 沉浸式全屏，关闭后恢复竖屏浏览。
  *
  * 标准影视仓接口：source URL 返回 {sites:[{key,name,type,api,...}],parses,lives}，
  * 每个 site 的 api 走 ac=cate / ac=videolist / ac=detail / ac=videolist&wd= 四类请求。
@@ -113,6 +122,12 @@ class VideoActivity : AppCompatActivity() {
         videoBuffering = findViewById(R.id.videoBuffering)
 
         videoClose.setOnClickListener { closeVideo() }
+        // 返回键：播放中先关播放器（退回流媒体），否则直接退出页面
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (overlay.visibility == View.VISIBLE) closeVideo() else finish()
+            }
+        })
         setupWebView()
     }
 
@@ -194,10 +209,10 @@ class VideoActivity : AppCompatActivity() {
             })
         }
 
-        /** 原生 ExoPlayer 播放（直接 m3u8/mp4 等可硬解地址） */
+        /** 原生 ExoPlayer 播放（直接 m3u8/mp4 等可硬解地址）——一律在本 App 内播放 */
         @JavascriptInterface
-        fun playVideo(url: String, title: String) {
-            runOnUiThread { startVideo(url, title) }
+        fun playVideo(url: String, title: String, referer: String) {
+            runOnUiThread { startVideo(url, title, referer) }
         }
 
         /** 拉起系统/外部播放器（解析类、或本机播不了的地址） */
@@ -276,8 +291,12 @@ class VideoActivity : AppCompatActivity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         Log.w("VidPlay", "onPlayerError: ${error.message}")
-                        val msg = error.message?.take(80) ?: "未知错误"
-                        Toast.makeText(this@VideoActivity, "播放失败：$msg", Toast.LENGTH_LONG).show()
+                        val msg = error.message?.take(60) ?: "未知错误"
+                        Toast.makeText(
+                            this@VideoActivity,
+                            "播放失败：$msg（该线路可能需要解析，可换其他线路/源）",
+                            Toast.LENGTH_LONG
+                        ).show()
                         videoBuffering.visibility = View.GONE
                     }
                 })
@@ -285,21 +304,35 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    private fun startVideo(url: String, title: String) {
-        Log.d("VidPlay", "startVideo: $title | $url")
+    private fun startVideo(url: String, title: String, referer: String = "") {
+        Log.d("VidPlay", "startVideo: $title | $url | referer=$referer")
         ensurePlayer()
         overlay.visibility = View.VISIBLE
         videoTitle.text = title
         videoBuffering.visibility = View.VISIBLE
-        val mime = when {
-            url.contains(".m3u8", true) -> MimeTypes.APPLICATION_M3U8
-            url.contains(".mpd", true) -> MimeTypes.APPLICATION_MPD
-            else -> MimeTypes.VIDEO_MP4
+        // 一律本 App 内播放：强制横屏 + 沉浸式全屏（关掉播放器再恢复竖屏）
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        hideSystemBars()
+        val itemBuilder = MediaItem.Builder().setUri(url)
+        // 只有明确扩展名时才指定 mime；否则交给 DefaultMediaSourceFactory
+        // 按 Content-Type 嗅探（乱设 VIDEO_MP4 会把非 mp4 流直接判死）
+        when {
+            url.contains(".m3u8", true) -> itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            url.contains(".mpd", true) -> itemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+            url.contains(".mp4", true) -> itemBuilder.setMimeType(MimeTypes.VIDEO_MP4)
         }
-        val item = androidx.media3.common.MediaItem.Builder()
-            .setUri(url).setMimeType(mime).build()
+        val item = itemBuilder.build()
+        // 很多 CDN 校验 Referer（不带 403）：用详情所属站点的 origin
+        val headers = buildMap {
+            if (referer.isNotBlank()) put("Referer", referer)
+        }
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
+        val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
+        val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
         player?.apply {
-            setMediaItem(item)
+            setMediaSource(mediaSource)
             prepare()
             playWhenReady = true
         }
@@ -307,7 +340,25 @@ class VideoActivity : AppCompatActivity() {
 
     private fun closeVideo() {
         player?.pause()
+        player?.stop()
         overlay.visibility = View.GONE
+        // 恢复竖屏浏览 + 显示系统栏
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        showSystemBars()
+    }
+
+    /** 播放时进沉浸式全屏：隐藏状态栏/导航栏，下拉手势临时唤出 */
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun showSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
     }
 
     override fun onPause() {

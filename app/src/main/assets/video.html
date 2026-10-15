@@ -494,6 +494,7 @@ async function openDetail(id,si){
   var v; try{v=(JSON.parse(r.text).list||[])[0];}catch(e){}
   if(!v){setState('未获取到详情');return;}
   STATE.detail=v;
+  STATE.detailSite=site; // 记住详情所属站点：播放时取它的 origin 当 Referer
   var pic=v.vod_pic||"";
   $('dPic').innerHTML = pic?'<img src="'+esc(pic)+'" onerror="this.style.display=\'none\'">':'<div class="ph">🎬</div>';
   $('dTit').textContent=v.vod_name||'';
@@ -549,16 +550,13 @@ function renderEps(v){
 }
 function playEp(from,e){
   var url=e.url, name=(STATE.detail.vod_name||'')+' · '+from+' · '+e.name;
-  // 直接可播的流媒体交给原生 ExoPlayer；其余拉起外部播放器
-  if(/\.(m3u8|mp4|mpd)(\?|$)/i.test(url) || /^(https?:)?\/\/.*\.(m3u8|mp4|mpd)/i.test(url)){
-    closeSheet();
-    if(window.Android&&Android.playVideo) Android.playVideo(url,name);
-    else toast('当前环境不支持播放');
-  } else {
-    closeSheet();
-    if(window.Android&&Android.externalPlay) Android.externalPlay(url,name);
-    else toast('请用外部播放器打开');
-  }
+  // 一律交给原生 ExoPlayer 在本 App 内横屏播放，不再跳外部播放器
+  closeSheet();
+  // 很多 CDN 校验 Referer：带上详情所属站点的 origin，否则 403
+  var ref='';
+  try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
+  if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref);
+  else toast('当前环境不支持播放');
 }
 
 /* ============ 启动 ============ */
