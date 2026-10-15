@@ -179,6 +179,12 @@
   .famt{font-weight:700}
   .famt.profit{color:var(--profit)} .famt.loss{color:var(--loss)}
   .fnote{color:var(--sub);flex:1;min-width:90px}
+  /* 消费对象小标签：备注前面的彩色 pill（color-mix 是渐进增强，老 WebView 回退灰底） */
+  .fwho{display:inline-block;padding:1px 7px;margin-right:5px;border-radius:999px;
+    background:var(--line);
+    background:color-mix(in srgb,var(--accent) 18%,transparent);
+    color:var(--accent);
+    font-size:11px;font-weight:700;vertical-align:1px;white-space:nowrap}
   .nav{display:flex;gap:6px;margin:6px 0 16px}
   .nav button{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--sub);
     border-radius:10px;padding:11px 2px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;
@@ -504,6 +510,14 @@
         <span class="type-lock-hint" id="typeLockHint"></span>
         <input id="flowAmt" inputmode="decimal" placeholder="金额">
         <input id="flowNote" placeholder="备注（午饭/淘宝/工资）">
+        <select id="flowWho">
+          <option value="">消费对象（不指定）</option>
+          <option value="自己">自己</option>
+          <option value="老婆">老婆</option>
+          <option value="小孩">小孩</option>
+          <option value="父母">父母</option>
+          <option value="其他">其他</option>
+        </select>
         <select id="flowTo"><option value="">转入账户（仅转账）</option></select>
         <button class="btn full" id="addFlowBtn">记一笔</button>
         <button class="btn full" id="cancelFlowBtn" style="display:none;margin-top:8px">取消修改</button>
@@ -537,6 +551,15 @@
           <option value="转账">转账</option>
         </select>
         <select id="filterAcct"><option value="">全部账户</option></select>
+        <select id="filterWho">
+          <option value="">全部对象</option>
+          <option value="自己">自己</option>
+          <option value="老婆">老婆</option>
+          <option value="小孩">小孩</option>
+          <option value="父母">父母</option>
+          <option value="其他">其他</option>
+          <option value="__none__">不指定</option>
+        </select>
         <button class="btn" id="clearFilter">清除</button>
       </div>
       <div class="flow-filter2">
@@ -664,6 +687,16 @@
         </div>
         <div class="ef"><label>默认转入</label><select id="cfgTo"><option value="">（不指定）</option></select></div>
         <div class="ef"><label>默认备注</label><input id="cfgNote" placeholder="可留空，如：午饭"></div>
+        <div class="ef"><label>默认对象</label>
+          <select id="cfgWho">
+            <option value="">（不指定）</option>
+            <option value="自己">自己</option>
+            <option value="老婆">老婆</option>
+            <option value="小孩">小孩</option>
+            <option value="父母">父母</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
         <div class="modal-tip">设置后，每次打开「记一笔」新增都自动套用。想恢复就改回「（不指定）」。</div>
       </div>
       <div class="modal-foot">
@@ -768,7 +801,9 @@ try{
 // 净资产历史快照：[{date:"2026-10",assets,liabs,net}]，每月一条
 let snapshots=[];
 // 流水筛选条件
-let flowFilter={q:"",type:"",acct:"",sort:"",min:"",max:""};
+let flowFilter={q:"",type:"",acct:"",who:"",sort:"",min:"",max:""};
+// 消费对象：固定 5 项，空=不指定（旧流水没有 who 字段，免迁移）
+const WHO_OPTS=["自己","老婆","小孩","父母","其他"];
 let editMode={asset:{},liab:{}};
 let flowRange="month";
 let editingFlowIndex=null;
@@ -1064,6 +1099,8 @@ function renderFlows(){
     if(_defTo){const _to=document.getElementById("flowTo");if(_to&&[..._to.options].some(o=>o.value===_defTo))_to.value=_defTo;}
     const _defNote=data.flowDefault&&data.flowDefault.note;
     if(_defNote){const _nb=document.getElementById("flowNote");if(_nb)_nb.value=_defNote;}
+    const _defWho=data.flowDefault&&data.flowDefault.who;
+    if(_defWho){const _nw=document.getElementById("flowWho");if(_nw&&[..._nw.options].some(o=>o.value===_defWho))_nw.value=_defWho;}
     syncTypeLock(); // 默认账户若是往来账户，强制锁成「转账」
   }
   // 账户下拉（筛选用）
@@ -1072,18 +1109,23 @@ function renderFlows(){
     data.assets.map(a=>`<option ${flowFilter.acct===a.name?"selected":""}>${esc(a.name||"未命名")}</option>`).join("");
   renderFlowList();
 }
-// 流水筛选：关键词（备注/账户/金额）+ 类型 + 账户
+// 流水筛选：关键词（备注/账户/对象/金额）+ 类型 + 账户 + 消费对象
 function flowPass(f){
   if(flowFilter.type&&f.type!==flowFilter.type)return false;
   if(flowFilter.acct){
     const ok=f.account===flowFilter.acct||f.to===flowFilter.acct;
     if(!ok)return false;
   }
+  // 消费对象：__none__ = 只看不指定（旧数据无 who 字段也算不指定）
+  if(flowFilter.who){
+    if(flowFilter.who==="__none__"){ if(f.who)return false; }
+    else if(f.who!==flowFilter.who)return false;
+  }
   if(flowFilter.min!==""&&pnum(f.amount)<pnum(flowFilter.min))return false;
   if(flowFilter.max!==""&&pnum(f.amount)>pnum(flowFilter.max))return false;
   const q=flowFilter.q.trim().toLowerCase();
   if(!q)return true;
-  const hay=[f.note||"",f.account||"",f.to||"",f.type||"",f.date||"",String(f.amount||"")].join(" ").toLowerCase();
+  const hay=[f.note||"",f.account||"",f.to||"",f.type||"",f.who||"",f.date||"",String(f.amount||"")].join(" ").toLowerCase();
   return hay.indexOf(q)>=0;
 }
 function renderFlowList(){
@@ -1101,7 +1143,7 @@ function renderFlowList(){
   if(flowFilter.sort==="amt_desc")rows.sort((a,b)=>pnum(b[0].amount)-pnum(a[0].amount));
   else if(flowFilter.sort==="amt_asc")rows.sort((a,b)=>pnum(a[0].amount)-pnum(b[0].amount));
   if(tip){
-    const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
+    const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
     tip.innerHTML=on?("筛选出 <b>"+rows.length+"</b> / "+data.flows.length+" 条"):"共 <b>"+data.flows.length+"</b> 条流水";
   }
   // 顶部收支卡片同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary）
@@ -1116,7 +1158,7 @@ function renderFlowList(){
       <span class="facct">${acct}</span>
       <span class="ftype">${f.type}</span>
       <span class="famt ${cls}">${sign}${fmt(pnum(f.amount))}</span>
-      <span class="fnote">${esc(f.note||"")}</span>
+      <span class="fnote">${f.who?'<span class="fwho">'+esc(f.who)+'</span>':''}${esc(f.note||"")}</span>
       <button class="mini" data-editflow="${i}">改</button>
       <button class="del" data-delflow="${i}">×</button>
     </div>`;
@@ -1136,7 +1178,7 @@ function renderFlowRecent(){
       <span class="facct">${acct}</span>
       <span class="ftype">${f.type}</span>
       <span class="famt ${cls}">${sign}${fmt(pnum(f.amount))}</span>
-      <span class="fnote">${esc(f.note||"")}</span>
+      <span class="fnote">${f.who?'<span class="fwho">'+esc(f.who)+'</span>':''}${esc(f.note||"")}</span>
       <button class="mini" data-editflow="${i}">改</button>
       <button class="del" data-delflow="${i}">×</button>
     </div>`;
@@ -1169,7 +1211,7 @@ function renderFlowSummary(){
   const rv=getRangeValue();
   // 有搜索/筛选（排序不算）时，顶部收支改统计「当前筛选结果」——搜什么就统计什么；
   // 没有任何筛选时，维持原来的日/月/年周期统计
-  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.min!==""||flowFilter.max!=="");
+  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.min!==""||flowFilter.max!=="");
   let spend=0,income=0;
   data.flows.forEach(f=>{
     if(filtering){ if(!flowPass(f))return; }
@@ -1205,7 +1247,7 @@ function renderFlowBreak(){
         <span class="facct">${acct}</span>
         <span class="ftype">${f.type}</span>
         <span class="famt ${cls}">${sign}${fmt(pnum(f.amount))}</span>
-        <span class="fnote">${esc(f.note||"")}</span>
+        <span class="fnote">${f.who?'<span class="fwho">'+esc(f.who)+'</span>':''}${esc(f.note||"")}</span>
       </div>`;
     }).join("");
     return;
@@ -1320,18 +1362,19 @@ document.addEventListener("click",e=>{
 // —— 流水筛选事件 ——
 (function bindFlowFilter(){
   const q=document.getElementById("flowSearch");
-  const ty=document.getElementById("filterType"),ac=document.getElementById("filterAcct");
+  const ty=document.getElementById("filterType"),ac=document.getElementById("filterAcct"),wo=document.getElementById("filterWho");
   const cl=document.getElementById("clearFilter");
   if(q)q.oninput=()=>{flowFilter.q=q.value;renderFlowList();};
   if(ty)ty.onchange=()=>{flowFilter.type=ty.value;renderFlowList();};
   if(ac)ac.onchange=()=>{flowFilter.acct=ac.value;renderFlowList();};
+  if(wo)wo.onchange=()=>{flowFilter.who=wo.value;renderFlowList();};
   const so=document.getElementById("filterSort"),mn=document.getElementById("filterMin"),mx=document.getElementById("filterMax");
   if(so)so.onchange=()=>{flowFilter.sort=so.value;renderFlowList();};
   if(mn)mn.oninput=()=>{flowFilter.min=mn.value;renderFlowList();};
   if(mx)mx.oninput=()=>{flowFilter.max=mx.value;renderFlowList();};
   if(cl)cl.onclick=()=>{
-    flowFilter={q:"",type:"",acct:"",sort:"",min:"",max:""};
-    if(q)q.value="";if(ty)ty.value="";if(ac)ac.value="";if(so)so.value="";if(mn)mn.value="";if(mx)mx.value="";
+    flowFilter={q:"",type:"",acct:"",who:"",sort:"",min:"",max:""};
+    if(q)q.value="";if(ty)ty.value="";if(ac)ac.value="";if(wo)wo.value="";if(so)so.value="";if(mn)mn.value="";if(mx)mx.value="";
     renderFlowList();
   };
 })();
@@ -2061,7 +2104,7 @@ function openCalDay(ds){
       const sign=f.type==="收入"?"+":(f.type==="转账"?"⇄":"−");
       const acct=f.type==="转账"?esc(f.account)+"→"+esc(f.to||""):esc(f.account);
       const tm=(f.date||"").length>10?f.date.slice(11,16):"";
-      return '<div class="flow-item"><span class="fdate">'+(tm||esc(f.date))+'</span><span class="facct">'+acct+'</span><span class="ftype">'+f.type+'</span><span class="famt '+cls+'">'+sign+fmt(pnum(f.amount))+'</span><span class="fnote">'+esc(f.note||"")+'</span><button class="mini" data-editflow="'+gi+'">改</button><button class="del" data-delflow="'+gi+'">×</button></div>';
+      return '<div class="flow-item"><span class="fdate">'+(tm||esc(f.date))+'</span><span class="facct">'+acct+'</span><span class="ftype">'+f.type+'</span><span class="famt '+cls+'">'+sign+fmt(pnum(f.amount))+'</span><span class="fnote">'+(f.who?'<span class="fwho">'+esc(f.who)+'</span>':'')+esc(f.note||"")+'</span><button class="mini" data-editflow="'+gi+'">改</button><button class="del" data-delflow="'+gi+'">×</button></div>';
     }).join("");
   }
   const m=document.getElementById("calModal");if(m)m.classList.add("show");
@@ -2219,6 +2262,7 @@ function accOk(){
     const ct=document.getElementById("cfgType");if(ct)ct.value=fd.type||"";
     const cto=document.getElementById("cfgTo");if(cto)cto.value=fd.to||"";
     const cn=document.getElementById("cfgNote");if(cn)cn.value=fd.note||"";
+    const cw=document.getElementById("cfgWho");if(cw)cw.value=fd.who||"";
     m.classList.add("show");
   }
   function closeCfg(){m.classList.remove("show");}
@@ -2232,7 +2276,8 @@ function accOk(){
       account:(document.getElementById("cfgAccount").value||""),
       type:(document.getElementById("cfgType").value||""),
       to:(document.getElementById("cfgTo").value||""),
-      note:(document.getElementById("cfgNote").value||"")
+      note:(document.getElementById("cfgNote").value||""),
+      who:(document.getElementById("cfgWho").value||"")
     };
     save();render();closeCfg();
     toast("已保存记一笔默认配置");
@@ -2256,6 +2301,7 @@ document.getElementById("addFlowBtn").onclick=()=>{
   const type=document.getElementById("flowType").value;
   const amount=document.getElementById("flowAmt").value;
   const note=document.getElementById("flowNote").value;
+  const who=document.getElementById("flowWho").value;
   if(account==="__new__"){openAccModal();return;}
   if(!account){toast("先选一个账户，或用下拉末尾的「+ 新建账户…」");return;}
   if(!pnum(amount)){toast("填个金额");return;}
@@ -2279,6 +2325,7 @@ document.getElementById("addFlowBtn").onclick=()=>{
     const to=type==="转账"?document.getElementById("flowTo").value:"";
     f.date=document.getElementById("flowDate").value||todayStr();
     f.account=account;f.type=type;f.amount=String(pnum(amount));f.note=note;f.to=to;
+    if(who)f.who=who;else delete f.who;
     applyFlow(f);
     editingFlowIndex=null;
     document.getElementById("addFlowBtn").textContent="记一笔";
@@ -2286,6 +2333,7 @@ document.getElementById("addFlowBtn").onclick=()=>{
   }else{
     const to=type==="转账"?document.getElementById("flowTo").value:"";
     const f={date:document.getElementById("flowDate").value||todayStr(),account,type,amount:String(pnum(amount)),note,to};
+    if(who)f.who=who;
     applyFlow(f);data.flows.unshift(f);
   }
   document.getElementById("flowAmt").value="";document.getElementById("flowNote").value="";
@@ -2302,6 +2350,7 @@ function startEditFlow(i){
   document.getElementById("flowDate").value=f.date||todayStr();
   document.getElementById("flowAmt").value=f.amount;
   document.getElementById("flowNote").value=f.note||"";
+  document.getElementById("flowWho").value=f.who||"";
   if(f.type==="转账"){
     const to=document.getElementById("flowTo");
     if(![...to.options].some(o=>o.value===f.to)){
@@ -2318,7 +2367,7 @@ document.getElementById("cancelFlowBtn").onclick=()=>{
   editingFlowIndex=null;
   document.getElementById("addFlowBtn").textContent="记一笔";
   document.getElementById("cancelFlowBtn").style.display="none";
-  document.getElementById("flowAmt").value="";document.getElementById("flowNote").value="";
+  document.getElementById("flowAmt").value="";document.getElementById("flowNote").value="";document.getElementById("flowWho").value="";
 };
 
 

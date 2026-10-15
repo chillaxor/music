@@ -10,6 +10,8 @@ import android.os.Message
 import android.provider.DocumentsContract
 import android.view.Gravity
 import android.view.View
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -245,6 +247,12 @@ class NetAssetActivity : AppCompatActivity() {
             fun openUrl(url: String) { showBrowser(url) }
         }, "Android")
         webView.webChromeClient = object : WebChromeClient() {
+            // JS console.log 打到 logcat（tag: NetJS），便于在设备上排查页面逻辑
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Log.d("NetJS", "${m.message()}  [${m.sourceId()}:${m.lineNumber()}]")
+                return true
+            }
+
             override fun onShowFileChooser(
                 view: WebView?,
                 callback: ValueCallback<Array<Uri>>?,
