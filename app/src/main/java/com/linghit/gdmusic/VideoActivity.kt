@@ -43,6 +43,13 @@ import java.nio.charset.StandardCharsets
  *
  * 标准影视仓接口：source URL 返回 {sites:[{key,name,type,api,...}],parses,lives}，
  * 每个 site 的 api 走 ac=cate / ac=videolist / ac=detail / ac=videolist&wd= 四类请求。
+ *
+ * 搜索分两种模式（页面顶栏「全网 / 本站」切换）：
+ *  - 全网：并发请求所有订阅源里的 CMS 直连站点（type 0/1 且 api 为 http(s)），
+ *    结果按来源分组展示——多仓配置下某个关键词在 A 站没有、B 站有的是常态，
+ *    单站搜索很容易「啥都搜不到」；
+ *  - 本站：只搜当前选中站点。
+ * 秒播 / Spider 类站点（type 3 或 api 非 http）需要解析引擎，两种模式都不覆盖。
  */
 class VideoActivity : AppCompatActivity() {
 
@@ -54,22 +61,44 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var videoBuffering: TextView
 
     private var player: ExoPlayer? = null
-    private val client = OkHttpClient.Builder().build()
+    // 显式跟随重定向：盒子迷.top/摸鱼 会 301 跳到带尾斜杠的地址，
+    // 不跟随的话拿到的是 301 空响应，表现为「接口加载失败」
+    private val client = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
     private val prefs by lazy { getSharedPreferences("video_sources", MODE_PRIVATE) }
 
     companion object {
         private const val KEY = "sources"
         private const val VER_KEY = "sources_ver"
-        /** 默认源版本号：旧版存的失效源（如路径不存在的「盒子迷.top/摸鱼」）需要迁移 */
-        private const val SOURCES_VER = 2
-        private const val UA =
-            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-        // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
-        // 用中文原样保存，JS 的 new URL() 会自动把主机做 IDN/punycode、路径做百分号编码。
-        // 盒子迷.top/摸鱼 这个路径不存在（404 HTML），正确路径是 /禁止贩卖（多仓配置）。
-        private const val DEFAULT_SOURCES =
+        /**
+         * 默认源版本号：
+         *  - v1：单源（已失效路径）
+         *  - v2：盒子迷多仓 /禁止贩卖 + 量子资源（当时误判 /摸鱼 为 404）
+         *  - v3：两个修正——① /摸鱼 是有效订阅（301→带尾斜杠，跟随后 200 JSON，
+         *    108 站动漫向仓）；② 请求 UA 必须是 okhttp 风格，盒子迷对浏览器 UA
+         *    会 302 踢到网站首页（返回 HTML），表现为「接口不是合法 JSON」。
+         */
+        private const val SOURCES_VER = 3
+        /** v2 及以前的默认源：只有用户没动过它时才整体替换，自己加过源的保留 */
+        private val OLD_DEFAULT_SOURCES =
             "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
             "{\"name\":\"量子资源\",\"url\":\"https://cj.lziapi.com/api.php/provide/vod/\"}]"
+        /**
+         * 请求 UA：必须用 okhttp 风格。盒子迷.top/摸鱼 对浏览器 UA（Mozilla/...）
+         * 会 302 跳 /index.html 返回 HTML，只有 okhttp UA 才直接给 JSON。
+         * TVBox/FongMi 等客户端默认也都是 okhttp UA。
+         */
+        private const val UA = "okhttp/3.15.0"
+        // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
+        // 用中文原样保存，JS 的 new URL() 会自动把主机做 IDN/punycode、路径做百分号编码。
+        // 盒子迷两个路径都有效：/禁止贩卖（91 站综合仓）/摸鱼（301→/摸鱼/，108 站动漫仓）。
+        // 注意：只放「多仓订阅地址」，别放单站地址（如 cj.lziapi.com 的 provide/vod
+        // 直连接口）——那不是 {sites:[...]} 格式，当订阅源加载会得到 0 站点。
+        private const val DEFAULT_SOURCES =
+            "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
+            "{\"name\":\"盒子迷动漫仓\",\"url\":\"https://盒子迷.top/摸鱼\"}]"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -215,12 +244,17 @@ class VideoActivity : AppCompatActivity() {
         val saved = prefs.getString(KEY, null)
         val ver = prefs.getInt(VER_KEY, 0)
         // 版本迁移：老安装里存着已失效的默认源（install -r 不清数据，
-        // 不迁移的话用户会一直用旧源报错），升到当前版本时重置为默认源
+        // 不迁移的话用户会一直用旧源报错）。
+        // 只有「没动过默认源」的用户才整体替换；自己加过源的只升版本号、数据保留。
         if (saved.isNullOrBlank() || ver < SOURCES_VER) {
-            prefs.edit().putString(KEY, DEFAULT_SOURCES).putInt(VER_KEY, SOURCES_VER).apply()
-            return DEFAULT_SOURCES
+            val keepUserData = ver >= 2 && saved != null && saved != OLD_DEFAULT_SOURCES
+            if (!keepUserData) {
+                prefs.edit().putString(KEY, DEFAULT_SOURCES).putInt(VER_KEY, SOURCES_VER).apply()
+                return DEFAULT_SOURCES
+            }
+            prefs.edit().putInt(VER_KEY, SOURCES_VER).apply()
         }
-        return saved
+        return saved ?: DEFAULT_SOURCES
     }
 
     /** 安全回传：WebView 销毁后不再 evaluate */
