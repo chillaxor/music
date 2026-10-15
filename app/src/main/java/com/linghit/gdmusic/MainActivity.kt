@@ -239,6 +239,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         findViewById<View>(R.id.openNetAsset).setOnClickListener {
             startActivity(Intent(this, NetAssetActivity::class.java))
         }
+        // 影视仓（TVBox / CatVod 风格视频模块）：自研 WebView 客户端 + 原生 ExoPlayer
+        findViewById<View>(R.id.openVideo).setOnClickListener {
+            startActivity(Intent(this, VideoActivity::class.java))
+        }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 播放列表页（进 App 默认落点）=====

@@ -29,6 +29,9 @@
         <!-- 净资产记账（移植自「净资产快照」WebView 工程）：不锁方向，横竖屏都用 -->
         <activity android:name=".NetAssetActivity" android:label="净资产记账" android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"/>
+        <!-- 影视仓（TVBox / CatVod 风格视频模块）：不锁方向，视频可横屏 -->
+        <activity android:name=".VideoActivity" android:label="影视仓" android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <receiver android:name=".PlayerBroadcastReceiver" android:exported="false"/>
     </application>
