@@ -4,9 +4,13 @@ import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -24,10 +28,14 @@ class DownloadedActivity : AppCompatActivity() {
     private lateinit var emptyText: TextView
     private lateinit var totalText: TextView
     private lateinit var folderTabs: LinearLayout
+    private lateinit var searchBox: EditText
+    private lateinit var searchClear: TextView
     private var allItems = listOf<DownloadedItem>()
     private var currentItems = listOf<DownloadedItem>()
     /** null = 全部文件夹；否则只显示/只播该文件夹（导入时的目录路径） */
     private var selectedFolder: String? = null
+    /** 搜索关键词（歌名/歌手/专辑，大小写不敏感）；空 = 不搜索 */
+    private var keyword = ""
 
     private val importLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -40,6 +48,30 @@ class DownloadedActivity : AppCompatActivity() {
         emptyText = findViewById(R.id.emptyText)
         totalText = findViewById(R.id.totalText)
         folderTabs = findViewById(R.id.folderTabs)
+        searchBox = findViewById(R.id.dlSearch)
+        searchClear = findViewById(R.id.dlSearchClear)
+
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                keyword = s?.toString()?.trim() ?: ""
+                searchClear.visibility = if (keyword.isEmpty()) View.GONE else View.VISIBLE
+                applyFilter()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        // 输入法「搜索」键 = 收起键盘，过滤已实时生效
+        searchBox.setOnEditorActionListener { _, _, _ ->
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                .hideSoftInputFromWindow(searchBox.windowToken, 0)
+            true
+        }
+        searchClear.setOnClickListener {
+            searchBox.setText("")
+            keyword = ""
+            searchClear.visibility = View.GONE
+            applyFilter()
+        }
 
         adapter = DlAdapter(
             onPlay = { playItem(it) },
@@ -122,14 +154,39 @@ class DownloadedActivity : AppCompatActivity() {
     }
 
     private fun applyFilter() {
-        currentItems = if (selectedFolder == null) allItems
-                       else allItems.filter { it.folder == selectedFolder }
+        val kw = keyword.lowercase()
+        currentItems = allItems.filter { item ->
+            (selectedFolder == null || item.folder == selectedFolder) &&
+                (kw.isEmpty() ||
+                 item.song.name.lowercase().contains(kw) ||
+                 item.song.artist.lowercase().contains(kw) ||
+                 item.song.album.lowercase().contains(kw))
+        }
         adapter.submit(currentItems)
         val totalBytes = currentItems.sumOf { it.sizeBytes }
-        totalText.text = "${selectedFolder ?: "全部文件夹"} · 共 ${currentItems.size} 首 · ${formatSize(totalBytes)}"
-        emptyText.visibility = if (allItems.isEmpty()) View.VISIBLE else View.GONE
-        findViewById<RecyclerView>(R.id.downloadedList).visibility =
-            if (allItems.isEmpty()) View.GONE else View.VISIBLE
+        totalText.text = buildString {
+            append(selectedFolder ?: "全部文件夹")
+            append(" · 共 ${currentItems.size} 首")
+            if (kw.isNotEmpty()) append("（${allItems.size} 首中匹配）")
+            append(" · ${formatSize(totalBytes)}")
+        }
+        when {
+            // 有歌但搜不到：给个明确提示，别显示「还没下载」误导用户
+            allItems.isNotEmpty() && currentItems.isEmpty() -> {
+                emptyText.text = "没有找到「$keyword」相关的歌曲\n换个关键词试试"
+                emptyText.visibility = View.VISIBLE
+                findViewById<RecyclerView>(R.id.downloadedList).visibility = View.GONE
+            }
+            allItems.isEmpty() -> {
+                emptyText.text = "还没有下载的歌曲\n在搜索结果里点 ⬇ 离线保存，或点「📁 导入文件夹」把手机里已有的音乐加进来"
+                emptyText.visibility = View.VISIBLE
+                findViewById<RecyclerView>(R.id.downloadedList).visibility = View.GONE
+            }
+            else -> {
+                emptyText.visibility = View.GONE
+                findViewById<RecyclerView>(R.id.downloadedList).visibility = View.VISIBLE
+            }
+        }
     }
 
     /** 点某首：临时播放——只播这一首，现有播放列表原样不动；播完自动回到列表里原来那首 */

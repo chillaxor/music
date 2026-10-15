@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -34,6 +35,11 @@ class LyricActivity : AppCompatActivity() {
     private lateinit var prevBtn: ImageButton
     private lateinit var nextBtn: ImageButton
     private lateinit var playPauseBtn: ImageButton
+    private lateinit var progressBar: SeekBar
+    private lateinit var curTimeText: TextView
+    private lateinit var totalTimeText: TextView
+    private lateinit var volumeBar: SeekBar
+    private lateinit var volumeText: TextView
 
     private lateinit var adapter: LineAdapter
     private val handler = Handler(Looper.getMainLooper())
@@ -42,12 +48,14 @@ class LyricActivity : AppCompatActivity() {
     private var curIdx = -1           // 当前高亮行
     private var autoScroll = true     // 用户手动滑列表后暂停自动滚动 3 秒
     private var reloadTried = false   // 每首歌只自动重试一次，避免无网时反复打接口
+    private var seeking = false       // 手指正按在进度条上：暂停 tick 回写，避免打架
 
     private val tick = object : Runnable {
         override fun run() {
             syncSong()
             syncIndex()
             syncPlayIcon()
+            syncProgress()
             handler.postDelayed(this, 200)
         }
     }
@@ -67,6 +75,11 @@ class LyricActivity : AppCompatActivity() {
         prevBtn = findViewById(R.id.lyricPrev)
         nextBtn = findViewById(R.id.lyricNext)
         playPauseBtn = findViewById(R.id.lyricPlayPause)
+        progressBar = findViewById(R.id.lyricProgress)
+        curTimeText = findViewById(R.id.lyricCurTime)
+        totalTimeText = findViewById(R.id.lyricTotalTime)
+        volumeBar = findViewById(R.id.lyricVolume)
+        volumeText = findViewById(R.id.lyricVolumeText)
 
         adapter = LineAdapter { timeMs ->
             PlayerManager.seekTo(timeMs)
@@ -91,6 +104,35 @@ class LyricActivity : AppCompatActivity() {
         prevBtn.setOnClickListener { PlayerManager.skipPrev() }
         nextBtn.setOnClickListener { PlayerManager.skipNext() }
         playPauseBtn.setOnClickListener { PlayerManager.togglePlayPause() }
+
+        // 进度条：按住时暂停回写，松手跳转；同时歌词高亮跟着新位置走
+        progressBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (fromUser) curTimeText.text = fmtTime(p.toLong())
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) { seeking = true }
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                seeking = false
+                val dur = PlayerManager.getPlayer().duration
+                // duration 未知（TIME_UNSET = Long.MIN_VALUE + 1）时不能除，防 NaN
+                val pos = if (dur > 0 && sb != null) (sb.progress.toLong() * dur / sb.max) else sb?.progress?.toLong() ?: 0L
+                PlayerManager.seekTo(pos)
+                curIdx = -1 // 位置变了，强制重算高亮行与滚动
+            }
+        })
+
+        // 音量条：读写 PlayerManager.savedVolume（持久化，切歌/重启不丢）
+        volumeBar.progress = PlayerManager.savedVolume
+        volumeText.text = PlayerManager.savedVolume.toString()
+        volumeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                PlayerManager.savedVolume = p
+                volumeText.text = p.toString()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
 
         if (PlayerManager.current == null) {
             Toast.makeText(this, "还没有在播放的歌曲", Toast.LENGTH_SHORT).show()
@@ -168,6 +210,28 @@ class LyricActivity : AppCompatActivity() {
         playPauseBtn.setImageResource(
             if (PlayerManager.getPlayer().isPlaying) R.drawable.ic_pause else R.drawable.ic_play
         )
+    }
+
+    /** 进度条 + 时间文本：手指按住进度条时不回写（避免和用户拖动打架） */
+    private fun syncProgress() {
+        if (seeking) return
+        val player = PlayerManager.getPlayer()
+        val pos = player.currentPosition
+        val dur = player.duration
+        val durOk = dur > 0 && dur != Long.MIN_VALUE + 1 // TIME_UNSET 是 Long.MIN_VALUE+1
+        if (durOk) {
+            progressBar.max = dur.toInt().coerceAtLeast(1)
+            progressBar.progress = pos.toInt().coerceIn(0, progressBar.max)
+        } else {
+            progressBar.progress = 0
+        }
+        curTimeText.text = fmtTime(pos)
+        totalTimeText.text = if (durOk) fmtTime(dur) else "--:--"
+    }
+
+    private fun fmtTime(ms: Long): String {
+        val s = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d".format(s / 60, s % 60)
     }
 
     private class LineAdapter(private val onLineClick: (Long) -> Unit) :

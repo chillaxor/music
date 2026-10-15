@@ -133,43 +133,116 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- 播放控制 -->
+    <!-- 播放控制：进度条 + 音量 + 上一首/播放/下一首 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="20dp">
-        <ImageButton
-            android:id="@+id/lyricPrev"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_prev"
-            android:tint="@color/on_surface"
-            android:scaleType="centerInside"
-            android:contentDescription="上一首"/>
-        <ImageButton
-            android:id="@+id/lyricPlayPause"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_marginStart="24dp"
-            android:layout_marginEnd="24dp"
-            android:background="@drawable/bg_circle_primary"
-            android:src="@drawable/ic_play"
-            android:tint="@color/on_primary"
-            android:scaleType="centerInside"/>
-        <ImageButton
-            android:id="@+id/lyricNext"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_next"
-            android:tint="@color/on_surface"
-            android:scaleType="centerInside"
-            android:contentDescription="下一首"/>
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="18dp">
+
+        <!-- 播放进度 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/lyricCurTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0:00"
+                android:textSize="11sp"
+                android:textColor="@color/on_surface_variant"
+                android:minWidth="36dp"/>
+            <SeekBar
+                android:id="@+id/lyricProgress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:progressTint="@color/primary"
+                android:thumbTint="@color/primary"/>
+            <TextView
+                android:id="@+id/lyricTotalTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0:00"
+                android:textSize="11sp"
+                android:textColor="@color/on_surface_variant"
+                android:gravity="end"
+                android:minWidth="36dp"/>
+        </LinearLayout>
+
+        <!-- 音量 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="2dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔊"
+                android:textSize="13sp"/>
+            <SeekBar
+                android:id="@+id/lyricVolume"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:max="100"
+                android:progressTint="@color/primary"
+                android:thumbTint="@color/primary"/>
+            <TextView
+                android:id="@+id/lyricVolumeText"
+                android:layout_width="32dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="100"
+                android:textSize="11sp"
+                android:textColor="@color/on_surface_variant"/>
+        </LinearLayout>
+
+        <!-- 上一首 / 播放 / 下一首 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="6dp">
+            <ImageButton
+                android:id="@+id/lyricPrev"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_prev"
+                android:tint="@color/on_surface"
+                android:scaleType="centerInside"
+                android:contentDescription="上一首"/>
+            <ImageButton
+                android:id="@+id/lyricPlayPause"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="24dp"
+                android:layout_marginEnd="24dp"
+                android:background="@drawable/bg_circle_primary"
+                android:src="@drawable/ic_play"
+                android:tint="@color/on_primary"
+                android:scaleType="centerInside"/>
+            <ImageButton
+                android:id="@+id/lyricNext"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_next"
+                android:tint="@color/on_surface"
+                android:scaleType="centerInside"
+                android:contentDescription="下一首"/>
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

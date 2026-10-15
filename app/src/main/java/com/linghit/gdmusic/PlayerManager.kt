@@ -98,7 +98,18 @@ object PlayerManager {
             .build()
         player = ExoPlayer.Builder(appContext).build()
         player.addListener(playerListener)
+        // 恢复上次音量（歌词页/设置里调的，切歌、重启 App 都不丢）
+        runCatching { player.volume = savedVolume / 100f }
     }
+
+    /** 播放音量 0~100，持久化到 prefs；设置后立即生效 */
+    var savedVolume: Int
+        get() = runCatching { prefs.getInt("volume", 100) }.getOrDefault(100)
+        set(v) {
+            val nv = v.coerceIn(0, 100)
+            runCatching { prefs.edit().putInt("volume", nv).apply() }
+            runCatching { player.volume = nv / 100f }
+        }
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
