@@ -72,8 +72,10 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- 备份位置工具条：把数据写到用户自选的文件夹，卸载 App 也不会被清掉 -->
+    <!-- 备份位置工具条：把数据写到用户自选的文件夹，卸载 App 也不会被清掉。
+         只在「净资产」页显示（由页面 onView 回调控制显隐），不常驻 -->
     <LinearLayout
+        android:id="@+id/backupBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"

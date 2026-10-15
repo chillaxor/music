@@ -33,6 +33,7 @@ class NetAssetActivity : AppCompatActivity() {
     private lateinit var tvUrl: TextView
     private lateinit var tvBackupPath: TextView
     private lateinit var btnBackupDir: Button
+    private lateinit var backupBar: View
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingExport: String? = null
 
@@ -178,6 +179,7 @@ class NetAssetActivity : AppCompatActivity() {
         tvUrl = findViewById(R.id.tvUrl)
         tvBackupPath = findViewById(R.id.tvBackupPath)
         btnBackupDir = findViewById(R.id.btnBackupDir)
+        backupBar = findViewById(R.id.backupBar)
         refreshBackupBar()
         btnBackupDir.setOnClickListener { dirLauncher.launch(null) }
         webView.settings.apply {

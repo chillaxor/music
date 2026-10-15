@@ -307,26 +307,8 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 音源胶囊 -->
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:scrollbars="none"
-                android:layout_marginBottom="8dp">
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/sourceAll" style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content" android:layout_height="40dp"
-                        android:text="全部" android:layout_marginEnd="8dp"/>
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/sourceNetease" style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content" android:layout_height="40dp"
-                        android:text="网易云"/>
-                </LinearLayout>
-            </HorizontalScrollView>
+            <!-- 音源胶囊与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，
+                 搜索即全量结果，无需再选音源/播放全部 -->
 
             <TextView
                 android:id="@+id/statusText"
@@ -336,13 +318,6 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="13sp"
                 android:padding="4dp"/>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/playAllResults"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="▶ 播放全部结果"/>
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/songList"

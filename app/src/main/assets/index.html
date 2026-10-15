@@ -91,6 +91,12 @@
   .flow-filter input,.flow-filter select{padding:7px 9px;font-size:13px}
   .filter-tip{font-size:11.5px;color:var(--sub);margin:-2px 0 10px}
   .filter-tip b{color:var(--accent);font-weight:600}
+  /* 筛选结果收支合计：跟在「导出流水」旁边，搜完流水一眼看到收/支 */
+  .flow-filter-sum{font-size:12.5px;color:var(--sub);margin-right:auto;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .flow-filter-sum b{font-weight:700}
+  .flow-filter-sum .s-out{color:var(--loss)}
+  .flow-filter-sum .s-in{color:var(--profit)}
   /* 净资产历史 */
   .snap-list{display:flex;flex-direction:column;gap:4px}
   .snap-row{display:grid;grid-template-columns:96px 1fr 1fr 1fr auto;gap:8px;align-items:center;
@@ -124,8 +130,8 @@
   .mini{background:none;border:1px solid var(--line);color:var(--sub);border-radius:5px;
     padding:2px 8px;cursor:pointer;font-size:11px}
   /* 整行拖动排序：展示态整卡可拖，无额外把手 */
-  .vcard.dragging{opacity:.4}
-  .vcard.dragover{box-shadow:inset 0 3px 0 var(--accent)}
+  .vcard.dragging,.link-card.dragging{opacity:.4}
+  .vcard.dragover,.link-card.dragover{box-shadow:inset 0 3px 0 var(--accent)}
   /* 仅「编辑」左侧的小手柄可拖，整行不再长按拖动 */
   .vhandle{flex:0 0 auto;align-self:center;cursor:grab;color:var(--sub);
     font-size:15px;line-height:1;padding:6px 7px;user-select:none;
@@ -136,7 +142,10 @@
   .mini:hover{border-color:var(--accent);color:var(--accent)}
   .mini.done{color:var(--accent);border-color:var(--accent)}
   .vlist{display:grid;gap:5px}
-  .vcard{display:grid;grid-template-columns:minmax(0,1fr) 66px 116px 88px auto;align-items:center;gap:10px;
+  /* 6 列固定：手柄 | 名称(弹性) | 类别 | 金额 | 浮亏 | 操作。
+     必须与行内 6 个子元素一一对应（手柄曾漏掉轨道，导致整体右移一列、
+     金额/操作列宽变成 auto，资产与负债两栏对不齐） */
+  .vcard{display:grid;grid-template-columns:auto minmax(0,1fr) 76px 112px 88px auto;align-items:center;gap:10px;
     background:var(--card);border:1px solid var(--line);border-left-width:3px;border-radius:9px;
     padding:6px 10px;box-shadow:none;transition:background .12s ease}
   .vcard:hover{background:color-mix(in srgb,var(--accent) 5%,var(--card))}
@@ -228,13 +237,14 @@
     .sort-tip{display:none}
     /* 注意：touch-action:none 只加在 .vhandle 上，不要加回 .vcard.list，否则整卡无法滚动 */
     .add{margin:4px 0 8px;padding:9px}
-    /* 手机端两列紧凑：名称满宽一行，类别/金额/浮亏/操作排第二行 */
-    .vcard{grid-template-columns:auto 1fr auto auto;gap:4px 8px;padding:7px 10px}
-    .vcard-name{grid-column:1/-1}
-    .vcard-cat{justify-content:flex-start}
-    .vcard-amt{justify-content:flex-end;font-size:14px}
-    .vcard-pl{justify-content:flex-end}
-    .vcard-actions{justify-content:flex-end}
+    /* 手机端两行紧凑：第一行 手柄+名称+操作，第二行 类别/金额/浮亏。
+       列宽全部固定（类别 76、浮亏 64），资产区与负债区的列严格对齐，不再错位 */
+    .vcard{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:7px 10px}
+    .vcard-name{grid-column:2;grid-row:1}
+    .vcard-cat{grid-column:1;grid-row:2;width:76px;justify-content:flex-start}
+    .vcard-amt{grid-column:2;grid-row:2;justify-content:flex-end;font-size:14px}
+    .vcard-pl{grid-column:3;grid-row:2;width:64px;justify-content:flex-end}
+    .vcard-actions{grid-column:3;grid-row:1;justify-content:flex-end}
     .vcard-edit{grid-template-columns:1fr}
     .flow-form{grid-template-columns:1fr}
     .flow-item{font-size:13px}
@@ -541,6 +551,7 @@
       </div>
       <div class="filter-tip" id="filterTip"></div>
       <div class="row-actions">
+        <span class="flow-filter-sum" id="flowFilterSum"></span>
         <button class="btn" id="exportFlowBtn">导出流水</button>
         <button class="btn" id="importFlowBtn">导入流水</button>
         <input type="file" id="importFlowFile" accept="application/json" style="display:none">
@@ -586,11 +597,11 @@
 
   <div class="view" id="viewLinks">
     <div class="section">
-      <div class="cal-head">
-        <span class="cal-title" style="font-size:16px">🔗 链接</span>
+      <!-- 头部只留操作按钮：导入 / 导出 / 新增 同一行（标题和图标去掉，窄屏也不换行） -->
+      <div class="cal-head" style="justify-content:flex-start;gap:6px">
         <button id="importLinksBtn" class="cal-jump" title="批量导入链接（JSON 或每行一个网址）">⬆ 导入</button>
         <button id="exportLinksBtn" class="cal-jump" title="把当前链接导出为 JSON（可当模板改）">⬇ 导出</button>
-        <button id="addLinkBtn" class="cal-jump">+ 新增链接</button>
+        <button id="addLinkBtn" class="cal-jump">+ 新增</button>
       </div>
       <input type="file" id="importLinksFile" accept=".json,.txt,application/json,text/plain" style="display:none">
       <div class="jtoolbar"><input id="linkSearch" placeholder="搜索名称 / 网址…"></div>
@@ -1061,9 +1072,11 @@ function renderFlowList(){
   const list=document.getElementById("flowList");
   if(!list)return;
   const tip=document.getElementById("filterTip");
+  const sumEl=document.getElementById("flowFilterSum");
   if(!data.flows.length){
     list.innerHTML='<div class="empty">还没有流水，记一笔试试</div>';
     if(tip)tip.textContent="";
+    if(sumEl)sumEl.innerHTML="";
     return;
   }
   const rows=[];
@@ -1073,6 +1086,17 @@ function renderFlowList(){
   if(tip){
     const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
     tip.innerHTML=on?("筛选出 <b>"+rows.length+"</b> / "+data.flows.length+" 条"):"共 <b>"+data.flows.length+"</b> 条流水";
+  }
+  // 导出流水旁显示当前结果（含搜索/筛选）的收支合计：红=收入、绿=支出（A股习惯）
+  if(sumEl){
+    let sIn=0,sOut=0;
+    rows.forEach(function(r){
+      const a=pnum(r[0].amount);
+      if(r[0].type==="收入")sIn+=a;else if(r[0].type==="支出")sOut+=a;
+    });
+    sumEl.innerHTML=rows.length
+      ?('支出 <b class="s-out">'+fmt(sOut)+'</b> · 收入 <b class="s-in">'+fmt(sIn)+'</b>')
+      :"";
   }
   if(!rows.length){list.innerHTML='<div class="empty">没有符合条件的流水</div>';return;}
   list.innerHTML=rows.map(([f,i])=>{
@@ -1320,7 +1344,8 @@ document.getElementById("delSnap").onclick=()=>{
 //   锁定 list = 该类型的容器，放置时校验目标卡片的父元素 === 同一个 list。
 // editMode 按 index 存，重排后索引会错位，所以重排时一并清空。
 let dragState=null;
-function listOf(kind){return document.getElementById(kind==="asset"?"assetBody":"liabBody");}
+function listOf(kind){return document.getElementById(kind==="asset"?"assetBody":kind==="link"?"linkList":"liabBody");}
+function cardSel(kind){return kind==="link"?".link-card":".vcard";}
 function reorder(kind,from,to){
   const arr=kind==="asset"?data.assets:data.liabs;
   if(from<0||to<0||from>=arr.length||to>=arr.length||from===to)return false;
@@ -1331,6 +1356,17 @@ function reorder(kind,from,to){
   kind==="asset"?renderAssets():renderLiabs();
   return true;
 }
+// 链接排序：按 id 找下标再挪。搜索/分类筛选后 DOM 下标与数据下标不一致，必须走 id
+function reorderLink(fromId,toId){
+  if(!fromId||!toId||fromId===toId)return false;
+  const arr=data.links;
+  const from=arr.findIndex(function(l){return l&&l.id===fromId;});
+  const to=arr.findIndex(function(l){return l&&l.id===toId;});
+  if(from<0||to<0)return false;
+  const m=arr[from];arr.splice(from,1);arr.splice(to,0,m);
+  save();renderLinks();
+  return true;
+}
 function clearDragMarks(){
   document.querySelectorAll(".dragover").forEach(x=>x.classList.remove("dragover"));
   document.querySelectorAll(".dragging").forEach(x=>x.classList.remove("dragging"));
@@ -1338,7 +1374,7 @@ function clearDragMarks(){
 // 找到指针位置所在的卡片；只在该类型自己的容器内查找，天然禁止跨区
 function cardAt(kind,x,y){
   const list=listOf(kind);
-  const cards=[...list.querySelectorAll(".vcard")];
+  const cards=[...list.querySelectorAll(cardSel(kind))];
   for(const c of cards){
     const r=c.getBoundingClientRect();
     if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return c;
@@ -1353,34 +1389,36 @@ document.addEventListener("dragstart",e=>{
   if(e.target.closest&&e.target.closest("button,input,select,textarea"))return;
   const kind=h.dataset.drag;
   const list=listOf(kind);
-  const card=h.closest(".vcard");
+  const card=h.closest(cardSel(kind));
   if(!list||!card)return;
-  dragState={kind,card,list,mode:"html5"};
+  dragState={kind,card,list,mode:"html5",id:h.dataset.linkid||""};
   card.classList.add("dragging");
   try{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",kind);}catch(_){}
 });
 document.addEventListener("dragover",e=>{
   if(!dragState||dragState.mode!=="html5")return;
   e.preventDefault();
-  const over=e.target.closest?e.target.closest(".vcard"):null;
+  const over=e.target.closest?e.target.closest(cardSel(dragState.kind)):null;
   if(!over||over.parentElement!==dragState.list||over===dragState.card)return;
   clearDragMarks();
   dragState.card.classList.add("dragging");
   over.classList.add("dragover");
 });
 document.addEventListener("dragleave",e=>{
-  const over=e.target.closest?e.target.closest(".vcard"):null;
+  if(!dragState)return;
+  const over=e.target.closest?e.target.closest(cardSel(dragState.kind)):null;
   if(over)over.classList.remove("dragover");
 });
 document.addEventListener("drop",e=>{
   if(!dragState||dragState.mode!=="html5")return;
   e.preventDefault();
   const st=dragState;
-  const over=e.target.closest?e.target.closest(".vcard"):null;
+  const over=e.target.closest?e.target.closest(cardSel(st.kind)):null;
   dragState=null;
   clearDragMarks();
   if(!over||over.parentElement!==st.list||over===st.card)return;
-  reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
+  if(st.kind==="link")reorderLink(st.id,over.dataset.linkid);
+  else reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
 });
 document.addEventListener("dragend",()=>{clearDragMarks();dragState=null;});
 /* ===== 手机：触摸拖放（WebView 对 HTML5 拖拽支持差） ===== */
@@ -1417,7 +1455,8 @@ document.addEventListener("touchend",e=>{
   const over=t?cardAt(st.kind,x,y):null;
   clearDragMarks();
   if(!over||over===st.card)return;
-  reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
+  if(st.kind==="link")reorderLink(st.id,over.dataset.linkid);
+  else reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
 });
 document.addEventListener("touchcancel",()=>{clearDragMarks();dragState=null;});
 function cardIndex(list,card){
@@ -1494,6 +1533,10 @@ function showView(v){
   if(v==="calendar")renderCal();
   if(v==="journal")refreshJournal();
   if(v==="links")renderLinks();
+  // 通知原生当前页：底部备份位置条只在「净资产」页显示，其他页不常驻
+  if(window.Android&&typeof window.Android.onView==="function"){
+    try{window.Android.onView(v);}catch(e){}
+  }
 }
 document.getElementById("navSnapshot").onclick=()=>showView("snapshot");
 document.getElementById("navAdd").onclick=()=>showView("add");
@@ -1554,14 +1597,14 @@ function renderLinks(){
   const box=document.getElementById("linkList");if(!box)return;
   document.querySelectorAll("#linkCats .jtagchip").forEach(function(b){b.classList.toggle("on",(b.dataset.lcat||"")===lkCat);});
   const arr=lkFiltered();
-  if(!arr.length){box.innerHTML='<div class="empty">还没有链接，点上方「+ 新增链接」加一个</div>';return;}
+  if(!arr.length){box.innerHTML='<div class="empty">还没有链接，点上方「+ 新增」加一个</div>';return;}
   box.innerHTML=arr.map(function(l){
     const c=lkMeta(l.cat).c;
+    // 只显示标题（网址默认隐藏，点「编辑」可看可改）；⋮⋮ 手柄拖动排序
     return '<div class="link-card"><div class="lc-main" data-openlink="'+esc(l.id||"")+'">'+
       '<div class="lc-title"><span class="lc-dot" style="background:'+c+'"></span>'+esc(l.title||l.url)+'</div>'+
-      '<div class="lc-url">'+esc(l.url||"")+'</div>'+
       (l.note?'<div class="lc-note">'+esc(l.note)+'</div>':'')+
-      '</div><div class="lc-ops"><button class="mini" data-editlink="'+esc(l.id||"")+'">编辑</button><button class="del" data-dellink="'+esc(l.id||"")+'">×</button></div></div>';
+      '</div><div class="lc-ops"><span class="vhandle" draggable="true" data-drag="link" data-linkid="'+esc(l.id||"")+'" title="拖动排序">⋮⋮</span><button class="mini" data-editlink="'+esc(l.id||"")+'">编辑</button><button class="del" data-dellink="'+esc(l.id||"")+'">×</button></div></div>';
   }).join("");
 }
 // 打开链接：安卓走原生 openUrl 桥，在 app 内嵌浏览器（独立无 JS 桥的 WebView）打开；桌面/回退新标签页

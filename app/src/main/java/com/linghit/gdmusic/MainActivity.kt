@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -24,7 +23,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.exoplayer.ExoPlayer
-import com.google.android.material.button.MaterialButton
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.*
@@ -241,10 +239,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         findViewById<View>(R.id.openNetAsset).setOnClickListener {
             startActivity(Intent(this, NetAssetActivity::class.java))
         }
-        findViewById<Button>(R.id.sourceAll).setOnClickListener { selectedSources=sources; status.text="全部音源"; updateSourceChips() }
-        findViewById<Button>(R.id.sourceNetease).setOnClickListener { choose("netease") }
-        findViewById<Button>(R.id.playAllResults).setOnClickListener { PlayerManager.playAllResults(adapter.snapshot()) }
-        updateSourceChips()
+        // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 播放列表页（进 App 默认落点）=====
         tabPlaylist=findViewById(R.id.tabPlaylist); tabSearch=findViewById(R.id.tabSearch)
@@ -362,28 +357,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val on = DesktopLyric.enabled
         lyricFloatBtn.setColorFilter(
             ContextCompat.getColor(this, if (on) R.color.primary else R.color.star_off))
-    }
-
-    private fun choose(s:String){selectedSources=listOf(s);status.text="当前音源：${nameOf(s)}";updateSourceChips()}
-
-    private val chipDefs = listOf(
-        "all" to R.id.sourceAll, "netease" to R.id.sourceNetease
-    )
-    private fun updateSourceChips(){
-        val white = ContextCompat.getColor(this, R.color.on_primary)
-        val variant = ContextCompat.getColor(this, R.color.on_surface_variant)
-        val primary = ContextCompat.getColor(this, R.color.primary)
-        val surface = ContextCompat.getColor(this, R.color.surface)
-        val outline = ContextCompat.getColor(this, R.color.outline)
-        for ((key, id) in chipDefs){
-            val btn = findViewById<MaterialButton>(id)
-            val on = (key == "all" && selectedSources.size == sources.size) ||
-                    (key != "all" && selectedSources == listOf(key))
-            btn.backgroundTintList = ColorStateList.valueOf(if (on) primary else surface)
-            btn.setTextColor(if (on) white else variant)
-            btn.strokeColor = ColorStateList.valueOf(outline)
-            btn.strokeWidth = if (on) 0 else 1
-        }
     }
 
     /** 去重键必须带 source：否则不同音源的"同名歌"会被合并，只留先查到的 netease */
@@ -586,7 +559,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         return client.newCall(r).execute().use{if(!it.isSuccessful)throw Exception("HTTP ${it.code}");it.body?.string()?:""}
     }
     private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
-    private fun nameOf(s:String)=sourceLabel(s)
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
         handlePlayIntent()
