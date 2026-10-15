@@ -137,7 +137,7 @@
       <div id="srcList"></div>
       <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px">
         <input id="newName" class="field" placeholder="名称，如：摸鱼">
-        <input id="newUrl" class="field" placeholder="接口地址，如：https://盒子迷.top/摸鱼">
+        <input id="newUrl" class="field" placeholder="接口地址，如：https://盒子迷.top/禁止贩卖">
         <div class="addbar">
           <button class="btn" style="flex:1" onclick="addSrc()">添加接口</button>
           <button class="btn" style="background:var(--card2);color:var(--txt)" onclick="closeSrcDrawer()">完成</button>
@@ -156,18 +156,28 @@
 /* ============ 基础设施 ============ */
 var STATE={sources:[],cur:0,site:null,classes:[],t:0,pg:1,wd:"",loading:false,detail:null};
 var CB={}; var CBID=1;
-window.__videoCb=function(id,ok,b64){
+window.__videoCb=function(id,ok,b64,code){
   var f=CB[id]; if(!f)return; delete CB[id];
   var txt=""; if(ok&&b64) txt=decodeB64(b64);
-  f(ok,txt);
+  f(ok,txt,code|0);
 };
-function decodeB64(s){try{return decodeURIComponent(escape(atob(s)));}catch(e){try{return atob(s);}catch(e2){return "";}}}
+function decodeB64(s){
+  var t;
+  try{t=decodeURIComponent(escape(atob(s)));}catch(e){try{t=atob(s);}catch(e2){t="";}}
+  // 部分站点返回带 UTF-8 BOM 的 JSON，JSON.parse 会直接抛错，先剥掉
+  return t.replace(/^﻿/,'');
+}
 function get(url){return new Promise(function(res){
-  var id=CBID++; CB[id]=function(ok,txt){res({ok:ok,text:txt});};
+  var id=CBID++; CB[id]=function(ok,txt,code){res({ok:ok,text:txt,code:code|0});};
   if(window.Android&&Android.httpGet) Android.httpGet(url,id);
-  else res({ok:false,text:""});
+  else res({ok:false,text:"",code:0});
 });}
-function norm(u){try{var p=new URL(u);p.pathname=p.pathname.split('/').map(function(s){return encodeURIComponent(s);}).join('/');return p.toString();}catch(e){return u;}}
+function norm(u){
+  // new URL() 会同时做两件事：中文主机转 punycode、中文路径转百分号编码。
+  // 绝不能再 encodeURIComponent 一遍——% 会变成 %25 造成双重编码，
+  // 服务器收到不存在的路径返回 404 HTML，表现为「接口不是合法 JSON」。
+  try{return new URL(u).toString();}catch(e){return u;}
+}
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show');},1600);}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function $(id){return document.getElementById(id);}
@@ -176,7 +186,7 @@ function $(id){return document.getElementById(id);}
 function loadSources(){
   var raw = (window.Android&&Android.getSources)?Android.getSources():null;
   try{STATE.sources=JSON.parse(raw)||[];}catch(e){STATE.sources=[];}
-  if(!STATE.sources.length) STATE.sources=[{name:"摸鱼",url:"https://xn--6qqs3a.top/%E6%91%A1%E9%B1%BC"}];
+  if(!STATE.sources.length) STATE.sources=[{name:"盒子迷多仓",url:"https://盒子迷.top/禁止贩卖"}];
 }
 function renderSrcDrawer(){
   var box=$('srcList'); box.innerHTML="";
@@ -208,8 +218,8 @@ async function selectSource(){
   setState('正在加载接口…');
   $('chips').innerHTML=''; $('grid').innerHTML='';
   var r=await get(norm(s.url));
-  if(!r.ok){setState('接口加载失败，请检查地址或网络');return;}
-  var cfg; try{cfg=JSON.parse(r.text);}catch(e){setState('接口不是合法 JSON');return;}
+  if(!r.ok){setState('接口加载失败（HTTP '+r.code+'），请检查地址或网络');return;}
+  var cfg; try{cfg=JSON.parse(r.text);}catch(e){setState('接口返回的不是 JSON（HTTP '+r.code+'）：'+esc(r.text.slice(0,60)));return;}
   var sites=(cfg.sites||[]).filter(function(x){return x&&x.api;});
   if(!sites.length){setState('该接口没有可用站点');return;}
   // 多个站点 = 多个入口：用 chips 切换站点（同时也支持多接口源）
@@ -322,7 +332,10 @@ async function openDetail(id){
   setState('');
 }
 function parsePlay(v){
-  var froms=(v.vod_play_from||'').split(',');
+  // MacCMS 标准：vod_play_from 与 vod_play_url 都用 $$$ 分隔线路；
+  // 少数旧站用逗号，做个兼容回退
+  var fromRaw=v.vod_play_from||'';
+  var froms=fromRaw.indexOf('$$$')>=0?fromRaw.split('$$$'):fromRaw.split(',');
   var segs=(v.vod_play_url||'').split('$$$');
   var res=[];
   for(var i=0;i<segs.length;i++){

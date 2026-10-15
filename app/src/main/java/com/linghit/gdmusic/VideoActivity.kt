@@ -58,10 +58,12 @@ class VideoActivity : AppCompatActivity() {
         private const val KEY = "sources"
         private const val UA =
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-        // 首次进入给一个默认影视仓接口，用户可在应用内增删（多个入口）。
+        // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
         // 用中文原样保存，JS 的 new URL() 会自动把主机做 IDN/punycode、路径做百分号编码。
+        // 盒子迷.top/摸鱼 这个路径不存在（404 HTML），正确路径是 /禁止贩卖（多仓配置）。
         private const val DEFAULT_SOURCES =
-            "[{\"name\":\"摸鱼\",\"url\":\"https://盒子迷.top/摸鱼\"}]"
+            "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
+            "{\"name\":\"量子资源\",\"url\":\"https://cj.lziapi.com/api.php/provide/vod/\"}]"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,7 +115,7 @@ class VideoActivity : AppCompatActivity() {
         fun httpGet(url: String, cbId: Int) {
             if (url.isBlank()) {
                 runOnUiThread {
-                    webView.evaluateJavascript("window.__videoCb($cbId,false,'')", null)
+                    webView.evaluateJavascript("window.__videoCb($cbId,false,'',0)", null)
                 }
                 return
             }
@@ -122,17 +124,22 @@ class VideoActivity : AppCompatActivity() {
             client.newCall(req).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     runOnUiThread {
-                        safeEval("window.__videoCb($cbId,false,'')")
+                        safeEval("window.__videoCb($cbId,false,'',0)")
                     }
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    val body = runCatching { response.body?.string() ?: "" }.getOrDefault("")
+                    val code = response.code
+                    // 非 2xx 一律按失败处理：404/502 等返回的是 HTML 错误页，
+                    // 若放过去会让 JS 的 JSON.parse 报「不是合法 JSON」，掩盖真实原因
+                    val body = if (response.isSuccessful) {
+                        runCatching { response.body?.string() ?: "" }.getOrDefault("")
+                    } else ""
                     val b64 = Base64.encodeToString(
                         body.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP
                     )
                     runOnUiThread {
-                        safeEval("window.__videoCb($cbId,true,'$b64')")
+                        safeEval("window.__videoCb($cbId,${response.isSuccessful},'$b64',$code)")
                     }
                 }
             })
