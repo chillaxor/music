@@ -15,7 +15,8 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- app 内嵌浏览器覆盖层：独立 WebView，不挂任何 JS 桥，避免外站接触账本数据 -->
+        <!-- app 内嵌浏览器覆盖层：多标签，每个标签一个独立 WebView，
+             不挂任何 JS 桥，避免外站接触账本数据 -->
         <LinearLayout
             android:id="@+id/browserPanel"
             android:layout_width="match_parent"
@@ -64,45 +65,29 @@
                     android:background="@android:color/transparent" />
             </LinearLayout>
 
-            <WebView
-                android:id="@+id/browserView"
+            <!-- 标签条：切换 / 关闭标签页；没有标签时隐藏 -->
+            <HorizontalScrollView
+                android:id="@+id/tabStrip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:background="?attr/colorSurfaceVariant"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/tabChips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="4dp" />
+            </HorizontalScrollView>
+
+            <!-- 标签页容器：当前标签的 WebView 挂这里 -->
+            <FrameLayout
+                android:id="@+id/browserContainer"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1" />
         </LinearLayout>
     </FrameLayout>
-
-    <!-- 备份位置工具条：把数据写到用户自选的文件夹，卸载 App 也不会被清掉。
-         只在「净资产」页显示（由页面 onView 回调控制显隐），不常驻 -->
-    <LinearLayout
-        android:id="@+id/backupBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="?attr/colorSurface"
-        android:elevation="4dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp">
-
-        <TextView
-            android:id="@+id/tvBackupPath"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="备份位置：未设置（数据仅存 App 内，卸载会丢失）"
-            android:textSize="12sp"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:maxLines="2"
-            android:ellipsize="end" />
-
-        <Button
-            android:id="@+id/btnBackupDir"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="设置位置"
-            android:textSize="13sp" />
-    </LinearLayout>
 </LinearLayout>

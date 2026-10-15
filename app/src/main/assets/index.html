@@ -91,12 +91,10 @@
   .flow-filter input,.flow-filter select{padding:7px 9px;font-size:13px}
   .filter-tip{font-size:11.5px;color:var(--sub);margin:-2px 0 10px}
   .filter-tip b{color:var(--accent);font-weight:600}
-  /* 筛选结果收支合计：跟在「导出流水」旁边，搜完流水一眼看到收/支 */
-  .flow-filter-sum{font-size:12.5px;color:var(--sub);margin-right:auto;
-    font-variant-numeric:tabular-nums;white-space:nowrap}
-  .flow-filter-sum b{font-weight:700}
-  .flow-filter-sum .s-out{color:var(--loss)}
-  .flow-filter-sum .s-in{color:var(--profit)}
+  /* 净资产页底部：备份位置（在页面里设置，不悬浮） */
+  .backup-row{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;
+    border:1px dashed var(--line);border-radius:10px}
+  .backup-row .bk-txt{flex:1;min-width:0;font-size:12px;color:var(--sub);word-break:break-all;line-height:1.5}
   /* 净资产历史 */
   .snap-list{display:flex;flex-direction:column;gap:4px}
   .snap-row{display:grid;grid-template-columns:96px 1fr 1fr 1fr auto;gap:8px;align-items:center;
@@ -483,6 +481,10 @@
         <button class="btn" id="resetBtn">清空重来</button>
         <input type="file" id="importFile" accept="application/json" style="display:none">
       </div>
+      <div class="backup-row">
+        <span class="bk-txt" id="backupPathText">备份位置：未设置（数据仅存 App 内，卸载会丢失）</span>
+        <button class="btn" id="backupDirBtn">设置位置</button>
+      </div>
   </div><!-- /viewSnapshot -->
 
   <div class="view" id="viewAdd">
@@ -551,7 +553,6 @@
       </div>
       <div class="filter-tip" id="filterTip"></div>
       <div class="row-actions">
-        <span class="flow-filter-sum" id="flowFilterSum"></span>
         <button class="btn" id="exportFlowBtn">导出流水</button>
         <button class="btn" id="importFlowBtn">导入流水</button>
         <input type="file" id="importFlowFile" accept="application/json" style="display:none">
@@ -856,6 +857,23 @@ function backupHint(){
   }catch(e){}
   return "";
 }
+// 净资产页底部「备份位置」行：只在净资产页里出现，设置后数据实时写到该目录、卸载不丢
+function refreshBackupRow(){
+  const t=document.getElementById("backupPathText"),b=document.getElementById("backupDirBtn");
+  if(!t||!b)return;
+  let p="";
+  try{
+    if(window.Android&&typeof window.Android.backupPath==="function")p=window.Android.backupPath()||"";
+  }catch(e){}
+  if(p){t.textContent="备份位置："+p;b.textContent="更换位置";}
+  else{t.textContent="备份位置：未设置（数据仅存 App 内，卸载会丢失）";b.textContent="设置位置";}
+}
+document.getElementById("backupDirBtn").onclick=function(){
+  if(window.Android&&typeof window.Android.pickBackupDir==="function"){
+    try{window.Android.pickBackupDir();return;}catch(e){}
+  }
+  toast("当前环境不支持选择目录");
+};
 // 金额显示：保留最多两位小数（整数则不显示小数位），用千分位分隔。
 // 注意：不能用 Math.round，否则 12.50 会被抹成 13。
 const fmt=n=>{
@@ -1072,11 +1090,10 @@ function renderFlowList(){
   const list=document.getElementById("flowList");
   if(!list)return;
   const tip=document.getElementById("filterTip");
-  const sumEl=document.getElementById("flowFilterSum");
   if(!data.flows.length){
     list.innerHTML='<div class="empty">还没有流水，记一笔试试</div>';
     if(tip)tip.textContent="";
-    if(sumEl)sumEl.innerHTML="";
+    renderFlowSummary();
     return;
   }
   const rows=[];
@@ -1087,17 +1104,8 @@ function renderFlowList(){
     const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
     tip.innerHTML=on?("筛选出 <b>"+rows.length+"</b> / "+data.flows.length+" 条"):"共 <b>"+data.flows.length+"</b> 条流水";
   }
-  // 导出流水旁显示当前结果（含搜索/筛选）的收支合计：红=收入、绿=支出（A股习惯）
-  if(sumEl){
-    let sIn=0,sOut=0;
-    rows.forEach(function(r){
-      const a=pnum(r[0].amount);
-      if(r[0].type==="收入")sIn+=a;else if(r[0].type==="支出")sOut+=a;
-    });
-    sumEl.innerHTML=rows.length
-      ?('支出 <b class="s-out">'+fmt(sOut)+'</b> · 收入 <b class="s-in">'+fmt(sIn)+'</b>')
-      :"";
-  }
+  // 顶部收支卡片同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary）
+  renderFlowSummary();
   if(!rows.length){list.innerHTML='<div class="empty">没有符合条件的流水</div>';return;}
   list.innerHTML=rows.map(([f,i])=>{
     const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
@@ -1159,10 +1167,13 @@ function renderRangePick(){
 }
 function renderFlowSummary(){
   const rv=getRangeValue();
-  let lbl=flowRange==="year"?rv+" 年支出":rv+" 支出";
+  // 有搜索/筛选（排序不算）时，顶部收支改统计「当前筛选结果」——搜什么就统计什么；
+  // 没有任何筛选时，维持原来的日/月/年周期统计
+  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.min!==""||flowFilter.max!=="");
   let spend=0,income=0;
   data.flows.forEach(f=>{
-    if(!f.date||!f.date.startsWith(rv))return;
+    if(filtering){ if(!flowPass(f))return; }
+    else if(!f.date||!f.date.startsWith(rv))return;
     const amt=pnum(f.amount);
     if(f.type==="支出")spend+=amt;
     else if(f.type==="收入")income+=amt;
@@ -1171,8 +1182,8 @@ function renderFlowSummary(){
   const ls=document.getElementById("lblSpend"),li=document.getElementById("lblIncome");
   if(e)e.textContent=fmt(spend);
   if(i)i.textContent=fmt(income);
-  if(ls)ls.textContent=lbl;
-  if(li)li.textContent=lbl.replace("支出","收入");
+  if(ls)ls.textContent=filtering?"筛选结果支出":(flowRange==="year"?rv+" 年支出":rv+" 支出");
+  if(li)li.textContent=filtering?"筛选结果收入":(flowRange==="year"?rv+" 年收入":rv+" 收入");
 }
 function renderFlowBreak(){
   const box=document.getElementById("flowBreak");
@@ -1533,10 +1544,6 @@ function showView(v){
   if(v==="calendar")renderCal();
   if(v==="journal")refreshJournal();
   if(v==="links")renderLinks();
-  // 通知原生当前页：底部备份位置条只在「净资产」页显示，其他页不常驻
-  if(window.Android&&typeof window.Android.onView==="function"){
-    try{window.Android.onView(v);}catch(e){}
-  }
 }
 document.getElementById("navSnapshot").onclick=()=>showView("snapshot");
 document.getElementById("navAdd").onclick=()=>showView("add");
@@ -2318,6 +2325,7 @@ document.getElementById("cancelFlowBtn").onclick=()=>{
 load();
 save();render();
 renderRangePick();
+refreshBackupRow();
 const _fd=document.getElementById("flowDate");if(_fd)_fd.value=todayStr();
 </script>
 

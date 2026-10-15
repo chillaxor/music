@@ -2,9 +2,13 @@ package com.linghit.gdmusic
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.provider.DocumentsContract
+import android.view.Gravity
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
@@ -13,9 +17,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -28,16 +35,25 @@ import java.nio.charset.StandardCharsets
 class NetAssetActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private lateinit var browserView: WebView
     private lateinit var browserPanel: View
+    private lateinit var browserContainer: FrameLayout
+    private lateinit var tabStrip: View
+    private lateinit var tabChips: LinearLayout
     private lateinit var btnBack: Button
     private lateinit var btnClose: Button
     private lateinit var tvUrl: TextView
-    private lateinit var tvBackupPath: TextView
-    private lateinit var btnBackupDir: Button
-    private lateinit var backupBar: View
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingExport: String? = null
+
+    // —— 内嵌浏览器多标签 ——
+    /** 一个标签页 = 一个独立 WebView（不挂账本 JS 桥） */
+    private class BrowserTab(val webView: WebView) {
+        var title: String = ""
+        val displayTitle: String get() = if (title.isNotBlank()) title else "新标签页"
+    }
+
+    private val tabs = mutableListOf<BrowserTab>()
+    private var currentTab: BrowserTab? = null
 
     // 原生持久化存储：localStorage 在 file:// 下不可靠（退出进程即丢），
     // 这里用 SharedPreferences 落盘，作为 App 端唯一可信数据源。
@@ -74,7 +90,6 @@ class NetAssetActivity : AppCompatActivity() {
             )
         } catch (e: Exception) { e.printStackTrace() }
         backupDirUri = uri
-        refreshBackupBar()
         // 立刻把当前数据写一份到新位置，并重载页面让账本读到该目录里的旧数据（重装恢复场景）
         val cur = store.getString("payload", "") ?: ""
         if (cur.isNotEmpty()) writeCustomBackup(cur)
@@ -135,18 +150,6 @@ class NetAssetActivity : AppCompatActivity() {
         return if (parts.size == 2 && parts[0] == "primary") "/sdcard/${parts[1]}" else docId
     }
 
-    /** 刷新底部工具条：显示当前备份位置与按钮文字 */
-    private fun refreshBackupBar() {
-        val uri = backupDirUri
-        if (uri == null) {
-            tvBackupPath.text = "备份位置：未设置（数据仅存 App 内，卸载会丢失）"
-            btnBackupDir.text = "设置位置"
-        } else {
-            tvBackupPath.text = "备份位置：${treeUriToReadable(uri)}"
-            btnBackupDir.text = "更换位置"
-        }
-    }
-
     // 导出：让页面把 JSON 交给原生，用系统选择器存成文件
     private val exportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -175,15 +178,12 @@ class NetAssetActivity : AppCompatActivity() {
         setContentView(R.layout.activity_net_asset)
         webView = findViewById(R.id.webView)
         browserPanel = findViewById(R.id.browserPanel)
-        browserView = findViewById(R.id.browserView)
+        browserContainer = findViewById(R.id.browserContainer)
+        tabStrip = findViewById(R.id.tabStrip)
+        tabChips = findViewById(R.id.tabChips)
         btnBack = findViewById(R.id.btnBack)
         btnClose = findViewById(R.id.btnClose)
         tvUrl = findViewById(R.id.tvUrl)
-        tvBackupPath = findViewById(R.id.tvBackupPath)
-        btnBackupDir = findViewById(R.id.btnBackupDir)
-        backupBar = findViewById(R.id.backupBar)
-        refreshBackupBar()
-        btnBackupDir.setOnClickListener { dirLauncher.launch(null) }
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true   // localStorage 持久化（跨更新保留数据）
@@ -198,7 +198,7 @@ class NetAssetActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
-                return handleExternalUrl(url)
+                return handleExternalUrl(view ?: return false, url)
             }
         }
         // JS 桥：页面里 window.Android.exportData(json) 会走到这里
@@ -231,12 +231,16 @@ class NetAssetActivity : AppCompatActivity() {
                 if (f.isNotEmpty()) store.edit().putString("payload", f).apply()
                 return f
             }
-            // 告诉页面备份位置，页面上可以显示给用户
+            // 告诉页面备份位置；没设置过返回空串（页面会提示「未设置」）
             @JavascriptInterface
-            fun backupPath(): String =
-                backupDirUri?.let { treeUriToReadable(it) } ?: (backupFile?.absolutePath ?: "")
-            // 打开网页链接：在 app 内嵌浏览器（browserView 覆盖层）里打开，不跳出 App。
-            // browserView 刻意不挂账本 JS 桥，外部站点无法接触 data。
+            fun backupPath(): String = backupDirUri?.let { treeUriToReadable(it) } ?: ""
+            // 页面底部「备份位置」行的设置/更换按钮：弹出系统目录选择器
+            @JavascriptInterface
+            fun pickBackupDir() {
+                runOnUiThread { dirLauncher.launch(null) }
+            }
+            // 打开网页链接：在 app 内嵌浏览器（browserPanel 覆盖层）里打开，不跳出 App。
+            // 浏览器标签不挂账本 JS 桥，外部站点无法接触 data。
             @JavascriptInterface
             fun openUrl(url: String) { showBrowser(url) }
         }, "Android")
@@ -260,43 +264,196 @@ class NetAssetActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
 
         // —— app 内嵌浏览器（链接页用）——
-        // 独立 WebView，只开 JS/DOM，不挂任何 JS 桥；覆盖在记账 WebView 之上，
-        // 关闭后记账页原样保留（不重载、不丢状态）。
-        browserView.settings.apply {
+        // 多标签：每个标签一个独立 WebView，只开 JS/DOM，不挂任何 JS 桥；
+        // 覆盖在记账 WebView 之上，关闭后记账页原样保留（不重载、不丢状态）。
+        btnBack.setOnClickListener {
+            val t = currentTab
+            if (t != null && t.webView.canGoBack()) t.webView.goBack() else closeCurrentTab()
+        }
+        btnClose.setOnClickListener { closeAllTabs() }
+    }
+
+    // ==================== 内嵌浏览器：多标签 ====================
+
+    /** 显示内嵌浏览器并加载 url。默认就在当前标签页加载（不新开）；
+     *  还没有任何标签（首次打开）时才建第一个标签。 */
+    private fun showBrowser(url: String) {
+        runOnUiThread {
+            browserPanel.visibility = View.VISIBLE
+            if (tabs.isEmpty()) createTab(url)
+            else currentTab?.webView?.loadUrl(url)
+        }
+    }
+
+    /** 新建标签并切过去；url 为空时建空白页（供网页 window.open 使用） */
+    private fun createTab(url: String? = null): BrowserTab {
+        val wv = WebView(this)
+        wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
+            // 允许网页再开新窗口（window.open / target=_blank）→ 走 onCreateWindow 另开标签
+            setSupportMultipleWindows(true)
         }
-        browserView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(
-                view: WebView?,
-                request: WebResourceRequest?
-            ): Boolean {
-                val url = request?.url?.toString() ?: return false
-                return handleExternalUrl(url)
-            }
+        wv.webViewClient = browserWebViewClient()
+        wv.webChromeClient = browserChromeClient()
+        val tab = BrowserTab(wv)
+        tabs.add(tab)
+        browserContainer.addView(
+            wv,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        switchTab(tab)
+        if (!url.isNullOrBlank()) wv.loadUrl(url)
+        return tab
+    }
 
-            override fun onPageFinished(view: WebView?, url: String?) {
+    private fun browserWebViewClient() = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(
+            view: WebView?,
+            request: WebResourceRequest?
+        ): Boolean {
+            val url = request?.url?.toString() ?: return false
+            return handleExternalUrl(view ?: return false, url)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            val tab = tabs.find { it.webView === view } ?: return
+            tab.title = runCatching { view?.title ?: "" }.getOrDefault("").orEmpty()
+            if (currentTab === tab) {
                 if (url != null) tvUrl.text = url
+                updateTabStrip()
             }
         }
-        btnBack.setOnClickListener { if (browserView.canGoBack()) browserView.goBack() else hideBrowser() }
-        btnClose.setOnClickListener { hideBrowser() }
     }
 
-    // 显示内嵌浏览器并加载 url（runOnUiThread 兼容来自 JS 桥的调用线程）
-    private fun showBrowser(url: String) {
-        runOnUiThread {
-            browserPanel.visibility = View.VISIBLE
-            tvUrl.text = url
-            browserView.loadUrl(url)
+    private fun browserChromeClient() = object : WebChromeClient() {
+        // 网页 window.open / target=_blank（如播放按钮跳转到别的页面）：
+        // 另开一个标签页装它，不影响当前页；默认跳转仍走当前标签
+        override fun onCreateWindow(
+            view: WebView,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: Message
+        ): Boolean {
+            val tab = createTab()
+            val transport = resultMsg.obj as? WebView.WebViewTransport
+            transport?.webView = tab.webView
+            resultMsg.sendToTarget()
+            return true
+        }
+
+        // 网页自己 window.close()：关掉对应标签
+        override fun onCloseWindow(window: WebView) {
+            tabs.find { it.webView === window }?.let { closeTab(it) }
         }
     }
 
-    private fun hideBrowser() {
-        runOnUiThread { browserPanel.visibility = View.GONE }
+    private fun switchTab(tab: BrowserTab) {
+        currentTab = tab
+        browserContainer.removeAllViews()
+        browserContainer.addView(tab.webView)
+        browserPanel.visibility = View.VISIBLE
+        tvUrl.text = tab.webView.url ?: ""
+        updateTabStrip()
+    }
+
+    private fun closeTab(tab: BrowserTab) {
+        val idx = tabs.indexOf(tab)
+        if (idx < 0) return
+        tabs.removeAt(idx)
+        browserContainer.removeView(tab.webView)
+        tab.webView.destroy()
+        if (tabs.isEmpty()) {
+            currentTab = null
+            browserPanel.visibility = View.GONE
+            updateTabStrip()
+            return
+        }
+        if (currentTab === tab) switchTab(tabs[minOf(idx, tabs.size - 1)])
+        else updateTabStrip()
+    }
+
+    private fun closeCurrentTab() {
+        currentTab?.let { closeTab(it) }
+    }
+
+    private fun closeAllTabs() {
+        tabs.toList().forEach { t ->
+            browserContainer.removeView(t.webView)
+            t.webView.destroy()
+        }
+        tabs.clear()
+        currentTab = null
+        browserPanel.visibility = View.GONE
+        updateTabStrip()
+    }
+
+    /** 标签条：标题 + ✕，当前标签高亮 */
+    private fun updateTabStrip() {
+        tabChips.removeAllViews()
+        tabStrip.visibility = if (tabs.isEmpty()) View.GONE else View.VISIBLE
+        val density = resources.displayMetrics.density
+        tabs.forEach { tab ->
+            val isCur = tab === currentTab
+            val chip = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val hp = (14 * density).toInt()
+                val vp = (6 * density).toInt()
+                setPadding(hp, vp, hp, vp)
+                background = GradientDrawable().apply {
+                    cornerRadius = 16 * density
+                    if (isCur) {
+                        setColor(ContextCompat.getColor(this@NetAssetActivity, R.color.primary))
+                    } else {
+                        setColor(Color.TRANSPARENT)
+                        setStroke(1, ContextCompat.getColor(this@NetAssetActivity, R.color.outline))
+                    }
+                }
+                setOnClickListener { switchTab(tab) }
+            }
+            val title = TextView(this).apply {
+                text = tab.displayTitle.take(12)
+                textSize = 12f
+                maxLines = 1
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@NetAssetActivity,
+                        if (isCur) R.color.on_primary else R.color.on_surface_variant
+                    )
+                )
+            }
+            val close = TextView(this).apply {
+                text = "✕"
+                textSize = 12f
+                setPadding((8 * density).toInt(), 0, 0, 0)
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@NetAssetActivity,
+                        if (isCur) R.color.on_primary else R.color.on_surface_variant
+                    )
+                )
+                setOnClickListener { closeTab(tab) }
+            }
+            chip.addView(title)
+            chip.addView(close)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = (4 * density).toInt()
+                marginEnd = (4 * density).toInt()
+                topMargin = (2 * density).toInt()
+                bottomMargin = (2 * density).toInt()
+            }
+            tabChips.addView(chip, lp)
+        }
     }
 
     private fun browserVisible() = browserPanel.visibility == View.VISIBLE
@@ -312,7 +469,7 @@ class NetAssetActivity : AppCompatActivity() {
      *  - tel: / mailto: / sms: 等 → 交给系统应用；
      *  - 全都失败（比如模拟器没装百度 App）→ 静默拦截，停在当前页不弹错误页。
      */
-    private fun handleExternalUrl(url: String): Boolean {
+    private fun handleExternalUrl(view: WebView, url: String): Boolean {
         if (url.startsWith("http://") || url.startsWith("https://") ||
             url.startsWith("file://") || url.startsWith("about:")
         ) return false
@@ -332,7 +489,7 @@ class NetAssetActivity : AppCompatActivity() {
                     Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                         .getStringExtra("android.intent.extra.BROWSER_FALLBACK_URL")
                 } catch (_: Exception) { null }
-                if (!fallback.isNullOrEmpty()) { browserView.loadUrl(fallback); true }
+                if (!fallback.isNullOrEmpty()) { view.loadUrl(fallback); true }
                 else true
             } else true
         } catch (e: Exception) {
@@ -351,11 +508,23 @@ class NetAssetActivity : AppCompatActivity() {
 
     @Deprecated("用 OnBackPressedDispatcher 更规范，但这里逻辑简单，保持兼容写法")
     override fun onBackPressed() {
-        // 先处理内嵌浏览器：能后退就后退，不能后退就关掉浏览器回到记账页
-        if (browserVisible()) {
-            if (browserView.canGoBack()) browserView.goBack() else hideBrowser()
+        // 先处理内嵌浏览器：当前标签能后退就后退，不能后退就关掉当前标签；
+        // 最后一个标签关掉即回到记账页
+        val t = currentTab
+        if (browserVisible() && t != null) {
+            if (t.webView.canGoBack()) t.webView.goBack() else closeTab(t)
             return
         }
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tabs.toList().forEach { t ->
+            browserContainer.removeView(t.webView)
+            runCatching { t.webView.destroy() }
+        }
+        tabs.clear()
+        currentTab = null
     }
 }
