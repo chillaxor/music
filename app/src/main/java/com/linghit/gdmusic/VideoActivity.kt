@@ -5,12 +5,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.util.Log
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -56,6 +59,9 @@ class VideoActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY = "sources"
+        private const val VER_KEY = "sources_ver"
+        /** 默认源版本号：旧版存的失效源（如路径不存在的「盒子迷.top/摸鱼」）需要迁移 */
+        private const val SOURCES_VER = 2
         private const val UA =
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
         // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
@@ -104,6 +110,13 @@ class VideoActivity : AppCompatActivity() {
                 return true
             }
         }
+        // JS console.log 打到 logcat（tag: VidJS），便于在设备上排查页面逻辑
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Log.d("VidJS", "${m.message()}  [${m.sourceId()}:${m.lineNumber()}]")
+                return true
+            }
+        }
         webView.addJavascriptInterface(VideoBridge(), "Android")
         webView.loadUrl("file:///android_asset/video.html")
     }
@@ -121,8 +134,10 @@ class VideoActivity : AppCompatActivity() {
             }
             val req = Request.Builder().url(url).header("User-Agent", UA)
                 .header("Accept", "*/*").build()
+            Log.d("VidHttp", "GET $url")
             client.newCall(req).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
+                    Log.w("VidHttp", "FAIL $url -> ${e.javaClass.simpleName}: ${e.message}")
                     runOnUiThread {
                         safeEval("window.__videoCb($cbId,false,'',0)")
                     }
@@ -135,6 +150,11 @@ class VideoActivity : AppCompatActivity() {
                     val body = if (response.isSuccessful) {
                         runCatching { response.body?.string() ?: "" }.getOrDefault("")
                     } else ""
+                    Log.d(
+                        "VidHttp",
+                        "OK $url -> code=$code type=${response.header("Content-Type")} " +
+                            "len=${body.length} head=${body.take(100).replace("\n", " ")}"
+                    )
                     val b64 = Base64.encodeToString(
                         body.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP
                     )
@@ -193,10 +213,14 @@ class VideoActivity : AppCompatActivity() {
 
     private fun sourcesJson(): String {
         val saved = prefs.getString(KEY, null)
-        if (!saved.isNullOrBlank()) return saved
-        // 首次进入写入默认源
-        prefs.edit().putString(KEY, DEFAULT_SOURCES).apply()
-        return DEFAULT_SOURCES
+        val ver = prefs.getInt(VER_KEY, 0)
+        // 版本迁移：老安装里存着已失效的默认源（install -r 不清数据，
+        // 不迁移的话用户会一直用旧源报错），升到当前版本时重置为默认源
+        if (saved.isNullOrBlank() || ver < SOURCES_VER) {
+            prefs.edit().putString(KEY, DEFAULT_SOURCES).putInt(VER_KEY, SOURCES_VER).apply()
+            return DEFAULT_SOURCES
+        }
+        return saved
     }
 
     /** 安全回传：WebView 销毁后不再 evaluate */
@@ -217,6 +241,7 @@ class VideoActivity : AppCompatActivity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        Log.w("VidPlay", "onPlayerError: ${error.message}")
                         val msg = error.message?.take(80) ?: "未知错误"
                         Toast.makeText(this@VideoActivity, "播放失败：$msg", Toast.LENGTH_LONG).show()
                         videoBuffering.visibility = View.GONE
@@ -227,6 +252,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun startVideo(url: String, title: String) {
+        Log.d("VidPlay", "startVideo: $title | $url")
         ensurePlayer()
         overlay.visibility = View.VISIBLE
         videoTitle.text = title

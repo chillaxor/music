@@ -187,6 +187,7 @@ function loadSources(){
   var raw = (window.Android&&Android.getSources)?Android.getSources():null;
   try{STATE.sources=JSON.parse(raw)||[];}catch(e){STATE.sources=[];}
   if(!STATE.sources.length) STATE.sources=[{name:"盒子迷多仓",url:"https://盒子迷.top/禁止贩卖"}];
+  console.log('loadSources:',STATE.sources.length,'个源, 当前=',STATE.sources[STATE.cur]&&STATE.sources[STATE.cur].url);
 }
 function renderSrcDrawer(){
   var box=$('srcList'); box.innerHTML="";
@@ -218,14 +219,20 @@ async function selectSource(){
   setState('正在加载接口…');
   $('chips').innerHTML=''; $('grid').innerHTML='';
   var r=await get(norm(s.url));
-  if(!r.ok){setState('接口加载失败（HTTP '+r.code+'），请检查地址或网络');return;}
-  var cfg; try{cfg=JSON.parse(r.text);}catch(e){setState('接口返回的不是 JSON（HTTP '+r.code+'）：'+esc(r.text.slice(0,60)));return;}
+  if(!r.ok){console.log('selectSource FAIL: code='+r.code+' url='+norm(s.url));setState('接口加载失败（HTTP '+r.code+'），请检查地址或网络');return;}
+  var cfg; try{cfg=JSON.parse(r.text);}catch(e){console.log('selectSource NOT JSON: code='+r.code+' head='+r.text.slice(0,120));setState('接口返回的不是 JSON（HTTP '+r.code+'）：'+esc(r.text.slice(0,60)));return;}
   var sites=(cfg.sites||[]).filter(function(x){return x&&x.api;});
+  console.log('selectSource OK: 站点',sites.length,'个 (type0/1 可播',sites.filter(function(x){return x.type===0||x.type===1;}).length,'个)');
   if(!sites.length){setState('该接口没有可用站点');return;}
   // 多个站点 = 多个入口：用 chips 切换站点（同时也支持多接口源）
-  STATE.sites=sites; STATE.siteIdx=0;
+  STATE.sites=sites;
+  // 多仓第一个往往是 Spider 类站点，直接落在上面会显示「暂不支持」；
+  // 优先落到第一个 CMS 直连站点（type 0/1），保证一进去就有内容
+  var first=sites.findIndex(function(x){return x.type===0||x.type===1;});
+  STATE.siteIdx=first>=0?first:0;
+  console.log('selectSource: 落到站点',sites[STATE.siteIdx].name||sites[STATE.siteIdx].key);
   renderSiteChips();
-  await loadSite(sites[0]);
+  await loadSite(sites[STATE.siteIdx]);
 }
 function renderSiteChips(){
   var box=$('chips'); box.innerHTML='';
@@ -244,6 +251,7 @@ async function loadSite(site){
   if(site.type!==3){
     var rc=await get(norm(api+(api.indexOf('?')>=0?'&':'?')+'ac=cate'));
     if(rc.ok){try{var cj=JSON.parse(rc.text);STATE.classes=cj.class||[];}catch(e){STATE.classes=[];}}
+    console.log('loadSite cate:',site.name,'code='+rc.code,'分类',STATE.classes.length,'个');
   } else { STATE.classes=[]; }
   renderClassChips();
   await loadList();
@@ -279,6 +287,7 @@ async function loadList(){
     var ru=await get(norm(api+(api.indexOf('?')>=0?'&':'?')+'ac=videolist&wd='+encodeURIComponent(STATE.wd)+'&pg='+STATE.pg));
     if(ru.ok){try{items=JSON.parse(ru.text).list||[];}catch(e){}}
   } else if(site.type===3){
+    console.log('loadList: 站点',site.name,'是 Spider 类，跳过');
     $('sload').textContent=''; STATE.loading=false; setState('该站点需 Spider 运行时，暂不支持'); return;
   } else {
     var u=api+(api.indexOf('?')>=0?'&':'?')+'ac=videolist'+(STATE.t?'&t='+STATE.t:'')+'&pg='+STATE.pg;
@@ -287,7 +296,8 @@ async function loadList(){
   }
   STATE.loading=false; $('sload').textContent='';
   if(STATE.pg===1){$('grid').innerHTML='';}
-  if(!items.length){ if(STATE.pg===1) setState(STATE.wd?'没有匹配的搜索结果':'该分类暂无内容'); $('more').style.display='none'; return; }
+  if(!items.length){ console.log('loadList: 0 条 (site='+site.name+' wd='+STATE.wd+' t='+STATE.t+')'); if(STATE.pg===1) setState(STATE.wd?'没有匹配的搜索结果':'该分类暂无内容'); $('more').style.display='none'; return; }
+  console.log('loadList: '+items.length+' 条, 首条='+items[0].vod_name);
   items.forEach(function(v){$('grid').appendChild(card(v));});
   setState((STATE.wd?'搜索':'')+'共 '+items.length+' 条'+(STATE.pg>1?('（第'+STATE.pg+'页）'):''));
   $('more').style.display = (items.length>=10)?'block':'none';
@@ -314,6 +324,7 @@ function doSearch(){
 }
 
 /* ============ 详情 + 选集 ============ */
+function closeSheet(){$('sheet').classList.remove('show');}
 async function openDetail(id){
   setState('加载详情…'); var api=STATE.site.api;
   var r=await get(norm(api+(api.indexOf('?')>=0?'&':'?')+'ac=detail&ids='+encodeURIComponent(id)));
@@ -328,6 +339,7 @@ async function openDetail(id){
     (v.vod_actor?('演员：'+esc(v.vod_actor).slice(0,40)):'');
   $('dDesc').textContent=(v.vod_content||'').replace(/<[^>]+>/g,' ').trim();
   renderEps(v);
+  console.log('openDetail:',v.vod_name,'| 线路',parsePlay(v).length,'组');
   $('sheet').classList.add('show');
   setState('');
 }
