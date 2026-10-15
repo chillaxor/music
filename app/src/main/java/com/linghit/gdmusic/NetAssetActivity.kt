@@ -1,5 +1,6 @@
 package com.linghit.gdmusic
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -8,6 +9,7 @@ import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -190,7 +192,15 @@ class NetAssetActivity : AppCompatActivity() {
             allowContentAccess = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                return handleExternalUrl(url)
+            }
+        }
         // JS 桥：页面里 window.Android.exportData(json) 会走到这里
         webView.addJavascriptInterface(object {
             @JavascriptInterface
@@ -260,6 +270,14 @@ class NetAssetActivity : AppCompatActivity() {
             loadWithOverviewMode = true
         }
         browserView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                return handleExternalUrl(url)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (url != null) tvUrl.text = url
             }
@@ -282,6 +300,45 @@ class NetAssetActivity : AppCompatActivity() {
     }
 
     private fun browserVisible() = browserPanel.visibility == View.VISIBLE
+
+    /**
+     * 处理 WebView 里的非 http(s) 跳转。
+     * 返回 true = 已接管（WebView 不要再加载，避免 net::ERR_UNKNOWN_URL_SCHEME 错误页）。
+     *
+     * 覆盖场景：
+     *  - baiduboxapp://、weixin://、alipays://、tmall:// 等 App 深链 → 尝试唤起对应 App；
+     *  - intent:// 协议（带 #Intent;end 的那种）→ Intent.parseUri 解析后唤起，
+     *    目标 App 没装时回退到它自带的 BROWSER_FALLBACK_URL 网页；
+     *  - tel: / mailto: / sms: 等 → 交给系统应用；
+     *  - 全都失败（比如模拟器没装百度 App）→ 静默拦截，停在当前页不弹错误页。
+     */
+    private fun handleExternalUrl(url: String): Boolean {
+        if (url.startsWith("http://") || url.startsWith("https://") ||
+            url.startsWith("file://") || url.startsWith("about:")
+        ) return false
+        return try {
+            val intent = if (url.startsWith("intent://")) {
+                Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+            } else {
+                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            // intent:// 深链没装目标 App：有兜底网址就加载兜底，否则静默拦截
+            if (url.startsWith("intent://")) {
+                val fallback = try {
+                    Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                        .getStringExtra("android.intent.extra.BROWSER_FALLBACK_URL")
+                } catch (_: Exception) { null }
+                if (!fallback.isNullOrEmpty()) { browserView.loadUrl(fallback); true }
+                else true
+            } else true
+        } catch (e: Exception) {
+            true
+        }
+    }
 
     // 退到后台时让页面把内存里的最新数据再刷一次盘，
     // 避免 App 被系统直接杀掉时丢掉最后一次改动。
