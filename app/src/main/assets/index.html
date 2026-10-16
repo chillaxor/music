@@ -1400,6 +1400,9 @@ document.getElementById("delSnap").onclick=()=>{
 let dragState=null;
 function listOf(kind){return document.getElementById(kind==="asset"?"assetBody":kind==="link"?"linkList":"liabBody");}
 function cardSel(kind){return kind==="link"?".link-card":".vcard";}
+// 取链接卡片上的链接 id：data-linkid 挂在内层 ⋮⋮ 手柄上，不在卡片元素本身，
+// 直接读 card.dataset.linkid 永远是 undefined（拖放排序失效的根因之一）
+function cardLinkId(card){const h=card&&card.querySelector("[data-linkid]");return h?h.dataset.linkid:"";}
 function reorder(kind,from,to){
   const arr=kind==="asset"?data.assets:data.liabs;
   if(from<0||to<0||from>=arr.length||to>=arr.length||from===to)return false;
@@ -1471,7 +1474,7 @@ document.addEventListener("drop",e=>{
   dragState=null;
   clearDragMarks();
   if(!over||over.parentElement!==st.list||over===st.card)return;
-  if(st.kind==="link")reorderLink(st.id,over.dataset.linkid);
+  if(st.kind==="link")reorderLink(st.id,cardLinkId(over));
   else reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
 });
 document.addEventListener("dragend",()=>{clearDragMarks();dragState=null;});
@@ -1483,10 +1486,12 @@ document.addEventListener("touchstart",e=>{
   if(e.target.closest&&e.target.closest("button,input,select,textarea"))return;
   const kind=h.dataset.drag;
   const list=listOf(kind);
-  const card=h.closest(".vcard");
+  // 链接卡是 .link-card：原来硬编码 .vcard，closest 返回 null，链接排序直接不启动
+  const card=h.closest(cardSel(kind));
   if(!list||!card)return;
   const t=e.touches[0];
-  dragState={kind,card,list,mode:"touch",x:t.clientX,y:t.clientY};
+  // touch 模式也要带上 id：链接排序按 id 挪，没 id 到 touchend 时 reorderLink 直接返回 false
+  dragState={kind,card,list,mode:"touch",id:h.dataset.linkid||"",x:t.clientX,y:t.clientY};
   card.classList.add("dragging");
   e.preventDefault();
 },{passive:false});
@@ -1509,7 +1514,7 @@ document.addEventListener("touchend",e=>{
   const over=t?cardAt(st.kind,x,y):null;
   clearDragMarks();
   if(!over||over===st.card)return;
-  if(st.kind==="link")reorderLink(st.id,over.dataset.linkid);
+  if(st.kind==="link")reorderLink(st.id,cardLinkId(over));
   else reorder(st.kind,cardIndex(st.list,st.card),cardIndex(st.list,over));
 });
 document.addEventListener("touchcancel",()=>{clearDragMarks();dragState=null;});

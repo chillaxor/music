@@ -2,6 +2,7 @@ package com.linghit.gdmusic
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -25,6 +26,8 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -39,6 +42,10 @@ class NetAssetActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var browserPanel: View
     private lateinit var browserContainer: FrameLayout
+    private lateinit var fullscreenContainer: FrameLayout
+    // 网页视频全屏（onShowCustomView）：当前全屏的视频 view 与回调
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private lateinit var tabStrip: View
     private lateinit var tabChips: LinearLayout
     private lateinit var btnBack: Button
@@ -181,6 +188,7 @@ class NetAssetActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         browserPanel = findViewById(R.id.browserPanel)
         browserContainer = findViewById(R.id.browserContainer)
+        fullscreenContainer = findViewById(R.id.fullscreenContainer)
         tabStrip = findViewById(R.id.tabStrip)
         tabChips = findViewById(R.id.tabChips)
         btnBack = findViewById(R.id.btnBack)
@@ -251,6 +259,15 @@ class NetAssetActivity : AppCompatActivity() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
                 Log.d("NetJS", "${m.message()}  [${m.sourceId()}:${m.lineNumber()}]")
                 return true
+            }
+
+            // 记账页内嵌视频的全屏（与内嵌浏览器同一套逻辑）
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                showCustomView(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                hideCustomView()
             }
 
             override fun onShowFileChooser(
@@ -360,6 +377,16 @@ class NetAssetActivity : AppCompatActivity() {
         override fun onCloseWindow(window: WebView) {
             tabs.find { it.webView === window }?.let { closeTab(it) }
         }
+
+        // 网页视频点「放大/全屏」：WebView 把视频 view 交出来，
+        // 不实现这个回调的话默认是空实现——按钮点了什么都没发生
+        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            showCustomView(view, callback)
+        }
+
+        override fun onHideCustomView() {
+            hideCustomView()
+        }
     }
 
     private fun switchTab(tab: BrowserTab) {
@@ -466,6 +493,61 @@ class NetAssetActivity : AppCompatActivity() {
 
     private fun browserVisible() = browserPanel.visibility == View.VISIBLE
 
+    // ==================== 网页视频全屏（横屏播放） ====================
+
+    /**
+     * 网页视频点「放大/全屏」时 WebView 把视频 view 交出来（onShowCustomView）。
+     * 不实现这个回调默认是空实现——按钮点了什么都不发生。
+     * 这里把视频挂到全屏容器、强制横屏、隐藏系统栏。
+     */
+    private fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
+        // 极少数页面会连续触发：先把上一个全屏收掉再挂新的
+        if (customView != null) hideCustomView()
+        customView = view
+        customViewCallback = callback
+        fullscreenContainer.removeAllViews()
+        fullscreenContainer.addView(
+            view,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        fullscreenContainer.visibility = View.VISIBLE
+        // 视频全屏一律横屏（跟随传感器方向，倒拿也自动翻转）
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        hideSystemBars()
+        Log.d("NetJS", "onShowCustomView: 视频全屏，已切横屏")
+    }
+
+    /** 退出视频全屏：摘掉视频 view、恢复方向与系统栏 */
+    private fun hideCustomView() {
+        if (customView == null) return
+        fullscreenContainer.removeAllViews()
+        fullscreenContainer.visibility = View.GONE
+        customView = null
+        // 恢复「不指定」：手机（竖屏原生）回到竖屏，平板/横屏原生设备保持横屏，
+        // 且跟随用户此前持握方向——硬编码 PORTRAIT 会把横屏设备扳竖，体验割裂
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        showSystemBars()
+        customViewCallback?.onCustomViewHidden()
+        customViewCallback = null
+        Log.d("NetJS", "onHideCustomView: 退出视频全屏，恢复原有方向")
+    }
+
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun showSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
+    }
+
     /**
      * 处理 WebView 里的非 http(s) 跳转。
      * 返回 true = 已接管（WebView 不要再加载，避免 net::ERR_UNKNOWN_URL_SCHEME 错误页）。
@@ -516,6 +598,11 @@ class NetAssetActivity : AppCompatActivity() {
 
     @Deprecated("用 OnBackPressedDispatcher 更规范，但这里逻辑简单，保持兼容写法")
     override fun onBackPressed() {
+        // 视频全屏中：返回键先退出全屏（恢复竖屏），不直接退出页面
+        if (customView != null) {
+            hideCustomView()
+            return
+        }
         // 先处理内嵌浏览器：当前标签能后退就后退，不能后退就关掉当前标签；
         // 最后一个标签关掉即回到记账页
         val t = currentTab

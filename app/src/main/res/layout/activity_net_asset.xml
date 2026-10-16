@@ -90,4 +90,13 @@
                 android:layout_weight="1" />
         </LinearLayout>
     </FrameLayout>
+
+    <!-- 网页视频全屏容器：WebView onShowCustomView 把视频 view 挂这里，
+         覆盖整个 Activity（含浏览器工具栏），播放时强制横屏 -->
+    <FrameLayout
+        android:id="@+id/fullscreenContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:visibility="gone" />
 </LinearLayout>
