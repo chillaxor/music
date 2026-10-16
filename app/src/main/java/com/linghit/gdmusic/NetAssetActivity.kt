@@ -327,6 +327,8 @@ class NetAssetActivity : AppCompatActivity() {
             }
         }
         webView.loadUrl("file:///android_asset/index.html")
+        // 首页钉的链接：直接在 App 内嵌浏览器打开（不跳出 App）
+        intent.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { showBrowser(it) }
 
         // —— app 内嵌浏览器（链接页用）——
         // 多标签：每个标签一个独立 WebView，只开 JS/DOM，不挂任何 JS 桥；
@@ -336,6 +338,13 @@ class NetAssetActivity : AppCompatActivity() {
             if (t != null && t.webView.canGoBack()) t.webView.goBack() else closeCurrentTab()
         }
         btnClose.setOnClickListener { closeAllTabs() }
+    }
+
+    /** 从首页自定义资源位再次点同一个链接时，复用实例直接在内嵌浏览器打开 */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent?.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { showBrowser(it) }
     }
 
     // ==================== 内嵌浏览器：多标签 ====================
@@ -352,6 +361,11 @@ class NetAssetActivity : AppCompatActivity() {
 
     /** 新建标签并切过去；url 为空时建空白页（供网页 window.open 使用） */
     private fun createTab(url: String? = null): BrowserTab {
+        // 防止个别站点疯狂 window.open 刷出一堆标签导致「乱跳」：超过上限复用当前标签
+        if (tabs.size >= 8 && currentTab != null) {
+            if (!url.isNullOrBlank()) currentTab!!.webView.loadUrl(url)
+            return currentTab!!
+        }
         val wv = WebView(this)
         wv.settings.apply {
             javaScriptEnabled = true

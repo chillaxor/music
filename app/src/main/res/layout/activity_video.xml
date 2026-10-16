@@ -24,7 +24,7 @@
             android:layout_height="match_parent"
             android:background="#000000" />
 
-        <!-- 左上角：小窗按钮（进 PiP 后可操作 App 其他功能） -->
+        <!-- 左上角：小窗按钮（默认隐藏，仅播放中且控制条可见时显示） -->
         <TextView
             android:id="@+id/videoPip"
             android:layout_width="wrap_content"
@@ -38,7 +38,8 @@
             android:paddingBottom="6dp"
             android:text="🖼 小窗"
             android:textSize="13sp"
-            android:textColor="#ffffff" />
+            android:textColor="#ffffff"
+            android:visibility="gone" />
 
         <!-- 右上角：当前时间（替代原集数标题/关闭按钮） -->
         <TextView

@@ -13,6 +13,7 @@ import android.util.Base64
 import android.util.Log
 import android.util.Rational
 import android.view.View
+import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -78,6 +79,7 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var overlay: FrameLayout
     private lateinit var playerView: PlayerView
     private lateinit var videoPip: TextView
+    private var controlsVisible = false
     private lateinit var videoClock: TextView
     private lateinit var videoPrev: TextView
     private lateinit var videoNext: TextView
@@ -171,6 +173,11 @@ class VideoActivity : AppCompatActivity() {
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
         videoBuffering = findViewById(R.id.videoBuffering)
+        // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
+        playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
+            controlsVisible = visibility == View.VISIBLE
+            updatePipButton()
+        })
 
         // 小窗：进 PiP 后可以操作 App 其他功能，视频继续悬浮播放
         videoPip.setOnClickListener { enterPip() }
@@ -458,6 +465,13 @@ class VideoActivity : AppCompatActivity() {
                         if (state == Player.STATE_ENDED) playNext()
                     }
 
+                    // 播放/暂停切换：播放时保持屏幕常亮，暂停后允许熄屏
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isInPictureInPictureMode) return
+                        setKeepScreenOn(isPlaying)
+                        updatePipButton()
+                    }
+
                     override fun onPlayerError(error: PlaybackException) {
                         Log.w("VidPlay", "onPlayerError: ${error.message}")
                         val msg = error.message?.take(60) ?: "未知错误"
@@ -648,6 +662,20 @@ class VideoActivity : AppCompatActivity() {
         // 恢复竖屏浏览 + 显示系统栏
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         showSystemBars()
+        setKeepScreenOn(false)
+        videoPip.visibility = View.GONE
+    }
+
+    /** 保持屏幕常亮（仅播放时） */
+    private fun setKeepScreenOn(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    /** 小窗按钮：仅在「未进小窗 + 正在播放 + 控制条可见」时显示，其余时候隐藏 */
+    private fun updatePipButton() {
+        val show = !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        videoPip.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     // ===================== 小窗（PiP） =====================
@@ -685,7 +713,13 @@ class VideoActivity : AppCompatActivity() {
         Log.d("VidPlay", "onPictureInPictureModeChanged: inPip=$isInPictureInPictureMode")
         // 小窗里只留画面，自定义按钮/时钟全部隐藏
         val v = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
-        videoPip.visibility = v
+        if (isInPictureInPictureMode) {
+            videoPip.visibility = View.GONE
+        } else {
+            // 退出小窗回到全屏：若仍在播放则恢复屏幕常亮，并刷新小窗按钮
+            setKeepScreenOn(player?.isPlaying == true)
+            updatePipButton()
+        }
         videoClock.visibility = v
         videoPrev.visibility = v
         videoNext.visibility = v
@@ -711,6 +745,7 @@ class VideoActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        setKeepScreenOn(false)
         // 进小窗时 activity 也会 onPause，此时不能停播
         if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
         saveHisPosition()
@@ -727,6 +762,7 @@ class VideoActivity : AppCompatActivity() {
     override fun onDestroy() {
         Log.d("VidPlay", "onDestroy")
         super.onDestroy()
+        setKeepScreenOn(false)
         webViewAlive = false
         saveHisPosition()
         clockHandler.removeCallbacks(clockTick)

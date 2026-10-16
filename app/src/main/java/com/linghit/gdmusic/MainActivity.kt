@@ -365,11 +365,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     Toast.makeText(this, "这个链接没有地址", Toast.LENGTH_SHORT).show()
                     return
                 }
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
-                } catch (e: Exception) {
-                    Toast.makeText(this, "没有能打开该链接的应用", Toast.LENGTH_SHORT).show()
-                }
+                // 在 App 内嵌浏览器打开（不跳出 App，可返回）
+                startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", item.url))
             }
             else -> when (item.target) {
                 "video" -> startActivity(Intent(this, VideoActivity::class.java))
