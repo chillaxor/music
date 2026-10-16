@@ -26,3 +26,6 @@ icon_preview.png
 # 调试截图（临时验证用）
 .dbg/
 .tmpclean/
+
+# 图标制作工作区（源图/去水印中间产物，不进仓库）
+tools/icon_work/
