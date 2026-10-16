@@ -25,3 +25,4 @@ icon_preview.png
 
 # 调试截图（临时验证用）
 .dbg/
+.tmpclean/
