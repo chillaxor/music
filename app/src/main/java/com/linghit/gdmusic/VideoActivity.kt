@@ -141,6 +141,7 @@ class VideoActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("VidPlay", "onCreate")
         setContentView(R.layout.activity_video)
 
         webView = findViewById(R.id.videoWebView)
@@ -548,12 +549,18 @@ class VideoActivity : AppCompatActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
         @Suppress("DEPRECATION")
         super.onPictureInPictureModeChanged(isInPictureInPictureMode)
+        // 关键排查日志：进/出小窗时若伴随 onCreate/onDestroy，说明 Activity 被重建
+        // （manifest configChanges 没写全的症状），播放器会被释放、小窗里就没画面
+        Log.d("VidPlay", "onPictureInPictureModeChanged: inPip=$isInPictureInPictureMode")
         // 小窗里只留画面，自定义按钮/时钟全部隐藏
         val v = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
         videoPip.visibility = v
         videoClock.visibility = v
         videoPrev.visibility = v
         videoNext.visibility = v
+        // PlayerView 自带的播放控制条也隐藏：小窗只几寸大，控制条会糊满画面；
+        // 退出小窗恢复（useController 切换会重建 SubtitleView 等子视图，必须主线程）
+        playerView.useController = !isInPictureInPictureMode
         if (!isInPictureInPictureMode) clockTick.run()
     }
 
@@ -579,6 +586,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        Log.d("VidPlay", "onDestroy")
         super.onDestroy()
         webViewAlive = false
         clockHandler.removeCallbacks(clockTick)
