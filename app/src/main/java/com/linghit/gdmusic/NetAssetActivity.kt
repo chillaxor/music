@@ -23,6 +23,8 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import org.json.JSONObject
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -203,6 +205,17 @@ class NetAssetActivity : AppCompatActivity() {
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                // 从首页自定义资源位进入时，落到指定子页（记一笔/收支查询/日志/链接收藏）
+                val v = intent.getStringExtra("open_view")
+                if (v != null && v in setOf("snapshot", "add", "flow", "calendar", "journal", "links")) {
+                    intent.removeExtra("open_view") // 只生效一次，旋转/重载不回跳
+                    view?.evaluateJavascript(
+                        "if(typeof showView==='function')showView('$v')", null
+                    )
+                }
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
@@ -253,6 +266,33 @@ class NetAssetActivity : AppCompatActivity() {
             // 浏览器标签不挂账本 JS 桥，外部站点无法接触 data。
             @JavascriptInterface
             fun openUrl(url: String) { showBrowser(url) }
+
+            // 链接卡片「📌 钉到首页」：把这条链接写成首页自定义资源位（不限量，可删）
+            @JavascriptInterface
+            fun pinHomeShortcut(json: String) {
+                runOnUiThread {
+                    try {
+                        val o = JSONObject(json)
+                        val ok = HomeShortcutStore.add(
+                            this@NetAssetActivity,
+                            HomeShortcutStore.Item(
+                                type = "link",
+                                target = o.optString("id"),
+                                label = o.optString("title").ifBlank { "链接" },
+                                emoji = o.optString("emoji").ifBlank { "🔗" },
+                                url = o.optString("url")
+                            )
+                        )
+                        Toast.makeText(
+                            this@NetAssetActivity,
+                            if (ok) "已钉到首页" else "首页已经有这个链接了",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@NetAssetActivity, "钉入失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }, "Android")
         webView.webChromeClient = object : WebChromeClient() {
             // JS console.log 打到 logcat（tag: NetJS），便于在设备上排查页面逻辑

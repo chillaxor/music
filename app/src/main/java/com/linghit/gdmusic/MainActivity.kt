@@ -93,6 +93,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var queueEmpty:View
     private lateinit var queueCount:TextView
     private lateinit var queueAdapter:QueueAdapter
+    /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加，长按删除） */
+    private lateinit var shortcutRow: LinearLayout
     private var showSearch=false
     private val uiHandler=Handler(Looper.getMainLooper())
     private lateinit var adapter:SongAdapter
@@ -243,6 +245,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         findViewById<View>(R.id.openVideo).setOnClickListener {
             startActivity(Intent(this, VideoActivity::class.java))
         }
+        // 自定义资源位：渲染已钉的快捷方式 + 「＋」添加面板（长按胶囊删除）
+        shortcutRow = findViewById(R.id.shortcutRow)
+        renderShortcuts()
+        findViewById<View>(R.id.addShortcutBtn).setOnClickListener { showShortcutPicker() }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 播放列表页（进 App 默认落点）=====
@@ -308,6 +314,110 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_white else R.drawable.bg_pill_glass)
         tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.primary else R.color.on_primary))
         if(!search) refreshQueue()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 记账页可能钉了新的链接资源位回来，刷新一行
+        if (::shortcutRow.isInitialized) renderShortcuts()
+    }
+
+    /** 渲染首页自定义资源位（不限量；点=进入，长按=删除） */
+    private fun renderShortcuts() {
+        shortcutRow.removeAllViews()
+        val items = HomeShortcutStore.list(this)
+        val padH = (12 * resources.displayMetrics.density).toInt()
+        val padV = (7 * resources.displayMetrics.density).toInt()
+        val margin = (8 * resources.displayMetrics.density).toInt()
+        items.forEach { item ->
+            val tv = TextView(this)
+            tv.text = "${item.emoji} ${item.label}"
+            tv.textSize = 13f
+            tv.setTextColor(ContextCompat.getColor(this, R.color.primary))
+            tv.setBackgroundResource(R.drawable.bg_pill_soft)
+            tv.setPadding(padH, padV, padH, padV)
+            tv.setOnClickListener { openShortcut(item) }
+            tv.setOnLongClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("移除「${item.label}」？")
+                    .setPositiveButton("移除") { _, _ ->
+                        HomeShortcutStore.remove(this, item.id())
+                        renderShortcuts()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+                true
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.marginEnd = margin
+            shortcutRow.addView(tv, lp)
+        }
+    }
+
+    /** 点自定义资源位：link=直接开链接，page=进对应功能/记账子页 */
+    private fun openShortcut(item: HomeShortcutStore.Item) {
+        when (item.type) {
+            "link" -> {
+                if (item.url.isBlank()) {
+                    Toast.makeText(this, "这个链接没有地址", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "没有能打开该链接的应用", Toast.LENGTH_SHORT).show()
+                }
+            }
+            else -> when (item.target) {
+                "video" -> startActivity(Intent(this, VideoActivity::class.java))
+                "netasset" -> startActivity(Intent(this, NetAssetActivity::class.java))
+                "downloads" -> startActivity(Intent(this, DownloadedActivity::class.java))
+                "favorites" -> startActivity(Intent(this, FavoritesActivity::class.java))
+                "settings" -> startActivity(Intent(this, SettingsActivity::class.java))
+                // 记账页子视图：add 记一笔 / flow 收支查询 / journal 日志 / links 链接收藏
+                "add", "flow", "journal", "links", "calendar" ->
+                    startActivity(
+                        Intent(this, NetAssetActivity::class.java)
+                            .putExtra("open_view", item.target)
+                    )
+                else -> Toast.makeText(this, "未知入口", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 「＋」添加面板：只列 App 内功能（资产页的链接在记账页卡片上 📌 钉入） */
+    private fun showShortcutPicker() {
+        val catalog = listOf(
+            HomeShortcutStore.Item("page", "add", "记一笔", "✏️"),
+            HomeShortcutStore.Item("page", "flow", "收支查询", "📊"),
+            HomeShortcutStore.Item("page", "journal", "日志", "📖"),
+            HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
+            HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
+            HomeShortcutStore.Item("page", "netasset", "记账本", "📒"),
+            HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
+            HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
+            HomeShortcutStore.Item("page", "settings", "设置", "⚙")
+        )
+        val have = HomeShortcutStore.list(this).map { it.id() }.toSet()
+        val names = catalog.map {
+            (if (it.id() in have) "✓ " else "") + it.emoji + " " + it.label
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("添加到首页")
+            .setItems(names) { _, i ->
+                val it = catalog[i]
+                if (HomeShortcutStore.add(this, it)) {
+                    renderShortcuts()
+                    Toast.makeText(this, "已添加，长按首页图标可删除", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "已经在首页了", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 刷新播放列表页：标题计数 + 空状态显隐。线程免疫（onSongStart 可能来自播放器回调线程） */

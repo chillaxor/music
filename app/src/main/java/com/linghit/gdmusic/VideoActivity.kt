@@ -43,6 +43,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
@@ -98,6 +99,24 @@ class VideoActivity : AppCompatActivity() {
     private var epsList: List<EpItem> = emptyList()
     private var curIdx: Int = -1
     private var curReferer: String = ""
+
+    // ===================== 播放历史（断点续播） =====================
+    /** 当前播放记录 key（直连 "d:api|vod_id" / 爬虫 "s:key|vod_id"，由 JS 生成随 meta 带回） */
+    private var curHisKey: String = ""
+    /** 续播重放用的完整上下文（起播时解析 metaJson 得到，切集时增量更新） */
+    private var curHisRec: JSONObject? = null
+    /** 续播位置：等 prepare 完成 STATE_READY 再 seek（prepare 前 seek 不保险） */
+    private var seekAfterReady: Long = 0
+    /** 历史页点续播带回的记录 JSON：等 video.html 加载完交给 JS 重新起播 */
+    private var pendingResumeJson: String? = null
+    private var pageReady = false
+    private val hisHandler = Handler(Looper.getMainLooper())
+    private val hisTick = object : Runnable {
+        override fun run() {
+            saveHisPosition()
+            hisHandler.postDelayed(this, 5000)
+        }
+    }
     /** 右上角时钟：每秒刷新 */
     private val clockHandler = Handler(Looper.getMainLooper())
     private val clockTick = object : Runnable {
@@ -166,6 +185,17 @@ class VideoActivity : AppCompatActivity() {
             }
         })
         setupWebView()
+        // 播放历史页点「继续看」会带 resume_json 拉起本页：先收下，等页面加载完再续播
+        pendingResumeJson = intent.getStringExtra("resume_json")
+        if (pendingResumeJson != null) Log.d("VidPlay", "收到续播记录，等页面就绪")
+    }
+
+    /** 复用已存在的实例续播（历史页用 CLEAR_TOP|SINGLE_TOP 拉起） */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val j = intent?.getStringExtra("resume_json")
+        if (j != null) fireResume(j)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -179,6 +209,12 @@ class VideoActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = true
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                // 续播要交给页面 JS（重新拉详情/重新解析），必须等页面就绪
+                pageReady = true
+                pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
+            }
+
             // 网页万一跳到 baiduboxapp:// 之类的私有协议，静默拦截避免错误页
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
@@ -249,7 +285,8 @@ class VideoActivity : AppCompatActivity() {
         /**
          * 原生 ExoPlayer 播放（直接 m3u8/mp4 等可硬解地址）——一律在本 App 内播放。
          * epsJson：当前线路全部剧集 [{name,url,spider}]，用于上一集/下一集/播完连播；
-         * idx：起始集下标；spiderJson：爬虫源上下文（JS 解析下一集时回调用）。
+         * idx：起始集下标；spiderJson：爬虫源上下文（JS 解析下一集时回调用）；
+         * metaJson：历史记录字段 {key,pic,epName,vodId,siteApi,from}（JS 侧生成）。
          */
         @JavascriptInterface
         fun playVideo(
@@ -258,9 +295,10 @@ class VideoActivity : AppCompatActivity() {
             referer: String,
             epsJson: String,
             idx: Int,
-            spiderJson: String
+            spiderJson: String,
+            metaJson: String
         ) {
-            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson) }
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson) }
         }
 
         /** 爬虫源剧集解析完成后的起播桥：playSpiderEp 拿到直链后回传 */
@@ -271,9 +309,24 @@ class VideoActivity : AppCompatActivity() {
             referer: String,
             idx: Int,
             epsJson: String,
-            spiderJson: String
+            spiderJson: String,
+            metaJson: String
         ) {
-            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson) }
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson) }
+        }
+
+        /** 播放历史页入口（影视仓顶栏 🕘） */
+        @JavascriptInterface
+        fun openHistory() {
+            runOnUiThread {
+                startActivity(Intent(this@VideoActivity, VideoHistoryActivity::class.java))
+            }
+        }
+
+        /** 续播位置（毫秒）：JS 重新起播前调，prepare 完成后 STATE_READY 时 seek */
+        @JavascriptInterface
+        fun setResumePos(ms: Int) {
+            runOnUiThread { seekAfterReady = ms.toLong().coerceAtLeast(0) }
         }
 
         // ===================== Spider 爬虫源桥（DexClassLoader 引擎） =====================
@@ -394,6 +447,13 @@ class VideoActivity : AppCompatActivity() {
                     override fun onPlaybackStateChanged(state: Int) {
                         videoBuffering.visibility =
                             if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+                        // 续播：等 READY 再 seek（prepare 前 seek 不保险）
+                        if (state == Player.STATE_READY && seekAfterReady > 0) {
+                            val to = seekAfterReady
+                            seekAfterReady = 0
+                            runCatching { it.seekTo(to) }
+                            Log.d("VidPlay", "续播 seekTo=$to ms")
+                        }
                         // 播完自动下一集（影视仓主流体验）
                         if (state == Player.STATE_ENDED) playNext()
                     }
@@ -416,6 +476,7 @@ class VideoActivity : AppCompatActivity() {
     /**
      * 起播入口。epsJson/idx/spiderJson 由 JS 在点选集时一次性带上（当前线路全部剧集），
      * 空串表示沿用已有列表（爬虫源解析完成回调、或直接切集时走 playIndex）。
+     * metaJson：历史记录字段（key/pic/epName/vodId/siteApi/from）。
      */
     private fun startVideo(
         url: String,
@@ -423,12 +484,14 @@ class VideoActivity : AppCompatActivity() {
         referer: String,
         epsJson: String = "",
         idx: Int = -1,
-        spiderJson: String = ""
+        spiderJson: String = "",
+        metaJson: String = ""
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx")
         if (epsJson.isNotBlank()) epsList = parseEps(epsJson)
         if (referer.isNotBlank()) curReferer = referer
         if (idx >= 0) curIdx = idx
+        recordHistory(url, title, referer, epsJson, idx, spiderJson, metaJson)
         overlay.visibility = View.VISIBLE
         videoBuffering.visibility = View.VISIBLE
         // 一律本 App 内播放：强制横屏 + 沉浸式全屏（关掉播放器再恢复竖屏）
@@ -437,6 +500,69 @@ class VideoActivity : AppCompatActivity() {
         clockHandler.removeCallbacks(clockTick)
         clockTick.run()
         playMediaUrl(url, curReferer)
+    }
+
+    /** 起播即落一条播放历史（断点续播的完整上下文一并存） */
+    private fun recordHistory(
+        url: String,
+        title: String,
+        referer: String,
+        epsJson: String,
+        idx: Int,
+        spiderJson: String,
+        metaJson: String
+    ) {
+        var key = ""; var pic = ""; var epName = ""
+        var vodId = ""; var siteApi = ""; var from = ""
+        try {
+            val m = JSONObject(metaJson)
+            key = m.optString("key"); pic = m.optString("pic"); epName = m.optString("epName")
+            vodId = m.optString("vodId"); siteApi = m.optString("siteApi"); from = m.optString("from")
+        } catch (e: Exception) { }
+        curHisKey = key
+        if (key.isBlank()) { curHisRec = null; return }
+        val old = VideoHistoryStore.find(this, key)
+        val rec = VideoHistoryStore.Rec(
+            key = key,
+            title = title,
+            pic = pic,
+            epName = epName.ifBlank { epsList.getOrNull(idx)?.name ?: "" },
+            url = url,
+            referer = referer,
+            epsJson = epsJson,
+            idx = if (idx >= 0) idx else 0,
+            spiderJson = spiderJson,
+            vodId = vodId,
+            siteApi = siteApi,
+            from = from,
+            positionMs = 0,
+            durationMs = old?.durationMs ?: 0,
+            updatedAt = System.currentTimeMillis()
+        )
+        VideoHistoryStore.upsert(this, rec)
+        curHisRec = rec.toJson()
+        // 起播后每 5 秒存一次播放位置
+        hisHandler.removeCallbacks(hisTick)
+        hisTick.run()
+    }
+
+    /** 存当前播放位置（每 5 秒 + 退出/关播放器时调） */
+    private fun saveHisPosition() {
+        if (curHisKey.isBlank()) return
+        val p = player ?: return
+        val pos = runCatching { p.currentPosition }.getOrDefault(0L)
+        if (pos <= 0) return
+        val dur = runCatching { p.duration }.getOrDefault(0L).takeIf { it > 0 } ?: 0
+        VideoHistoryStore.updatePosition(this, curHisKey, pos, dur)
+    }
+
+    /** 把续播记录交给页面 JS：重新拉详情/重新解析，再从记录位置起播 */
+    private fun fireResume(json: String) {
+        if (!pageReady) { pendingResumeJson = json; return }
+        Log.d("VidPlay", "触发续播: ${json.take(80)}")
+        // JSON 直接拼进 JS 单引号字符串会被 \" 转义破坏结构，走 base64（同 spiderCb 方案）
+        val b64 = Base64.encodeToString(json.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+        safeEval("if(window.__resumeHistory)window.__resumeHistory('$b64')")
     }
 
     /** 播放单条直链（Referer 很多 CDN 校验，不带 403） */
@@ -481,6 +607,9 @@ class VideoActivity : AppCompatActivity() {
         }
         Log.d("VidPlay", "切集 -> ${ep.name}")
         playMediaUrl(ep.url, curReferer)
+        // 切集同步历史：集名/下标/直链变，播放位置从头开始
+        VideoHistoryStore.updateEpisode(this, curHisKey, ep.name, i, ep.url)
+        curHisRec?.put("epName", ep.name)?.put("idx", i)?.put("url", ep.url)?.put("positionMs", 0)
     }
 
     private fun playNext() {
@@ -510,6 +639,8 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun closeVideo() {
+        saveHisPosition()
+        hisHandler.removeCallbacks(hisTick)
         player?.pause()
         player?.stop()
         overlay.visibility = View.GONE
@@ -582,14 +713,24 @@ class VideoActivity : AppCompatActivity() {
         super.onPause()
         // 进小窗时 activity 也会 onPause，此时不能停播
         if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
+        saveHisPosition()
+        hisHandler.removeCallbacks(hisTick)
         player?.pause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 回到前台：播放层还开着就继续 5 秒存点
+        if (curHisKey.isNotBlank() && overlay.visibility == View.VISIBLE) hisTick.run()
     }
 
     override fun onDestroy() {
         Log.d("VidPlay", "onDestroy")
         super.onDestroy()
         webViewAlive = false
+        saveHisPosition()
         clockHandler.removeCallbacks(clockTick)
+        hisHandler.removeCallbacks(hisTick)
         player?.release()
         player = null
         webView.destroy()

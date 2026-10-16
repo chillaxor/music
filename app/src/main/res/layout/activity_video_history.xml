@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/primary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="16dp">
+        <TextView
+            android:id="@+id/backBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹ 返回"
+            android:textSize="16sp"
+            android:textColor="@color/on_primary"
+            android:paddingEnd="12dp"/>
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🕘 播放历史"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_primary"/>
+        <TextView
+            android:id="@+id/clearBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="清空"
+            android:textSize="14sp"
+            android:textColor="@color/on_primary"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tipText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:text="点任意一条继续看（自动回到上次看到的位置）"
+        android:textSize="12sp"
+        android:textColor="?attr/colorOnSurfaceVariant"/>
+
+    <!-- 列表 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/hisList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:clipToPadding="false"/>
+
+    <TextView
+        android:id="@+id/emptyText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="还没有播放记录\n在影视仓里搜片看剧，这里会出现续播入口"
+        android:textSize="15sp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone"/>
+</LinearLayout>

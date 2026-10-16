@@ -191,7 +191,8 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .nav button.active{color:#fff;background:var(--accent);border-color:var(--accent)}
   .view{display:none}
-  .view.active{display:block}
+  .view.active{display:block;animation:viewIn .18s ease}
+  @keyframes viewIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
   .flowsum{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px}
   .flowsum .card .val{font-size:22px}
   .seg{display:flex;gap:6px;margin-bottom:12px;background:var(--line);border-radius:10px;padding:4px}
@@ -1598,6 +1599,37 @@ document.getElementById("navAdd").onclick=()=>showView("add");
 document.getElementById("navFlow").onclick=()=>showView("flow");
 document.getElementById("navCal").onclick=()=>showView("calendar");
 (function(){const j=document.getElementById("toCalBtn"),b=document.getElementById("calBack");if(j)j.onclick=()=>showView("calendar");if(b)b.onclick=()=>showView("flow");})();
+
+// ===== 左右滑动切换 tab =====
+// 横向优势位移（|dx|>60 且 |dx|>|dy|*1.5）才翻页，避开：
+//  - 各 view 内部的纵向滚动（长列表）
+//  - 资产/负债/链接卡片的拖放排序手柄（[data-drag]）
+//  - 弹窗打开时（modal）
+(function(){
+  const ORDER=["snapshot","add","flow","calendar","journal","links"];
+  const viewId=v=>v==="calendar"?"viewCal":"view"+v.charAt(0).toUpperCase()+v.slice(1);
+  const curView=()=>{
+    for(let i=0;i<ORDER.length;i++){
+      const el=document.getElementById(viewId(ORDER[i]));
+      if(el&&el.classList.contains("active"))return i;
+    }
+    return 0;
+  };
+  let sx=0,sy=0,track=false;
+  document.addEventListener("touchstart",e=>{
+    const t=e.target;
+    if(t.closest&&(t.closest("[data-drag]")||t.closest(".modal")||t.closest(".modal-mask"))){track=false;return;}
+    const p=e.touches[0];sx=p.clientX;sy=p.clientY;track=true;
+  },{passive:true});
+  document.addEventListener("touchend",e=>{
+    if(!track)return;track=false;
+    const p=e.changedTouches[0];
+    const dx=p.clientX-sx, dy=p.clientY-sy;
+    if(Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.5)return;
+    const i=curView();
+    showView(ORDER[dx<0?Math.min(i+1,ORDER.length-1):Math.max(i-1,0)]);
+  },{passive:true});
+})();
 document.getElementById("navJournal").onclick=()=>showView("journal");
 document.getElementById("navLinks").onclick=()=>showView("links");
   document.getElementById("netEye").onclick=()=>{data.hideNet=!data.hideNet;save();render();};
@@ -1659,7 +1691,7 @@ function renderLinks(){
     return '<div class="link-card"><div class="lc-main" data-openlink="'+esc(l.id||"")+'">'+
       '<div class="lc-title"><span class="lc-dot" style="background:'+c+'"></span>'+esc(l.title||l.url)+'</div>'+
       (l.note?'<div class="lc-note">'+esc(l.note)+'</div>':'')+
-      '</div><div class="lc-ops"><span class="vhandle" draggable="true" data-drag="link" data-linkid="'+esc(l.id||"")+'" title="拖动排序">⋮⋮</span><button class="mini" data-editlink="'+esc(l.id||"")+'">编辑</button><button class="del" data-dellink="'+esc(l.id||"")+'">×</button></div></div>';
+      '</div><div class="lc-ops"><span class="vhandle" draggable="true" data-drag="link" data-linkid="'+esc(l.id||"")+'" title="拖动排序">⋮⋮</span><button class="mini" data-pinlink="'+esc(l.id||"")+'" title="钉到首页">📌</button><button class="mini" data-editlink="'+esc(l.id||"")+'">编辑</button><button class="del" data-dellink="'+esc(l.id||"")+'">×</button></div></div>';
   }).join("");
 }
 // 打开链接：安卓走原生 openUrl 桥，在 app 内嵌浏览器（独立无 JS 桥的 WebView）打开；桌面/回退新标签页
@@ -1703,10 +1735,26 @@ function delLink(id){data.links=data.links.filter(function(l){return !(l&&l.id==
 function handleLinkClick(e){
   const op=e.target.closest("[data-openlink]");
   if(op){const l=data.links.filter(function(x){return x&&x.id===op.dataset.openlink;})[0];if(l)openLink(l.url);return;}
+  const pin=e.target.closest("[data-pinlink]");
+  if(pin){pinLink(pin.dataset.pinlink);return;}
   const ed=e.target.closest("[data-editlink]");
   if(ed){openLinkModal(ed.dataset.editlink);return;}
   const dl=e.target.closest("[data-dellink]");
   if(dl){delLink(dl.dataset.dellink);}
+}
+// 钉到首页：把这条链接写成首页自定义资源位（安卓原生桥写入；桌面端无此功能）
+function pinLink(id){
+  const l=data.links.filter(function(x){return x&&x.id===id;})[0];
+  if(!l)return;
+  if(window.Android&&typeof window.Android.pinHomeShortcut==="function"){
+    try{
+      window.Android.pinHomeShortcut(JSON.stringify({
+        id:l.id,title:l.title||l.url,url:normUrl(l.url),emoji:"🔗"
+      }));
+      return;
+    }catch(e){}
+  }
+  alert("只有安卓 App 里能钉到首页");
 }
 // —— 链接批量导入 / 导出 ——
 // 支持两种格式：
