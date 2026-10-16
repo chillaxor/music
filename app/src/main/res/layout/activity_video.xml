@@ -24,39 +24,69 @@
             android:layout_height="match_parent"
             android:background="#000000" />
 
-        <!-- 顶部信息条：标题 + 关闭 -->
-        <LinearLayout
-            android:layout_width="match_parent"
+        <!-- 左上角：小窗按钮（进 PiP 后可操作 App 其他功能） -->
+        <TextView
+            android:id="@+id/videoPip"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="#88000000"
+            android:layout_gravity="top|start"
+            android:layout_margin="10dp"
+            android:background="#66000000"
             android:paddingStart="12dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp">
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="🖼 小窗"
+            android:textSize="13sp"
+            android:textColor="#ffffff" />
+
+        <!-- 右上角：当前时间（替代原集数标题/关闭按钮） -->
+        <TextView
+            android:id="@+id/videoClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="10dp"
+            android:background="#66000000"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text=""
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#ffffff" />
+
+        <!-- 右侧中部：上一集 / 下一集 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="10dp"
+            android:orientation="vertical">
 
             <TextView
-                android:id="@+id/videoTitle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text=""
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:id="@+id/videoPrev"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="⏮"
+                android:textSize="18sp"
                 android:textColor="#ffffff"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:contentDescription="上一集" />
 
             <TextView
-                android:id="@+id/videoClose"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="✕ 关闭"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:id="@+id/videoNext"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginTop="14dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="⏭"
+                android:textSize="18sp"
                 android:textColor="#ffffff"
-                android:padding="8dp" />
+                android:contentDescription="下一集" />
         </LinearLayout>
 
         <TextView

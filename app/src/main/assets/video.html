@@ -169,7 +169,9 @@ var STATE={
   detailSite:null,           // 直连站详情所属站点（播放 Referer 用）
   detailSpider:null,         // 爬虫源详情所属站点信息（播放走 playerContent）
   searchScope:'all',         // all=全网聚合 / site=仅当前站
-  groups:[]                  // 全网搜索结果分组 [{ri,si,name,items,pg,spider?}]
+  groups:[],                 // 全网搜索结果分组 [{ri,si,name,items,pg,spider?}]
+  // 当前播放列表（原生播放器切集/连播时经 __playSpiderAt 回传）
+  playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:''
 };
 var CB={}; var CBID=1;
 window.__videoCb=function(id,ok,b64,code){
@@ -644,9 +646,9 @@ function renderEps(v){
     var blk=document.createElement('div'); blk.className='epblock';
     blk.innerHTML='<div class="from">'+esc(g.from)+(gi>0?' <small>点此展开</small>':'')+'</div>';
     var ep=document.createElement('div'); ep.className='eps'; ep.style.display=(gi===0?'grid':'none');
-    g.eps.forEach(function(e){
+    g.eps.forEach(function(e,ei){
       var b=document.createElement('div'); b.className='ep'; b.textContent=e.name;
-      b.onclick=function(){playEp(g.from,e);};
+      b.onclick=function(){playEp(g.from,g.eps,ei);};
       ep.appendChild(b);
     });
     blk.appendChild(ep);
@@ -654,20 +656,36 @@ function renderEps(v){
     box.appendChild(blk);
   });
 }
-function playEp(from,e){
+/**
+ * 点选集起播。from=线路名，eps=该线路全部剧集，idx=起始集下标。
+ * 同时把整条剧集列表交给原生播放器，支持上一集/下一集/播完自动连播；
+ * 爬虫源列表原生侧只存元数据，切集时回传 __playSpiderAt 重新解析。
+ */
+function playEp(from,eps,idx){
   closeSheet();
+  var spiderT=STATE.detailSpider;
+  STATE.playFrom=from; STATE.playEps=eps; STATE.playIdx=idx;
+  var epsJson=JSON.stringify(eps.map(function(x){
+    return {name:x.name,url:x.url,spider:!!spiderT};
+  }));
+  var spJson=spiderT?JSON.stringify({
+    jar:spiderT.jar,api:spiderT.api,ext:spiderT.ext,key:spiderT.key,flag:from
+  }):'';
+  STATE.playEpsJson=epsJson; STATE.playSpJson=spJson;
+  var e=eps[idx]||{};
   // 爬虫源：先经 playerContent 解析出直链再交原生播放器
-  if(STATE.detailSpider){ playSpiderEp(STATE.detailSpider,from,e); return; }
+  if(spiderT){ playSpiderEp(spiderT,from,e,idx,epsJson,spJson); return; }
   var url=e.url, name=(STATE.detail.vod_name||'')+' · '+from+' · '+e.name;
   // 一律交给原生 ExoPlayer 在本 App 内横屏播放，不再跳外部播放器
   // 很多 CDN 校验 Referer：带上详情所属站点的 origin，否则 403
   var ref='';
   try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
-  if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref);
+  if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson);
   else toast('当前环境不支持播放');
 }
-/** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器 */
-async function playSpiderEp(t,flag,e){
+/** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器。
+ *  epsJson/spJson/idx 一并回传，原生侧才能维护整条播放列表。 */
+async function playSpiderEp(t,flag,e,idx,epsJson,spJson){
   toast('正在解析播放地址…');
   var txt=await spiderPlay(t,flag,e.url);
   var j=null; try{j=JSON.parse(txt);}catch(err){}
@@ -678,7 +696,8 @@ async function playSpiderEp(t,flag,e){
   try{ if(j.header&&j.header.Referer) ref=j.header.Referer; }catch(err){}
   if(url&&!parse&&/^https?:/i.test(url)){
     var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
-    if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref);
+    if(window.Android&&Android.playResolved) Android.playResolved(url,name,ref,idx,epsJson,spJson);
+    else if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson);
     else toast('当前环境不支持播放');
   } else if(parse){
     toast('该线路需要解析，暂不支持（可换其他线路）');
@@ -686,6 +705,12 @@ async function playSpiderEp(t,flag,e){
     toast('未获取到播放地址，可换其他线路');
   }
 }
+/** 原生播放器切集回调（上一集/下一集/自动连播）：爬虫源剧集需重新解析 */
+window.__playSpiderAt=function(i){
+  var e=(STATE.playEps||[])[i]; if(!e)return;
+  if(!STATE.detailSpider)return;
+  playSpiderEp(STATE.detailSpider,STATE.playFrom,e,i,STATE.playEpsJson,STATE.playSpJson);
+};
 
 /* ============ 启动 ============ */
 async function boot(){

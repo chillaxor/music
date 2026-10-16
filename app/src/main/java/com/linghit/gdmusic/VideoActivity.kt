@@ -1,12 +1,17 @@
 package com.linghit.gdmusic
 
 import android.annotation.SuppressLint
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import android.util.Rational
 import android.view.View
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -37,8 +42,12 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONArray
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 影视仓（TVBox / CatVod 风格）视频模块。
@@ -67,8 +76,10 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var overlay: FrameLayout
     private lateinit var playerView: PlayerView
-    private lateinit var videoTitle: TextView
-    private lateinit var videoClose: TextView
+    private lateinit var videoPip: TextView
+    private lateinit var videoClock: TextView
+    private lateinit var videoPrev: TextView
+    private lateinit var videoNext: TextView
     private lateinit var videoBuffering: TextView
 
     private var player: ExoPlayer? = null
@@ -79,6 +90,22 @@ class VideoActivity : AppCompatActivity() {
         .followSslRedirects(true)
         .build()
     private val prefs by lazy { getSharedPreferences("video_sources", MODE_PRIVATE) }
+
+    // ===================== 播放列表（连播/切集） =====================
+    /** 一条剧集：spider=true 时 url 不是直链，需回传 JS 经 playerContent 解析 */
+    private data class EpItem(val name: String, val url: String, val spider: Boolean)
+
+    private var epsList: List<EpItem> = emptyList()
+    private var curIdx: Int = -1
+    private var curReferer: String = ""
+    /** 右上角时钟：每秒刷新 */
+    private val clockHandler = Handler(Looper.getMainLooper())
+    private val clockTick = object : Runnable {
+        override fun run() {
+            videoClock.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            clockHandler.postDelayed(this, 1000)
+        }
+    }
 
     companion object {
         private const val KEY = "sources"
@@ -119,11 +146,18 @@ class VideoActivity : AppCompatActivity() {
         webView = findViewById(R.id.videoWebView)
         overlay = findViewById(R.id.videoOverlay)
         playerView = findViewById(R.id.videoPlayerView)
-        videoTitle = findViewById(R.id.videoTitle)
-        videoClose = findViewById(R.id.videoClose)
+        videoPip = findViewById(R.id.videoPip)
+        videoClock = findViewById(R.id.videoClock)
+        videoPrev = findViewById(R.id.videoPrev)
+        videoNext = findViewById(R.id.videoNext)
         videoBuffering = findViewById(R.id.videoBuffering)
 
-        videoClose.setOnClickListener { closeVideo() }
+        // 小窗：进 PiP 后可以操作 App 其他功能，视频继续悬浮播放
+        videoPip.setOnClickListener { enterPip() }
+        videoPrev.setOnClickListener {
+            if (curIdx <= 0) toast("已经是第一集") else playIndex(curIdx - 1)
+        }
+        videoNext.setOnClickListener { playNext() }
         // 返回键：播放中先关播放器（退回流媒体），否则直接退出页面
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -211,10 +245,34 @@ class VideoActivity : AppCompatActivity() {
             })
         }
 
-        /** 原生 ExoPlayer 播放（直接 m3u8/mp4 等可硬解地址）——一律在本 App 内播放 */
+        /**
+         * 原生 ExoPlayer 播放（直接 m3u8/mp4 等可硬解地址）——一律在本 App 内播放。
+         * epsJson：当前线路全部剧集 [{name,url,spider}]，用于上一集/下一集/播完连播；
+         * idx：起始集下标；spiderJson：爬虫源上下文（JS 解析下一集时回调用）。
+         */
         @JavascriptInterface
-        fun playVideo(url: String, title: String, referer: String) {
-            runOnUiThread { startVideo(url, title, referer) }
+        fun playVideo(
+            url: String,
+            title: String,
+            referer: String,
+            epsJson: String,
+            idx: Int,
+            spiderJson: String
+        ) {
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson) }
+        }
+
+        /** 爬虫源剧集解析完成后的起播桥：playSpiderEp 拿到直链后回传 */
+        @JavascriptInterface
+        fun playResolved(
+            url: String,
+            title: String,
+            referer: String,
+            idx: Int,
+            epsJson: String,
+            spiderJson: String
+        ) {
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson) }
         }
 
         // ===================== Spider 爬虫源桥（DexClassLoader 引擎） =====================
@@ -335,6 +393,8 @@ class VideoActivity : AppCompatActivity() {
                     override fun onPlaybackStateChanged(state: Int) {
                         videoBuffering.visibility =
                             if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+                        // 播完自动下一集（影视仓主流体验）
+                        if (state == Player.STATE_ENDED) playNext()
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -352,15 +412,35 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    private fun startVideo(url: String, title: String, referer: String = "") {
-        Log.d("VidPlay", "startVideo: $title | $url | referer=$referer")
-        ensurePlayer()
+    /**
+     * 起播入口。epsJson/idx/spiderJson 由 JS 在点选集时一次性带上（当前线路全部剧集），
+     * 空串表示沿用已有列表（爬虫源解析完成回调、或直接切集时走 playIndex）。
+     */
+    private fun startVideo(
+        url: String,
+        title: String,
+        referer: String,
+        epsJson: String = "",
+        idx: Int = -1,
+        spiderJson: String = ""
+    ) {
+        Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx")
+        if (epsJson.isNotBlank()) epsList = parseEps(epsJson)
+        if (referer.isNotBlank()) curReferer = referer
+        if (idx >= 0) curIdx = idx
         overlay.visibility = View.VISIBLE
-        videoTitle.text = title
         videoBuffering.visibility = View.VISIBLE
         // 一律本 App 内播放：强制横屏 + 沉浸式全屏（关掉播放器再恢复竖屏）
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         hideSystemBars()
+        clockHandler.removeCallbacks(clockTick)
+        clockTick.run()
+        playMediaUrl(url, curReferer)
+    }
+
+    /** 播放单条直链（Referer 很多 CDN 校验，不带 403） */
+    private fun playMediaUrl(url: String, referer: String) {
+        ensurePlayer()
         val itemBuilder = MediaItem.Builder().setUri(url)
         // 只有明确扩展名时才指定 mime；否则交给 DefaultMediaSourceFactory
         // 按 Content-Type 嗅探（乱设 VIDEO_MP4 会把非 mp4 流直接判死）
@@ -370,7 +450,6 @@ class VideoActivity : AppCompatActivity() {
             url.contains(".mp4", true) -> itemBuilder.setMimeType(MimeTypes.VIDEO_MP4)
         }
         val item = itemBuilder.build()
-        // 很多 CDN 校验 Referer（不带 403）：用详情所属站点的 origin
         val headers = buildMap {
             if (referer.isNotBlank()) put("Referer", referer)
         }
@@ -386,13 +465,96 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    /** 切到第 i 集：直链直接播；爬虫源回传 JS 经 playerContent 解析后再起播 */
+    private fun playIndex(i: Int) {        if (i < 0 || i >= epsList.size) return
+        val ep = epsList[i]
+        curIdx = i
+        if (ep.spider) {
+            Log.d("VidPlay", "切集(爬虫源) -> __playSpiderAt($i)")
+            safeEval("if(window.__playSpiderAt)window.__playSpiderAt($i)")
+            return
+        }
+        Log.d("VidPlay", "切集 -> ${ep.name}")
+        playMediaUrl(ep.url, curReferer)
+    }
+
+    private fun playNext() {
+        if (epsList.isEmpty()) return
+        if (curIdx + 1 < epsList.size) playIndex(curIdx + 1)
+        else toast("播放完毕，已是最后一集")
+    }
+
+    private fun parseEps(json: String): List<EpItem> {
+        val out = ArrayList<EpItem>()
+        try {
+            val arr = JSONArray(json)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    EpItem(
+                        o.optString("name"),
+                        o.optString("url"),
+                        o.optBoolean("spider")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w("VidPlay", "剧集列表解析失败: ${e.message}")
+        }
+        return out
+    }
+
     private fun closeVideo() {
         player?.pause()
         player?.stop()
         overlay.visibility = View.GONE
+        clockHandler.removeCallbacks(clockTick)
         // 恢复竖屏浏览 + 显示系统栏
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         showSystemBars()
+    }
+
+    // ===================== 小窗（PiP） =====================
+    /** 进小窗：视频悬浮播放，用户可以回到 App 其他页面继续操作 */
+    private fun enterPip() {
+        if (Build.VERSION.SDK_INT < 26) {
+            toast("系统版本不支持小窗")
+            return
+        }
+        val ratio = player?.videoSize?.let {
+            if (it.width > 0 && it.height > 0) Rational(it.width, it.height) else null
+        } ?: Rational(16, 9)
+        try {
+            enterPictureInPictureMode(
+                PictureInPictureParams.Builder().setAspectRatio(ratio).build()
+            )
+            Log.d("VidPlay", "进入小窗 ratio=$ratio")
+        } catch (e: Exception) {
+            Log.w("VidPlay", "进入小窗失败: ${e.message}")
+            toast("进入小窗失败")
+        }
+    }
+
+    /** 按 Home 键回桌面时自动进小窗（播放中才进） */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (overlay.visibility == View.VISIBLE && player?.isPlaying == true) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
+        @Suppress("DEPRECATION")
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode)
+        // 小窗里只留画面，自定义按钮/时钟全部隐藏
+        val v = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        videoPip.visibility = v
+        videoClock.visibility = v
+        videoPrev.visibility = v
+        videoNext.visibility = v
+        if (!isInPictureInPictureMode) clockTick.run()
     }
 
     /** 播放时进沉浸式全屏：隐藏状态栏/导航栏，下拉手势临时唤出 */
@@ -411,12 +573,15 @@ class VideoActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // 进小窗时 activity 也会 onPause，此时不能停播
+        if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
         player?.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         webViewAlive = false
+        clockHandler.removeCallbacks(clockTick)
         player?.release()
         player = null
         webView.destroy()
