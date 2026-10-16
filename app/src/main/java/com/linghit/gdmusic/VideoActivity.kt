@@ -31,6 +31,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.linghit.gdmusic.spider.SpiderEngine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -55,10 +56,11 @@ import java.nio.charset.StandardCharsets
  *
  * 搜索分两种模式（页面顶栏「全网 / 本站」切换）：
  *  - 全网：并发请求所有订阅源里的 CMS 直连站点（type 0/1 且 api 为 http(s)），
+ *    外加 csp_ 爬虫站点（type 3，由订阅自带 dex jar 经 SpiderEngine 加载执行），
  *    结果按来源分组展示——多仓配置下某个关键词在 A 站没有、B 站有的是常态，
  *    单站搜索很容易「啥都搜不到」；
  *  - 本站：只搜当前选中站点。
- * 秒播 / Spider 类站点（type 3 或 api 非 http）需要解析引擎，两种模式都不覆盖。
+ * XBPQ/AppGet 等 JS 框架源与 .py 源不在引擎范围内，暂不参与搜索。
  */
 class VideoActivity : AppCompatActivity() {
 
@@ -215,10 +217,48 @@ class VideoActivity : AppCompatActivity() {
             runOnUiThread { startVideo(url, title, referer) }
         }
 
+        // ===================== Spider 爬虫源桥（DexClassLoader 引擎） =====================
+        // jar：订阅配置的 spider 地址（盒子迷伪装成 .png，可带 ;md5; 校验后缀）
+        // api：站点 api，形如 csp_Bili；ext：站点配置；key：站点唯一 key
+        /** 蜘蛛源搜索（searchContent） */
+        @JavascriptInterface
+        fun spiderSearch(jar: String, api: String, ext: String, key: String, wd: String, cbId: Int) {
+            Log.d("VidSpider", "spiderSearch api=$api key=$key wd=$wd")
+            if (jar.isBlank() || api.isBlank()) {
+                spiderCb(cbId, false, "")
+                return
+            }
+            SpiderEngine.get(this@VideoActivity)
+                .searchAsync(jar, api, ext, key, wd) { r -> spiderCb(cbId, r != null, r ?: "") }
+        }
+
+        /** 蜘蛛源详情（detailContent） */
+        @JavascriptInterface
+        fun spiderDetail(jar: String, api: String, ext: String, key: String, ids: String, cbId: Int) {
+            Log.d("VidSpider", "spiderDetail api=$api key=$key ids=$ids")
+            if (jar.isBlank() || api.isBlank()) {
+                spiderCb(cbId, false, "")
+                return
+            }
+            SpiderEngine.get(this@VideoActivity)
+                .detailAsync(jar, api, ext, key, ids) { r -> spiderCb(cbId, r != null, r ?: "") }
+        }
+
+        /** 蜘蛛源播放解析（playerContent）：返回 {url,parse,...} JSON */
+        @JavascriptInterface
+        fun spiderPlay(jar: String, api: String, ext: String, key: String, flag: String, id: String, cbId: Int) {
+            Log.d("VidSpider", "spiderPlay api=$api key=$key flag=$flag id=${id.take(60)}")
+            if (jar.isBlank() || api.isBlank()) {
+                spiderCb(cbId, false, "")
+                return
+            }
+            SpiderEngine.get(this@VideoActivity)
+                .playAsync(jar, api, ext, key, flag, id) { r -> spiderCb(cbId, r != null, r ?: "") }
+        }
+
         /** 拉起系统/外部播放器（解析类、或本机播不了的地址） */
         @JavascriptInterface
-        fun externalPlay(url: String, title: String) {
-            runOnUiThread {
+        fun externalPlay(url: String, title: String) {            runOnUiThread {
                 try {
                     val type = when {
                         url.contains(".m3u8", true) -> "application/x-mpegURL"
@@ -276,6 +316,14 @@ class VideoActivity : AppCompatActivity() {
     private var webViewAlive = true
     private fun safeEval(code: String) {
         if (webViewAlive) webView.evaluateJavascript(code, null)
+    }
+
+    /** Spider 桥回传：结果 base64 避免转义问题（引擎回调在 watchdog 线程，切回 UI 线程） */
+    private fun spiderCb(cbId: Int, ok: Boolean, text: String) {
+        val b64 = if (ok && text.isNotEmpty())
+            Base64.encodeToString(text.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+        else ""
+        runOnUiThread { safeEval("window.__spiderCb($cbId,$ok,'$b64')") }
     }
 
     // ===================== 视频播放 =====================

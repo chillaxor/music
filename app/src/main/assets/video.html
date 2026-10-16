@@ -148,8 +148,8 @@
         </div>
         <div style="color:var(--sub);font-size:11px;margin-top:8px;line-height:1.5">
           接口源即影视仓「订阅地址」，返回 sites 列表，可添加多个。<br>
-          「全网」搜索会并发搜索所有订阅里的 CMS 直连站点，结果按来源分组；
-          秒播 / Spider 类站点需要解析引擎，暂不支持，不参与搜索。<br>
+          「全网」搜索会并发搜索所有订阅里的 CMS 直连站点 + jar 爬虫源（🕷 标记），
+          结果按来源分组；XBPQ/AppGet 等 JS 框架源暂不支持。<br>
           分类浏览为单站模式，点上方站点 chip 切换。
         </div>
       </div>
@@ -163,10 +163,13 @@
 var STATE={
   sources:[],cur:0,          // 订阅源列表 / 当前源
   srcSites:[],               // 每个订阅源缓存的 sites（预加载，全网搜索用）
+  srcJars:[],                // 每个订阅源的 spider jar 地址（配置的 spider 字段，可带 ;md5;）
   sites:[],siteIdx:0,        // 当前源的站点 / 当前落地站点
   site:null,classes:[],t:0,pg:1,wd:"",loading:false,detail:null,
+  detailSite:null,           // 直连站详情所属站点（播放 Referer 用）
+  detailSpider:null,         // 爬虫源详情所属站点信息（播放走 playerContent）
   searchScope:'all',         // all=全网聚合 / site=仅当前站
-  groups:[]                  // 全网搜索结果分组 [{si,name,items,pg}]
+  groups:[]                  // 全网搜索结果分组 [{ri,si,name,items,pg,spider?}]
 };
 var CB={}; var CBID=1;
 window.__videoCb=function(id,ok,b64,code){
@@ -185,6 +188,37 @@ function get(url){return new Promise(function(res){
   if(window.Android&&Android.httpGet) Android.httpGet(url,id);
   else res({ok:false,text:"",code:0});
 });}
+
+/* ============ Spider 爬虫源桥（DexClassLoader 引擎，见 SpiderEngine.kt） ============ */
+var SCB={}; var SCBID=1;
+window.__spiderCb=function(id,ok,b64){
+  var f=SCB[id]; if(!f)return; delete SCB[id];
+  var txt=""; if(ok&&b64) txt=decodeB64(b64);
+  f(ok?txt:null);
+};
+function spiderReady(){return !!(window.Android&&Android.spiderSearch);}
+/** 爬虫源搜索：t={ri,si,name,api,ext,jar,key} */
+function spiderSearch(t,w){return new Promise(function(res){
+  if(!spiderReady()){res(null);return;}
+  var id=SCBID++; SCB[id]=res;
+  Android.spiderSearch(t.jar||'',t.api||'',t.ext||'',t.key||t.name,w,id);
+});}
+/** 爬虫源详情 */
+function spiderDetail(t,id){return new Promise(function(res){
+  if(!spiderReady()){res(null);return;}
+  var cid=SCBID++; SCB[cid]=res;
+  Android.spiderDetail(t.jar||'',t.api||'',t.ext||'',t.key||t.name,id,cid);
+});}
+/** 爬虫源播放解析（playerContent） */
+function spiderPlay(t,flag,id){return new Promise(function(res){
+  if(!spiderReady()){res(null);return;}
+  var cid=SCBID++; SCB[cid]=res;
+  Android.spiderPlay(t.jar||'',t.api||'',t.ext||'',t.key||t.name,flag,id,cid);
+});}
+/** 是否 jar 爬虫源站点（csp_ 前缀，由 dex jar 实现） */
+function isSpiderSite(site){
+  return !!(site&&site.api&&String(site.api).indexOf('csp_')===0);
+}
 function norm(u){
   // new URL() 会同时做两件事：中文主机转 punycode、中文路径转百分号编码。
   // 绝不能再 encodeURIComponent 一遍——% 会变成 %25 造成双重编码，
@@ -247,6 +281,7 @@ async function loadOneSource(i){
     console.log('loadOneSource NOT JSON: src='+i+' head='+r.text.slice(0,80));STATE.srcSites[i]=[];return [];
   }
   var sites=(cfg.sites||[]).filter(function(x){return x&&x.api;});
+  STATE.srcJars[i]=cfg.spider||''; // 仓级 spider jar 地址（type3 爬虫源用）
   if(!sites.length&&(cfg.class||cfg.list)){
     console.log('loadOneSource: src='+i+' 返回的是单站数据（有 class/list 无 sites），不是多仓订阅地址');
   }
@@ -328,12 +363,20 @@ function reloadList(){STATE.pg=1;STATE.wd="";STATE.groups=[];$('grid').innerHTML
 async function loadList(){
   if(STATE.loading)return; STATE.loading=true; $('sload').textContent='加载中…';
   var site=STATE.site, api=site.api, items=[];
-  if(STATE.wd){
+  var spiderT=null;
+  if(STATE.wd&&isSpiderSite(site)){
+    // 本站就是爬虫源：搜索走 Spider 桥
+    spiderT={ri:STATE.cur,si:STATE.siteIdx,name:site.name||site.key,api:site.api,
+      ext:site.ext?(typeof site.ext==='string'?site.ext:JSON.stringify(site.ext)):'',
+      jar:(STATE.srcJars&&STATE.srcJars[STATE.cur])||'',key:site.key||site.name};
+    var st=await spiderSearch(spiderT,STATE.wd);
+    if(st){try{items=JSON.parse(st).list||[];}catch(e){}}
+  } else if(STATE.wd){
     var ru=await get(norm(api+(api.indexOf('?')>=0?'&':'?')+'ac=videolist&wd='+encodeURIComponent(STATE.wd)+'&pg='+STATE.pg));
     if(ru.ok){try{items=JSON.parse(ru.text).list||[];}catch(e){}}
   } else if(site.type===3){
-    console.log('loadList: 站点',site.name,'是 Spider 类，跳过');
-    $('sload').textContent=''; STATE.loading=false; setState('该站点需 Spider 运行时，暂不支持'); return;
+    console.log('loadList: 站点',site.name,'是爬虫源，无搜索词时跳过');
+    $('sload').textContent=''; STATE.loading=false; setState('该站点为爬虫源，请直接搜索（分类浏览暂不支持）'); return;
   } else {
     var u=api+(api.indexOf('?')>=0?'&':'?')+'ac=videolist'+(STATE.t?'&t='+STATE.t:'')+'&pg='+STATE.pg;
     var rl=await get(norm(u));
@@ -341,6 +384,7 @@ async function loadList(){
   }
   STATE.loading=false; $('sload').textContent='';
   if(STATE.pg===1){$('grid').innerHTML='';}
+  if(spiderT&&items.length){items.forEach(function(v){v._spider=spiderT;});}
   if(!items.length){ console.log('loadList: 0 条 (site='+site.name+' wd='+STATE.wd+' t='+STATE.t+')'); if(STATE.pg===1) setState(STATE.wd?'没有匹配的搜索结果':'该分类暂无内容'); $('more').style.display='none'; return; }
   console.log('loadList: '+items.length+' 条, 首条='+items[0].vod_name);
   items.forEach(function(v){$('grid').appendChild(card(v,STATE.siteIdx));});
@@ -357,7 +401,7 @@ function card(v,si){
   d.innerHTML=(pic?'<img class="pic" src="'+esc(pic)+'" onerror="this.style.display=\'none\'">':'<div class="ph">🎬</div>')+
     '<div class="meta"><div class="nm">'+esc(v.vod_name)+'</div>'+
     (v.vod_remarks?'<div class="rm">'+esc(v.vod_remarks)+'</div>':'')+'</div>';
-  d.onclick=function(){openDetail(v.vod_id,si);};
+  d.onclick=function(){ if(v._spider) openSpiderDetail(v); else openDetail(v.vod_id,si); };
   return d;
 }
 function setState(t){$('stxt').textContent=t;}
@@ -379,6 +423,50 @@ function collectDirectSites(){
     (sites||[]).forEach(function(s,si){ if(isDirect(s)) out.push({ri:ri,si:si,name:s.name||s.key||('站点'+(si+1)),api:s.api}); });
   });
   return out;
+}
+/** 汇总所有订阅源里的 jar 爬虫站点 [{ri,si,name,api,ext,jar,key}] */
+function collectSpiderSites(){
+  var out=[];
+  (STATE.srcSites||[]).forEach(function(sites,ri){
+    var jar=(STATE.srcJars&&STATE.srcJars[ri])||'';
+    (sites||[]).forEach(function(s,si){
+      if(s&&s.api&&String(s.api).indexOf('csp_')===0){
+        out.push({ri:ri,si:si,name:s.name||s.key||('站点'+(si+1)),api:s.api,
+          ext:s.ext?(typeof s.ext==='string'?s.ext:JSON.stringify(s.ext)):'',
+          jar:jar,key:s.key||s.name||('site'+ri+'_'+si)});
+      }
+    });
+  });
+  return out;
+}
+/** 全网爬虫源搜索：并发搜所有 csp_ 站点，结果按来源分组（🕷 标记） */
+async function searchSpiderAll(w){
+  var empty={sites:0,items:0};
+  if(!w)return empty;
+  var targets=collectSpiderSites();
+  if(!targets.length)return empty;
+  var done=0,hit=0,cnt=0;
+  var queue=targets.slice();
+  var CONC=6;
+  async function worker(){
+    while(queue.length){
+      var t=queue.shift();
+      var txt=await spiderSearch(t,w);
+      var items=[];
+      if(txt){try{items=JSON.parse(txt).list||[];}catch(e){}}
+      if(items.length){
+        items.forEach(function(v){v._spider=t;});
+        STATE.groups.push({ri:t.ri,si:t.si,name:t.name,api:t.api,spider:true,items:items,pg:1,noMore:true});
+        hit++;cnt+=items.length;
+      }
+      done++;
+      setState('正在搜索爬虫源… '+done+'/'+targets.length+'（'+hit+' 个源有结果）');
+    }
+  }
+  var ws=[];for(var i=0;i<Math.min(CONC,targets.length);i++)ws.push(worker());
+  await Promise.all(ws);
+  console.log('searchSpiderAll done: '+hit+'/'+targets.length+' 个源有结果 · 共 '+cnt+' 条');
+  return {sites:hit,items:cnt};
 }
 async function searchAll(w){
   var targets=collectDirectSites();
@@ -413,15 +501,15 @@ async function searchAll(w){
   var ws=[]; for(var i=0;i<Math.min(CONC,targets.length);i++) ws.push(worker());
   await Promise.all(ws);
   $('sload').textContent='';
-  var spider=0;
-  (STATE.srcSites||[]).forEach(function(sites){(sites||[]).forEach(function(s){if(!isDirect(s))spider++;});});
-  console.log('searchAll done: '+hit+'/'+targets.length+' 个源有结果 · 共 '+cnt+' 条 · Spider 源 '+spider+' 个未搜');
+  var spiderTotal=collectSpiderSites().length;
+  var sp=await searchSpiderAll(STATE.wd);
+  console.log('searchAll done: 直连 '+hit+'/'+targets.length+' · 爬虫 '+sp.sites+'/'+spiderTotal+' · 共 '+(cnt+sp.items)+' 条');
   renderSearchResults();
   if(!STATE.groups.length){
-    setState('全网搜索无结果：已搜 '+targets.length+' 个直连源'+(spider?('，另有 '+spider+' 个秒播/Spider 源暂不支持'):''));
+    setState('全网搜索无结果：已搜 '+targets.length+' 个直连源 + '+spiderTotal+' 个爬虫源');
     $('more').style.display='none';
   } else {
-    setState('全网搜索：'+hit+'/'+targets.length+' 个源有结果 · 共 '+cnt+' 条'+(spider?('（'+spider+' 个 Spider 源未搜）'):''));
+    setState('全网搜索：'+hit+'/'+targets.length+' 直连 + '+sp.sites+'/'+spiderTotal+' 爬虫 · 共 '+(cnt+sp.items)+' 条');
     $('more').style.display='block';
   }
 }
@@ -430,15 +518,17 @@ function renderSearchResults(){
   var box=$('grid'); box.innerHTML='';
   STATE.groups.forEach(function(g){
     var h=document.createElement('div'); h.className='grpHead';
-    h.innerHTML='<span class="gn">▣ '+esc(g.name)+'</span>'+
+    h.innerHTML='<span class="gn">'+(g.spider?'🕷 ':'▣ ')+esc(g.name)+'</span>'+
       '<span class="gc">'+g.items.length+' 条</span>'+
-      '<span class="go2">进入该站 ▸</span>';
-    h.querySelector('.go2').onclick=function(){
-      var s=(STATE.srcSites[g.ri]||[])[g.si];
-      if(!s)return;
-      if(g.ri===STATE.cur){ STATE.siteIdx=g.si; renderSiteChips(); loadSite(s); }
-      else { STATE.cur=g.ri; persist(); selectSource(); }
-    };
+      (g.spider?'':'<span class="go2">进入该站 ▸</span>');
+    if(!g.spider){
+      h.querySelector('.go2').onclick=function(){
+        var s=(STATE.srcSites[g.ri]||[])[g.si];
+        if(!s)return;
+        if(g.ri===STATE.cur){ STATE.siteIdx=g.si; renderSiteChips(); loadSite(s); }
+        else { STATE.cur=g.ri; persist(); selectSource(); }
+      };
+    }
     box.appendChild(h);
     g.items.forEach(function(v){box.appendChild(card(v,g.si));});
   });
@@ -449,7 +539,9 @@ async function loadMoreAll(){
   $('sload').textContent='加载中…';
   var add=0, exhausted=0;
   for(var i=0;i<STATE.groups.length;i++){
-    var g=STATE.groups[i]; g.pg++;
+    var g=STATE.groups[i];
+    if(g.noMore){exhausted++;continue;} // 爬虫源分组暂不支持翻页
+    g.pg++;
     var sep=g.api.indexOf('?')>=0?'&':'?';
     var r=await get(norm(g.api+sep+'ac=videolist&wd='+encodeURIComponent(STATE.wd)+'&pg='+g.pg));
     var items=[];
@@ -493,17 +585,31 @@ async function openDetail(id,si){
   if(!r.ok){setState('详情加载失败');return;}
   var v; try{v=(JSON.parse(r.text).list||[])[0];}catch(e){}
   if(!v){setState('未获取到详情');return;}
+  renderDetail(v,site,null);
+}
+/** 爬虫源详情：走 Spider 桥拿标准 CatVod 详情 JSON */
+async function openSpiderDetail(v){
+  var t=v._spider; if(!t)return;
+  setState('加载详情…');
+  var txt=await spiderDetail(t,v.vod_id);
+  var d=null; try{d=(JSON.parse(txt).list||[])[0];}catch(e){}
+  if(!d){setState('详情加载失败');return;}
+  renderDetail(d,null,t);
+}
+/** 详情渲染（直连站与爬虫源共用） */
+function renderDetail(v,site,spiderT){
   STATE.detail=v;
-  STATE.detailSite=site; // 记住详情所属站点：播放时取它的 origin 当 Referer
+  STATE.detailSite=site;       // 直连站：播放时取 origin 当 Referer
+  STATE.detailSpider=spiderT;  // 爬虫站：播放走 playerContent 解析
   var pic=v.vod_pic||"";
   $('dPic').innerHTML = pic?'<img src="'+esc(pic)+'" onerror="this.style.display=\'none\'">':'<div class="ph">🎬</div>';
   $('dTit').textContent=v.vod_name||'';
   $('dInfo').innerHTML=(v.vod_year?v.vod_year+' · ':'')+(v.vod_area?v.vod_area+' · ':'')+
     (v.vod_actor?('演员：'+esc(v.vod_actor).slice(0,40)):'')+
-    ' <span style="color:var(--accent2)">▣ '+esc(site.name||site.key||'')+'</span>';
+    ' <span style="color:var(--accent2)">▣ '+esc((site&&(site.name||site.key))||(spiderT&&spiderT.name)||'')+'</span>';
   $('dDesc').textContent=(v.vod_content||'').replace(/<[^>]+>/g,' ').trim();
   renderEps(v);
-  console.log('openDetail:',v.vod_name,'| 线路',parsePlay(v).length,'组');
+  console.log('renderDetail:',v.vod_name,'| 线路',parsePlay(v).length,'组'+(spiderT?'（爬虫源）':''));
   $('sheet').classList.add('show');
   setState('');
 }
@@ -549,14 +655,36 @@ function renderEps(v){
   });
 }
 function playEp(from,e){
+  closeSheet();
+  // 爬虫源：先经 playerContent 解析出直链再交原生播放器
+  if(STATE.detailSpider){ playSpiderEp(STATE.detailSpider,from,e); return; }
   var url=e.url, name=(STATE.detail.vod_name||'')+' · '+from+' · '+e.name;
   // 一律交给原生 ExoPlayer 在本 App 内横屏播放，不再跳外部播放器
-  closeSheet();
   // 很多 CDN 校验 Referer：带上详情所属站点的 origin，否则 403
   var ref='';
   try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
   if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref);
   else toast('当前环境不支持播放');
+}
+/** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器 */
+async function playSpiderEp(t,flag,e){
+  toast('正在解析播放地址…');
+  var txt=await spiderPlay(t,flag,e.url);
+  var j=null; try{j=JSON.parse(txt);}catch(err){}
+  if(!j){toast('该线路解析失败，可换其他线路/源');return;}
+  var url=j.url||'';
+  var parse=(j.parse===1||j.parse==='1');
+  var ref='';
+  try{ if(j.header&&j.header.Referer) ref=j.header.Referer; }catch(err){}
+  if(url&&!parse&&/^https?:/i.test(url)){
+    var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
+    if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref);
+    else toast('当前环境不支持播放');
+  } else if(parse){
+    toast('该线路需要解析，暂不支持（可换其他线路）');
+  } else {
+    toast('未获取到播放地址，可换其他线路');
+  }
 }
 
 /* ============ 启动 ============ */

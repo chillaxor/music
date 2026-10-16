@@ -49,4 +49,6 @@ dependencies {
     // MP3/FLAC 等音频文件的 ID3 标签读写（歌名/歌手/专辑/歌词写进文件），移植自 mf_audit
     implementation("net.jthink:jaudiotagger:3.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // TVBox 爬虫 dex jar 依赖 gson（jar 不自带，FongMi 宿主由 app 提供）
+    implementation("com.google.code.gson:gson:2.10.1")
 }
