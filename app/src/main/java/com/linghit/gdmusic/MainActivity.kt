@@ -94,7 +94,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var queueCount:TextView
     private lateinit var queueAdapter:QueueAdapter
     /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加，长按删除） */
-    private lateinit var shortcutRow: LinearLayout
+    private lateinit var shortcutRow: FlowLayout
     private var showSearch=false
     private val uiHandler=Handler(Looper.getMainLooper())
     private lateinit var adapter:SongAdapter
@@ -328,7 +328,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val items = HomeShortcutStore.list(this)
         val padH = (12 * resources.displayMetrics.density).toInt()
         val padV = (7 * resources.displayMetrics.density).toInt()
-        val margin = (8 * resources.displayMetrics.density).toInt()
         items.forEach { item ->
             val tv = TextView(this)
             tv.text = "${item.emoji} ${item.label}"
@@ -348,11 +347,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     .show()
                 true
             }
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+            val lp = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            lp.marginEnd = margin
             shortcutRow.addView(tv, lp)
         }
     }
