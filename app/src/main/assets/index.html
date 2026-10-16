@@ -244,12 +244,13 @@
     .add{margin:4px 0 8px;padding:9px}
     /* 手机端两行紧凑：第一行 手柄+名称+操作，第二行 类别/金额/浮亏。
        列宽全部固定（类别 76、浮亏 64），资产区与负债区的列严格对齐，不再错位 */
-    .vcard{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:7px 10px}
+    /* 第三/四列改固定宽度：浮亏/操作不再撑开 auto 列，资产区与负债区金额右边界一致 */
+    .vcard{grid-template-columns:76px minmax(0,1fr) 72px 84px;gap:4px 8px;padding:7px 10px}
     .vcard-name{grid-column:2;grid-row:1}
     .vcard-cat{grid-column:1;grid-row:2;width:76px;justify-content:flex-start}
     .vcard-amt{grid-column:2;grid-row:2;justify-content:flex-end;font-size:14px}
-    .vcard-pl{grid-column:3;grid-row:2;width:64px;justify-content:flex-end}
-    .vcard-actions{grid-column:3;grid-row:1;justify-content:flex-end}
+    .vcard-pl{grid-column:3;grid-row:2;width:72px;justify-content:flex-end;min-width:0;overflow:hidden;text-overflow:ellipsis}
+    .vcard-actions{grid-column:4;grid-row:1;justify-content:flex-end}
     .vcard-edit{grid-template-columns:1fr}
     .flow-form{grid-template-columns:1fr}
     .flow-item{font-size:13px}
