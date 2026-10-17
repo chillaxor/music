@@ -57,6 +57,11 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     private val http = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
+        // 爬虫源/订阅服务器同样可能慢或断流；不加超时则 jar 下载或请求会永久挂起，
+        // 看门狗虽能兜住 search/detail/play，但下载阶段没有保护，这里统一加上。
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     /** 爬虫执行池：网络 IO 密集，4 线程足够（全网搜索并发 6 时会排队） */
@@ -93,7 +98,9 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     fun playAsync(jar: String, api: String, ext: String, key: String, flag: String, id: String, cb: (String?) -> Unit) {
         submit(15_000, cb) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
-            runCatching { sp.playerContent(flag, id, emptyList()) }.getOrNull()
+            val r = runCatching { sp.playerContent(flag, id, emptyList()) }.getOrNull()
+            Log.d(TAG, "playAsync[$key] flag=$flag id=${id.take(40)} => ${r?.take(300)}")
+            r
         }
     }
 

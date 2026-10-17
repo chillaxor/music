@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.nio.charset.Charset
 
 /**
  * 歌词伴生文件（.lrc）工具。
@@ -33,13 +34,27 @@ object LyricFiles {
     /** 读一个歌词 uri 的文本（file:// 与 content:// 都支持），空内容返回 null */
     fun read(ctx: Context, uriStr: String): String? = runCatching {
         val uri = Uri.parse(uriStr)
-        val text = if (uri.scheme == "file") {
-            File(uri.path ?: return null).readText()
+        val bytes = if (uri.scheme == "file") {
+            File(uri.path ?: return null).readBytes()
         } else {
-            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
         }
-        text
+        decodeSmart(bytes)
     }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /**
+     * 智能解码：网上下的中文歌词大量是 GBK/GB18030，直接按 UTF-8 解会出一堆
+     * 替换字符（显示为乱码或干脆像没加载）。先按 UTF-8 解，若发现替换字符
+     * 就改用 GB18030 再解，谁的问题少用谁。
+     */
+    private fun decodeSmart(bytes: ByteArray): String? {
+        val badChar = '\uFFFD'
+        val utf8 = bytes.decodeToString()
+        val badUtf8 = utf8.count { it == badChar }
+        if (badUtf8 == 0) return utf8
+        val gbk = runCatching { String(bytes, Charset.forName("GB18030")) }.getOrNull()
+        return if (gbk != null && gbk.count { it == badChar } < badUtf8) gbk else utf8
+    }
 
     /**
      * 在缓存目录找伴生 .lrc（懒缓存兜底：在线播放时 API 拉到的歌词会顺手存到这里，
@@ -47,6 +62,6 @@ object LyricFiles {
      */
     fun readCacheSidecar(ctx: Context, s: Song): String? = runCatching {
         val f = File(DownloadStore.dir(ctx), baseName(s) + ".lrc")
-        if (f.exists()) f.readText() else null
+        if (f.exists()) decodeSmart(f.readBytes()) else null
     }.getOrNull()?.takeIf { it.isNotBlank() }
 }

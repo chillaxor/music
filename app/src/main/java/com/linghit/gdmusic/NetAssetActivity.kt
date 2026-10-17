@@ -204,6 +204,7 @@ class NetAssetActivity : AppCompatActivity() {
             allowContentAccess = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // 从首页自定义资源位进入时，落到指定子页（记一笔/收支查询/日志/链接收藏）
@@ -266,6 +267,15 @@ class NetAssetActivity : AppCompatActivity() {
             // 浏览器标签不挂账本 JS 桥，外部站点无法接触 data。
             @JavascriptInterface
             fun openUrl(url: String) { showBrowser(url) }
+
+            // 顶栏「🎵 音乐」：从记账页切回音乐播放页（MainActivity）
+            @JavascriptInterface
+            fun openMusic() {
+                runOnUiThread {
+                    try { startActivity(Intent(this@NetAssetActivity, MainActivity::class.java)) }
+                    catch (e: Exception) { e.printStackTrace() }
+                }
+            }
 
             // 链接卡片「📌 钉到首页」：把这条链接写成首页自定义资源位（不限量，可删）
             @JavascriptInterface

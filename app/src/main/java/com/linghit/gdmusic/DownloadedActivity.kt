@@ -3,6 +3,7 @@ package com.linghit.gdmusic
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.util.Log
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -239,6 +240,37 @@ class DownloadedActivity : AppCompatActivity() {
         refresh()
     }
 
+    /**
+     * 在音频同目录里找它的伴生歌词，尽量宽容（很多人从网上下的歌词文件名不规整）：
+     *  ① 精确：<歌名>.lrc / <歌名>.lrc.txt / <歌名>.txt / <歌名>.krc（含小写变体）
+     *  ② 兜底：目录下「文件名以歌名开头」且以 .lrc/.txt/.krc 结尾的任意文件
+     *     （覆盖「歌名 - 歌词.lrc」「歌名( live ).txt」这类写法）
+     * 找不到返回 null —— 没歌词也照样导入，播放时再按内嵌/在线递补。
+     */
+    private fun findLrcIn(dir: DocumentFile, base: String): DocumentFile? {
+        if (base.isBlank()) return null
+        val lb = base.lowercase()
+        // ① 精确匹配（含常见双后缀 .lrc.txt）
+        for (n in listOf("$base.lrc", "$lb.lrc", "$base.lrc.txt", "$lb.lrc.txt",
+                "$base.txt", "$lb.txt", "$base.krc", "$lb.krc")) {
+            runCatching { dir.findFile(n) }?.getOrNull()?.let { return it }
+        }
+        // ② 兜底扫描：先找「以歌名开头」，再放宽到「文件名里含歌名」
+        //    （覆盖「歌名 - 歌词.lrc」「歌词-歌名.txt」这类不规范的命名）
+        val files = runCatching { dir.listFiles() }.getOrNull() ?: return null
+        val isLrc = { n: String -> n.endsWith(".lrc") || n.endsWith(".txt") || n.endsWith(".krc") }
+        files.firstOrNull { f ->
+            if (!f.isFile) return@firstOrNull false
+            val n = f.name?.lowercase() ?: return@firstOrNull false
+            n.startsWith(lb) && isLrc(n)
+        }?.let { return it }
+        return files.firstOrNull { f ->
+            if (!f.isFile) return@firstOrNull false
+            val n = f.name?.lowercase() ?: return@firstOrNull false
+            n.contains(lb) && isLrc(n)
+        }
+    }
+
     /** 导入用户选中的文件夹：递归扫描音频文件并写入下载索引（卸载重装后可据此回显） */
     private fun importFolder(treeUri: Uri) {
         try {
@@ -251,7 +283,15 @@ class DownloadedActivity : AppCompatActivity() {
         Thread {
             val root = DocumentFile.fromTreeUri(this, treeUri)
             val items = mutableListOf<DownloadedItem>()
-            val audioExt = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "opus")
+            // 支持的音频格式：常见无损/有损都覆盖；缺歌词完全不影响导入（歌词是可选的）
+            val audioExt = setOf(
+                "mp3", "m4a", "flac", "wav", "ogg", "aac", "opus",
+                "wma", "ape", "mid", "midi", "amr", "mp4", "m4r",
+                "aiff", "aif", "3gp", "caf"
+            )
+            val skipped = mutableMapOf<String, Int>()
+            var lrcFound = 0
+            var lrcMissing = 0
             val queue: ArrayDeque<Pair<DocumentFile, String>> = ArrayDeque()
             if (root != null) queue.add(root to (root.name ?: "导入"))
             while (queue.isNotEmpty()) {
@@ -275,9 +315,11 @@ class DownloadedActivity : AppCompatActivity() {
                             }
                             val song = Song("", name, artist, album, "", "", "", child.uri.toString())
                             val key = song.key()
-                            // 同名伴生歌词：拷贝音乐时最常见的歌词载体（.lrc 优先，其次 .txt）
+                            // 同名伴生歌词：宽容匹配（.lrc / .lrc.txt / .txt / .krc 等写法都认）
+                            // —— 没有歌词文件时留空，照常导入，播放时按内嵌/在线歌词递补
                             val base = nm.substringBeforeLast('.')
-                            val lrcDoc = dir.findFile("$base.lrc") ?: dir.findFile("$base.txt")
+                            val lrcDoc = findLrcIn(dir, base)
+                            if (lrcDoc != null) lrcFound++ else lrcMissing++
                             items.add(
                                 DownloadedItem(
                                     key, song, child.uri,
@@ -286,18 +328,27 @@ class DownloadedActivity : AppCompatActivity() {
                                     lrcDoc?.uri?.toString() ?: ""
                                 )
                             )
+                        } else if (ext.isNotBlank()) {
+                            skipped[ext] = (skipped[ext] ?: 0) + 1
                         }
                     }
                 }
             }
             DownloadStore.addScanned(this, items)
+            val folderName = root?.name ?: "导入"
+            Log.d(
+                "DlImport",
+                "importFolder=$folderName 导入=${items.size} 匹配到歌词=$lrcFound 无歌词=$lrcMissing 跳过非音频=$skipped " +
+                    "(若导入=0 且 跳过=空，说明系统没枚举到文件——多为 Android 11+ 该文件夹的 SAF 权限/选取问题)"
+            )
             runOnUiThread {
                 refresh()
                 Toast.makeText(
                     this,
-                    if (items.isEmpty()) "该文件夹里没有找到音频文件"
+                    if (items.isEmpty())
+                        "在「$folderName」里没找到可导入的音频\n（支持 mp3/m4a/flac/wav/ogg/aac/opus/wma/ape 等；无歌词也能导入）"
                     else "已导入 ${items.size} 首本地音乐",
-                    Toast.LENGTH_SHORT
+                    Toast.LENGTH_LONG
                 ).show()
             }
         }.start()

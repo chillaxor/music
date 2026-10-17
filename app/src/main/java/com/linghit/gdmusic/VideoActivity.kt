@@ -9,10 +9,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.util.Rational
 import android.view.View
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -24,6 +27,8 @@ import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.view.Gravity
+import kotlin.math.abs
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsCompat
@@ -34,6 +39,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -41,6 +47,7 @@ import com.linghit.gdmusic.spider.SpiderEngine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONArray
@@ -50,6 +57,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 /**
  * 影视仓（TVBox / CatVod 风格）视频模块。
@@ -79,18 +87,47 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var overlay: FrameLayout
     private lateinit var playerView: PlayerView
     private lateinit var videoPip: TextView
-    private var controlsVisible = false
+    private var controlsVisible = true
     private lateinit var videoClock: TextView
     private lateinit var videoPrev: TextView
     private lateinit var videoNext: TextView
     private lateinit var videoBuffering: TextView
+    private lateinit var videoMiniLayer: FrameLayout
+    private lateinit var videoMiniBtn: TextView
+    private lateinit var videoMiniClose: TextView
+    /** 小窗（App 内悬浮小窗）模式：播放器缩到角落，页面可继续浏览 */
+    private var miniMode = false
+    /** 用户是否手动拖过小窗：拖动后不再被 applyMiniLayout 复位回右下角 */
+    private var miniUserMoved = false
+    /** 上一次在前台时系统悬浮窗是否还在（用于回来时判断是被 ✕ 关掉了） */
+    private var floatWasRunning = false
+    /** 进系统小窗（PiP）前是否是 App 内小窗，退出 PiP 时按原样恢复 */
+    private var wasMiniBeforePip = false
+    private var miniTouchSlop = 0
+    private var miniDownX = 0f
+    private var miniDownY = 0f
+    private var miniDragged = false
 
+    private var backCallback: OnBackPressedCallback? = null
     private var player: ExoPlayer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    /** Activity 当前是否处于 resumed（小窗里是 paused，点小窗画面展开才会 resumed） */
+    private var activityResumed = false
+    /** 刚退出小窗、正准备把 Activity 拉回前台全屏播放（防止 onStop 误停播） */
+    private var pipRestorePending = false
     // 显式跟随重定向：盒子迷.top/摸鱼 会 301 跳到带尾斜杠的地址，
     // 不跟随的话拿到的是 301 空响应，表现为「接口加载失败」
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
+        // 盒子迷.top 的 nginx 对 OkHttp 的 HTTP/2 会直接断流（unexpected end of stream），
+        // 强制走 HTTP/1.1 即可正常拉到订阅 JSON。
+        .protocols(listOf(Protocol.HTTP_1_1))
+        // 关键：第三方影视源经常响应慢/半截断流/不返回，若不加超时，httpGet 的回调永远
+        // 等不到 → 详情一直「加载详情…」转圈、列表 STATE.loading 永久为 true 导致整页卡死。
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
     private val prefs by lazy { getSharedPreferences("video_sources", MODE_PRIVATE) }
 
@@ -150,6 +187,9 @@ class VideoActivity : AppCompatActivity() {
          * TVBox/FongMi 等客户端默认也都是 okhttp UA。
          */
         private const val UA = "okhttp/3.15.0"
+        /** 嗅探播放页用的浏览器 UA：很多播放页对 okhttp UA 直接返回空/跳登录 */
+        private const val SNIFF_UA =
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
         // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
         // 用中文原样保存，JS 的 new URL() 会自动把主机做 IDN/punycode、路径做百分号编码。
         // 盒子迷两个路径都有效：/禁止贩卖（91 站综合仓）/摸鱼（301→/摸鱼/，108 站动漫仓）。
@@ -173,25 +213,66 @@ class VideoActivity : AppCompatActivity() {
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
         videoBuffering = findViewById(R.id.videoBuffering)
+        videoMiniLayer = findViewById(R.id.videoMiniLayer)
+        videoMiniBtn = findViewById(R.id.videoMiniBtn)
+        videoMiniClose = findViewById(R.id.videoMiniClose)
+        miniTouchSlop = ViewConfiguration.get(this).scaledTouchSlop
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
             controlsVisible = visibility == View.VISIBLE
+            Log.d("VidPlay", "控制条可见=$controlsVisible 播放中=${player?.isPlaying}")
             updatePipButton()
         })
 
-        // 小窗：进 PiP 后可以操作 App 其他功能，视频继续悬浮播放
-        videoPip.setOnClickListener { enterPip() }
+        // 小窗按钮：把播放器缩成 App 内悬浮小窗（页面可继续浏览），
+        // 小窗上的「⤢」或点画面 → 展开回全屏继续播（用户要的"关闭小屏回全屏"）
+        // 小窗：优先走「系统悬浮窗」（能浮在音乐页/记账页/其他 App 之上）；
+        // 没授权悬浮窗权限时退回页内小窗（仍可在本页继续浏览）
+        videoPip.setOnClickListener { enterMiniOrFloat() }
+        videoMiniBtn.setOnClickListener { exitMini() }
+        // 小窗上的 ✕：直接停播并关掉播放器（不用先展开再返回）
+        videoMiniClose.setOnClickListener { closeVideo() }
+        // 小窗拖动 + 点击展开
+        videoMiniLayer.setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    // 落在 ⤢/✕ 按钮上：交给按钮自己处理（父层若返回 true 会吞掉点击，
+                    // 按钮的 OnClick 永远不触发——✕ 会变成"展开"而不是"关闭"）
+                    if (hitMiniButton(ev)) { miniDragged = false; return@setOnTouchListener false }
+                    miniDownX = ev.rawX; miniDownY = ev.rawY; miniDragged = false; true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = ev.rawX - miniDownX
+                    val dy = ev.rawY - miniDownY
+                    if (!miniDragged && (abs(dx) > miniTouchSlop || abs(dy) > miniTouchSlop)) miniDragged = true
+                    if (miniDragged) { moveMiniBy(dx, dy); miniDownX = ev.rawX; miniDownY = ev.rawY }
+                    true
+                }
+                MotionEvent.ACTION_UP -> { if (!miniDragged) exitMini(); true }
+                MotionEvent.ACTION_CANCEL -> { miniDragged = false; true }
+                else -> false
+            }
+        }
         videoPrev.setOnClickListener {
             if (curIdx <= 0) toast("已经是第一集") else playIndex(curIdx - 1)
         }
         videoNext.setOnClickListener { playNext() }
-        // 返回键：播放中先关播放器（退回流媒体），否则直接退出页面
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+        // 返回键逐层回退：小窗→展开回全屏；播放中→关播放器(回到该视频详情页)；详情/搜索等浮层开着→交给页面关掉(回到搜索位置)；都没有才退出
+        backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (overlay.visibility == View.VISIBLE) closeVideo() else finish()
+                if (miniMode) { exitMini(); return }
+                if (overlay.visibility == View.VISIBLE) { closeVideo(); return }
+                webView.evaluateJavascript("window.__videoBack?window.__videoBack():false") { r ->
+                    if (r != "true") finish()
+                }
             }
-        })
+        }
+        onBackPressedDispatcher.addCallback(this, backCallback!!)
         setupWebView()
+        // 悬浮窗上点「⤢/画面/通知」且 Activity 已被回收时，重建后收回全屏继续播
+        if (intent?.getStringExtra(VideoFloatService.EXTRA_ACTION) == VideoFloatService.ACTION_EXPAND) {
+            mainHandler.postDelayed({ takeBackFromFloat() }, 400)
+        }
         // 播放历史页点「继续看」会带 resume_json 拉起本页：先收下，等页面加载完再续播
         pendingResumeJson = intent.getStringExtra("resume_json")
         if (pendingResumeJson != null) Log.d("VidPlay", "收到续播记录，等页面就绪")
@@ -201,6 +282,11 @@ class VideoActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // 悬浮窗上点「⤢」/点画面/点通知：收回全屏继续播
+        if (intent?.getStringExtra(VideoFloatService.EXTRA_ACTION) == VideoFloatService.ACTION_EXPAND) {
+            mainHandler.post { takeBackFromFloat() }
+            return
+        }
         val j = intent?.getStringExtra("resume_json")
         if (j != null) fireResume(j)
     }
@@ -215,6 +301,7 @@ class VideoActivity : AppCompatActivity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             javaScriptCanOpenWindowsAutomatically = true
         }
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // 续播要交给页面 JS（重新拉详情/重新解析），必须等页面就绪
@@ -330,6 +417,20 @@ class VideoActivity : AppCompatActivity() {
             }
         }
 
+        /** 切换到音乐播放页（顶栏 🎵 音乐）：回到主 App 的音乐播放器。
+         *  切走前先彻底停掉视频（全屏或小窗都停），避免后台还在响、
+         *  以及回到影视仓时残留一个关不掉的小窗。 */
+        @JavascriptInterface
+        fun openMusic() {
+            runOnUiThread {
+                if (miniMode || overlay.visibility == View.VISIBLE) {
+                    Log.d("VidPlay", "切换到音乐：先停掉视频（miniMode=$miniMode）")
+                    closeVideo()
+                }
+                startActivity(Intent(this@VideoActivity, MainActivity::class.java))
+            }
+        }
+
         /** 续播位置（毫秒）：JS 重新起播前调，prepare 完成后 STATE_READY 时 seek */
         @JavascriptInterface
         fun setResumePos(ms: Int) {
@@ -373,6 +474,38 @@ class VideoActivity : AppCompatActivity() {
             }
             SpiderEngine.get(this@VideoActivity)
                 .playAsync(jar, api, ext, key, flag, id) { r -> spiderCb(cbId, r != null, r ?: "") }
+        }
+
+        /**
+         * 轻量“解析/嗅探”：抓取播放页 HTML，用正则抠出真实直链（m3u8/mp4）。
+         * 覆盖两类放不了的源：
+         *  1) 直连 CMS 的 /share/<hash> 页面（如量子资源：页面里 var main="/xxx/index.m3u8?sign=..."）
+         *  2) 爬虫 parse=1 的播放页（如旺旺：页面里 mac_url='集$直链#...'）
+         * 结果 JSON 走 base64 回传 window.__sniffCb，避免转义问题。
+         */
+        @JavascriptInterface
+        fun sniff(url: String, referer: String, cbId: Int) {
+            Log.d("VidPlay", "sniff: $url referer=$referer")
+            val result = try {
+                val rb = Request.Builder().url(url)
+                    .header("User-Agent", SNIFF_UA)
+                if (referer.isNotBlank()) rb.header("Referer", referer)
+                client.newCall(rb.build()).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        """{"ok":false,"msg":"HTTP ${resp.code}"}"""
+                    } else {
+                        val html = resp.body?.string() ?: ""
+                        val found = extractStream(html, url)
+                        if (found != null) """{"ok":true,"url":${JSONObject.quote(found)}}"""
+                        else """{"ok":false,"msg":"页面未找到直链"}"""
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("VidPlay", "sniff 失败: ${e.javaClass.simpleName}: ${e.message}")
+                """{"ok":false,"msg":"${e.javaClass.simpleName}"}"""
+            }
+            val b64 = Base64.encodeToString(result.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+            runOnUiThread { safeEval("window.__sniffCb($cbId,true,'$b64')") }
         }
 
         /** 拉起系统/外部播放器（解析类、或本机播不了的地址） */
@@ -445,6 +578,44 @@ class VideoActivity : AppCompatActivity() {
         runOnUiThread { safeEval("window.__spiderCb($cbId,$ok,'$b64')") }
     }
 
+    /** 从播放页 HTML 里抠真实直链；抠不到返回 null。pageUrl 用于把相对路径补全。 */
+    private fun extractStream(html: String, pageUrl: String): String? {
+        // 1) 量子资源类：var main = "/20240923/xxx/index.m3u8?sign=..."
+        Regex("""var\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']""").find(html)?.let {
+            return absUrl(it.groupValues[1], pageUrl)
+        }
+        // 2) 旺旺/MacCMS 播放页：mac_url = '第01集$https://.../index.m3u8#第02集$...'
+        Regex("""mac_url\s*=\s*['"]([^'"]+)['"]""").find(html)?.let { m ->
+            val first = m.groupValues[1].split('#').firstOrNull()
+                ?.split('$')?.lastOrNull()?.trim()
+            if (!first.isNullOrBlank()) return absUrl(first, pageUrl)
+        }
+        // 3) 任意绝对直链 m3u8/mp4/flv/mpd
+        Regex("""https?://[^"'\s\\]+\.(?:m3u8|mp4|flv|mpd)""").find(html)?.let { return it.value }
+        // 4) 其它 var *url* = "...m3u8|mp4..."
+        Regex("""var\s+\w*[Uu]rl\w*\s*=\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(html)?.let {
+            return absUrl(it.groupValues[1], pageUrl)
+        }
+        return null
+    }
+
+    /** 相对路径补全为绝对地址 */
+    private fun absUrl(u: String, pageUrl: String): String {
+        val s = u.trim()
+        return when {
+            s.startsWith("http", true) -> s
+            s.startsWith("//") -> "https:$s"
+            s.startsWith("/") -> {
+                val parts = pageUrl.split("/")
+                if (parts.size >= 3) "${parts[0]}//${parts[2]}$s" else s
+            }
+            else -> {
+                val i = pageUrl.lastIndexOf('/')
+                (if (i > 0) pageUrl.substring(0, i) else pageUrl) + "/" + s
+            }
+        }
+    }
+
     // ===================== 视频播放 =====================
     private fun ensurePlayer() {
         if (player == null) {
@@ -454,6 +625,8 @@ class VideoActivity : AppCompatActivity() {
                     override fun onPlaybackStateChanged(state: Int) {
                         videoBuffering.visibility =
                             if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+                        // 诊断日志：真的渲染出画面才算"起播成功"（排查"点了没反应/后台响"必看）
+                        if (state == Player.STATE_READY) Log.d("VidPlay", "STATE_READY（已起播）")
                         // 续播：等 READY 再 seek（prepare 前 seek 不保险）
                         if (state == Player.STATE_READY && seekAfterReady > 0) {
                             val to = seekAfterReady
@@ -472,12 +645,33 @@ class VideoActivity : AppCompatActivity() {
                         updatePipButton()
                     }
 
+                    // 视频尺寸变化（换源/清晰度）时，小窗按新比例重算，别留黑边
+                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                        if (miniMode && videoSize.width > 0 && videoSize.height > 0) applyMiniLayout()
+                    }
+
                     override fun onPlayerError(error: PlaybackException) {
-                        Log.w("VidPlay", "onPlayerError: ${error.message}")
-                        val msg = error.message?.take(60) ?: "未知错误"
+                        // 扒开 cause 链拿真实 HTTP 状态码（InvalidResponseCodeException），
+                        // 否则对外只显示笼统的 "Source error"，用户/排查都看不出所以然。
+                        var detail = error.message ?: "未知错误"
+                        var c: Throwable? = error.cause
+                        while (c != null) {
+                            if (c is HttpDataSource.InvalidResponseCodeException) {
+                                detail = "HTTP ${c.responseCode}"
+                                break
+                            }
+                            c = c.cause
+                        }
+                        Log.w("VidPlay", "onPlayerError: $detail (${error.errorCodeName})")
+                        val friendly = when {
+                            detail.startsWith("HTTP 403") -> "该线路拒绝访问(403)，可能需登录/防盗链，请换其他线路/源"
+                            detail.startsWith("HTTP 404") -> "该线路地址不存在(404)，请换其他线路/源"
+                            detail.startsWith("HTTP 502") || detail.startsWith("HTTP 503") -> "该线路源站故障($detail)，请换其他线路/源"
+                            else -> "播放失败：$detail（可换其他线路/源）"
+                        }
                         Toast.makeText(
                             this@VideoActivity,
-                            "播放失败：$msg（该线路可能需要解析，可换其他线路/源）",
+                            friendly,
                             Toast.LENGTH_LONG
                         ).show()
                         videoBuffering.visibility = View.GONE
@@ -508,6 +702,8 @@ class VideoActivity : AppCompatActivity() {
         recordHistory(url, title, referer, epsJson, idx, spiderJson, metaJson)
         overlay.visibility = View.VISIBLE
         videoBuffering.visibility = View.VISIBLE
+        // 小窗状态下又点了新视频 → 先展开回全屏再播
+        if (miniMode) exitMini()
         // 一律本 App 内播放：强制横屏 + 沉浸式全屏（关掉播放器再恢复竖屏）
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         hideSystemBars()
@@ -659,11 +855,27 @@ class VideoActivity : AppCompatActivity() {
         player?.stop()
         overlay.visibility = View.GONE
         clockHandler.removeCallbacks(clockTick)
+        // 小窗状态下关播放器：先把播放层尺寸恢复整屏，否则下次起播会带着小窗尺寸
+        if (miniMode) {
+            miniMode = false
+            videoMiniLayer.visibility = View.GONE
+            val lp = overlay.layoutParams as FrameLayout.LayoutParams
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = Gravity.NO_GRAVITY
+            lp.setMargins(0, 0, 0, 0)
+            overlay.layoutParams = lp
+            playerView.useController = true
+            webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(false)") }
+        }
         // 恢复竖屏浏览 + 显示系统栏
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         showSystemBars()
         setKeepScreenOn(false)
         videoPip.visibility = View.GONE
+        // 返回后把"播放前那一页"找回来：若刚才是全网搜索，恢复搜索页+该视频详情弹窗，
+        // 避免退回 App 首页推荐流（页面 DOM 仍在，只是要让对应浮层重新显示）。
+        webView.post { safeEval("if(window.__restoreAfterPlay)window.__restoreAfterPlay()") }
     }
 
     /** 保持屏幕常亮（仅播放时） */
@@ -672,19 +884,226 @@ class VideoActivity : AppCompatActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    /** 小窗按钮：仅在「未进小窗 + 正在播放 + 控制条可见」时显示，其余时候隐藏 */
+    /** 小窗按钮：仅在「未进小窗 + 正在播放 + 控制条可见」时显示。
+     *  控制条自动隐藏（持续播放几秒后）时小窗按钮一并隐藏，点屏幕唤出控制条即重新出现，
+     *  与暂停/快进按钮保持一致。 */
     private fun updatePipButton() {
-        val show = !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        val show = !miniMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
         videoPip.visibility = if (show) View.VISIBLE else View.GONE
     }
 
-    // ===================== 小窗（PiP） =====================
-    /** 进小窗：视频悬浮播放，用户可以回到 App 其他页面继续操作 */
+    // ===================== App 内小窗（悬浮小播放器） =====================
+    /** 只把播放层恢复整屏（不动 miniMode 标志）：进系统小窗前用，避免系统小窗里只露一小块 */
+    private fun restoreOverlayFullSize() {
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        if (lp.width != FrameLayout.LayoutParams.MATCH_PARENT || lp.height != FrameLayout.LayoutParams.MATCH_PARENT) {
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = Gravity.NO_GRAVITY
+            lp.setMargins(0, 0, 0, 0)
+            overlay.layoutParams = lp
+        }
+        videoMiniLayer.visibility = View.GONE
+    }
+
+    // ===================== 系统悬浮窗（浮在所有页面之上） =====================
+    /** 小窗入口：有悬浮窗权限就系统悬浮（跨页面/跨 App），否则退回页内小窗 */
+    private fun enterMiniOrFloat() {
+        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) {
+            startFloat()
+        } else {
+            toast("想在音乐/记账等页面也悬浮，请在设置里打开「显示在其他应用上层」")
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            enterMini()   // 授权前先给一个页内小窗，不至于没得用
+        }
+    }
+
+    /** 交给系统悬浮窗播放：同一个 player 实例挂到浮层上，不重新缓冲 */
+    private fun startFloat() {
+        val p = player ?: return
+        VideoFloatState.player = p
+        playerView.player = null            // 先摘下来，交给浮层
+        videoPip.visibility = View.GONE
+        setKeepScreenOn(false)
+        hideVideoLayer()                    // 收起全屏播放层，露出页面
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        showSystemBars()
+        clockHandler.removeCallbacks(clockTick)
+        Log.d("VidPlay", "进入系统悬浮小窗")
+        runCatching { startForegroundService(Intent(this, VideoFloatService::class.java)) }
+            .onFailure {
+                Log.w("VidPlay", "启动悬浮服务失败，退回页内小窗: ${it.message}")
+                playerView.player = p
+                showVideoLayerFullscreen()
+                enterMini()
+            }
+        webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(true)") }
+    }
+
+    /** ⤢ / 点浮层 / 点通知：把播放器收回 Activity 全屏继续播 */
+    private fun takeBackFromFloat() {
+        // 顺序很重要：先把播放器接回 Activity 的 PlayerView，再收浮层，
+        // 否则中间会出现"两端都没画面"的瞬间（且旧实现还会顺带把播放停掉）
+        val p = VideoFloatState.player ?: player ?: return
+        player = p
+        playerView.player = p
+        showVideoLayerFullscreen()
+        VideoFloatService.stop(this)        // 收掉浮层（保留播放）
+        playerView.useController = true
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        hideSystemBars()
+        setKeepScreenOn(p.playWhenReady || p.isPlaying)
+        clockTick.run()
+        updatePipButton()
+        Log.d("VidPlay", "从悬浮窗回到全屏播放")
+        webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(false)") }
+    }
+
+    /** 收起全屏播放层（进悬浮时用） */
+    private fun hideVideoLayer() {
+        miniMode = false
+        videoMiniLayer.visibility = View.GONE
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.gravity = Gravity.NO_GRAVITY
+        lp.setMargins(0, 0, 0, 0)
+        overlay.layoutParams = lp
+        overlay.visibility = View.GONE
+    }
+
+    /** 恢复全屏播放层尺寸并显示 */
+    private fun showVideoLayerFullscreen() {
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.gravity = Gravity.NO_GRAVITY
+        lp.setMargins(0, 0, 0, 0)
+        overlay.layoutParams = lp
+        overlay.visibility = View.VISIBLE
+    }
+
+    /** 进 App 内小窗：播放器缩到屏幕角落继续播，页面回到竖屏可继续浏览/搜索 */
+    private fun enterMini() {
+        if (miniMode) return
+        miniMode = true
+        miniUserMoved = false   // 每次进小窗回到默认右下角；拖动后不再被转屏/换清晰度弹回
+        // 先缩窗口再转竖屏，避免全屏播放器在竖屏下闪一下
+        applyMiniLayout()
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        showSystemBars()
+        setKeepScreenOn(false)
+        videoPip.visibility = View.GONE
+        videoClock.visibility = View.GONE
+        videoPrev.visibility = View.GONE
+        videoNext.visibility = View.GONE
+        videoMiniLayer.visibility = View.VISIBLE
+        playerView.useController = false
+        Log.d("VidPlay", "进入 App 内小窗")
+        webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(true)") }
+    }
+
+    /** 退出小窗：展开回全屏播放（小窗上的⤢ / 点画面 / 返回键 都走这里） */
+    private fun exitMini() {
+        if (!miniMode) return
+        miniMode = false
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+        lp.gravity = Gravity.NO_GRAVITY
+        lp.setMargins(0, 0, 0, 0)
+        overlay.layoutParams = lp
+        videoMiniLayer.visibility = View.GONE
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        hideSystemBars()
+        setKeepScreenOn(player?.isPlaying == true)
+        playerView.useController = true
+        clockTick.run()
+        updatePipButton()
+        Log.d("VidPlay", "退出 App 内小窗：回全屏播放")
+        webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(false)") }
+    }
+
+    /** 计算并应用小窗尺寸/位置（按视频宽高比，默认右下角；竖屏视频则收窄一点） */
+    private fun applyMiniLayout() {
+        val dm = resources.displayMetrics
+        val vs = player?.videoSize
+        val ar = if (vs != null && vs.width > 0 && vs.height > 0) vs.width.toFloat() / vs.height else 16f / 9f
+        var w = (dm.widthPixels * if (ar >= 1f) 0.46f else 0.38f).toInt()
+        var h = (w / ar).toInt()
+        val maxH = (dm.heightPixels * 0.45f).toInt()
+        if (h > maxH) { h = maxH; w = (h * ar).toInt() }
+        val m = (12 * dm.density).toInt()
+        val bottom = (56 * dm.density).toInt()
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        // 关键：必须用 TOP|START + leftMargin/topMargin 定位。
+        // 用 BOTTOM|END 时 FrameLayout 完全忽略 leftMargin/topMargin，
+        // 拖动改的就是这两个值 → 表现为「小窗固定在右下角，怎么拖都不动」。
+        lp.gravity = Gravity.TOP or Gravity.START
+        lp.width = w
+        lp.height = h
+        if (!miniUserMoved) {
+            // 默认右下角（用户还没拖过）
+            lp.leftMargin = (dm.widthPixels - w - m).coerceAtLeast(0)
+            lp.topMargin = (dm.heightPixels - h - bottom).coerceAtLeast(0)
+        } else {
+            // 用户拖过：保留位置，只按新尺寸夹回屏幕内（转屏/换清晰度时不再被弹回右下角）
+            lp.leftMargin = lp.leftMargin.coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
+            lp.topMargin = lp.topMargin.coerceIn(0, (dm.heightPixels - h).coerceAtLeast(0))
+        }
+        overlay.layoutParams = lp
+    }
+
+    /** 触摸点是否落在小窗上的按钮（⤢ 展开 / ✕ 关闭）上 */
+    private fun hitMiniButton(ev: MotionEvent): Boolean {
+        fun hit(v: View): Boolean {
+            if (v.visibility != View.VISIBLE) return false
+            val loc = IntArray(2)
+            v.getLocationOnScreen(loc)
+            return ev.rawX >= loc[0] && ev.rawX <= loc[0] + v.width &&
+                ev.rawY >= loc[1] && ev.rawY <= loc[1] + v.height
+        }
+        return hit(videoMiniBtn) || hit(videoMiniClose)
+    }
+
+    /** 拖动小窗（在父容器范围内移动） */
+    private fun moveMiniBy(dx: Float, dy: Float) {
+        val parent = overlay.parent as? View ?: return
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        val maxL = (parent.width - lp.width).coerceAtLeast(0)
+        val maxT = (parent.height - lp.height).coerceAtLeast(0)
+        val nl = (lp.leftMargin + dx).toInt().coerceIn(0, maxL)
+        val nt = (lp.topMargin + dy).toInt().coerceIn(0, maxT)
+        if (nl != lp.leftMargin || nt != lp.topMargin) {
+            lp.leftMargin = nl
+            lp.topMargin = nt
+            miniUserMoved = true
+            overlay.layoutParams = lp
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 转屏后重算小窗尺寸，避免小窗超出屏幕
+        if (miniMode) applyMiniLayout()
+    }
+
+    // ===================== 系统小窗（PiP） =====================
+    /** 进系统小窗：按 Home 等离开 App 时视频继续悬浮播放 */
     private fun enterPip() {
         if (Build.VERSION.SDK_INT < 26) {
             toast("系统版本不支持小窗")
             return
         }
+        // 从 App 内小窗接续到系统小窗：先把播放层恢复整屏，否则系统小窗里只看到一小块画面
+        if (miniMode) restoreOverlayFullSize()
         val ratio = player?.videoSize?.let {
             if (it.width > 0 && it.height > 0) Rational(it.width, it.height) else null
         } ?: Rational(16, 9)
@@ -699,10 +1118,43 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    /** 按 Home 键回桌面时自动进小窗（播放中才进） */
+    /** 按 Home 键回桌面时：不再自动进系统小窗(PiP)。
+     *  原因：MEmu 上系统小窗被"×"/返回关掉后，Activity 进后台、播放器却不释放，
+     *  出现"画面没了、后台还在响"。悬浮播放体验已由「App 内小窗」(enterMini) 承载；
+     *  离开 App 时统一在 onPause → pauseIfHidden 里延迟停播，杜绝后台声音。 */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (overlay.visibility == View.VISIBLE && player?.isPlaying == true) enterPip()
+        // 历史逻辑（已停用）：if (overlay.visibility == View.VISIBLE && player?.isPlaying == true) enterPip()
+    }
+
+    /** 小窗被"×"/返回关掉后的处理：把 Activity 拉回前台，全屏继续播（用户要的不是黑屏+后台声音） */
+    private val pipDismissRestore = object : Runnable {
+        override fun run() {
+            if (!pipRestorePending) return
+            pipRestorePending = false
+            // 已经自己回前台了（用户点小窗画面展开的）→ 不用管
+            if (activityResumed) return
+            // 没有在播了 → 也没必要拉回来
+            if (player?.isPlaying != true) return
+            Log.d("VidPlay", "小窗已被关闭：拉回前台全屏播放")
+            try {
+                startActivity(Intent(this@VideoActivity, VideoActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            } catch (e: Exception) {
+                Log.w("VidPlay", "拉回前台失败: ${e.message}")
+            }
+            // 兜底：系统若禁止后台启动 Activity（拉不回来），2 秒后停掉播放，
+            // 绝不留"画面没了、后台还在响"。
+            mainHandler.postDelayed({
+                if (!activityResumed && player?.isPlaying == true) {
+                    Log.d("VidPlay", "未能拉回前台：停掉后台播放")
+                    player?.pause()
+                }
+            }, 2000)
+        }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
@@ -711,21 +1163,53 @@ class VideoActivity : AppCompatActivity() {
         // 关键排查日志：进/出小窗时若伴随 onCreate/onDestroy，说明 Activity 被重建
         // （manifest configChanges 没写全的症状），播放器会被释放、小窗里就没画面
         Log.d("VidPlay", "onPictureInPictureModeChanged: inPip=$isInPictureInPictureMode")
-        // 小窗里只留画面，自定义按钮/时钟全部隐藏
-        val v = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        // 小窗中禁用 App 的返回键拦截：让系统默认处理（小窗里按返回/点关闭 → 展开回全屏播放），
+        // 否则会被 handleOnBackPressed 的 closeVideo() 把播放层关掉，出现"画面没了、后台还在响"。
+        backCallback?.isEnabled = !isInPictureInPictureMode
         if (isInPictureInPictureMode) {
+            wasMiniBeforePip = miniMode
             videoPip.visibility = View.GONE
+            pipRestorePending = false
         } else {
-            // 退出小窗回到全屏：若仍在播放则恢复屏幕常亮，并刷新小窗按钮
-            setKeepScreenOn(player?.isPlaying == true)
-            updatePipButton()
+            // 退出系统小窗：按"进小窗前的形态"恢复（App 内小窗 or 全屏），别让画面消失
+            if (overlay.visibility != View.VISIBLE) overlay.visibility = View.VISIBLE
+            if (wasMiniBeforePip && miniMode) {
+                // 之前在 App 内小窗 → 继续小窗形态
+                wasMiniBeforePip = false
+                applyMiniLayout()
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                showSystemBars()
+                setKeepScreenOn(false)
+                videoMiniLayer.visibility = View.VISIBLE
+                videoPip.visibility = View.GONE
+                videoClock.visibility = View.GONE
+                videoPrev.visibility = View.GONE
+                videoNext.visibility = View.GONE
+                playerView.useController = false
+            } else {
+                // 之前是全屏播放 → 恢复全屏
+                wasMiniBeforePip = false
+                setKeepScreenOn(player?.isPlaying == true)
+                updatePipButton()
+                if (miniMode) exitMini() else requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+            // 退出小窗有两种情况：
+            //  a) 用户点了小窗画面想展开 → Activity 会自然 onResume 回来；
+            //  b) 用户点了小窗的"×"或按返回把小窗关掉 → Activity 留在后台，画面全无、只剩声音。
+            // 这里延后 ~600ms 判定：若仍没回前台，就把 Activity 拉回前台，
+            // 实现"关闭小窗 → 回到播放界面继续播"，而不是黑屏 + 后台响。
+            if (player?.isPlaying == true) {
+                pipRestorePending = true
+                mainHandler.postDelayed(pipDismissRestore, 600)
+            }
         }
-        videoClock.visibility = v
-        videoPrev.visibility = v
-        videoNext.visibility = v
-        // PlayerView 自带的播放控制条也隐藏：小窗只几寸大，控制条会糊满画面；
+        val v = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        videoClock.visibility = if (miniMode) View.GONE else v
+        videoPrev.visibility = if (miniMode) View.GONE else v
+        videoNext.visibility = if (miniMode) View.GONE else v
+        // PlayerView 自带的播放控制条也隐藏：系统小窗只几寸大，控制条会糊满画面；
         // 退出小窗恢复（useController 切换会重建 SubtitleView 等子视图，必须主线程）
-        playerView.useController = !isInPictureInPictureMode
+        playerView.useController = !isInPictureInPictureMode && !miniMode
         if (!isInPictureInPictureMode) clockTick.run()
     }
 
@@ -745,16 +1229,71 @@ class VideoActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        activityResumed = false
         setKeepScreenOn(false)
-        // 进小窗时 activity 也会 onPause，此时不能停播
+        Log.d("VidPlay", "onPause inPip=$isInPictureInPictureMode float=${VideoFloatState.running} playing=${player?.isPlaying}")
+        // 进小窗/悬浮窗时 activity 也会 onPause，此时不能停播
         if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
+        if (VideoFloatState.running) return   // 悬浮窗在别的页面继续播，别停
         saveHisPosition()
         hisHandler.removeCallbacks(hisTick)
-        player?.pause()
+        // 延后停播：关小窗时的回调顺序是 onPause → onPictureInPictureModeChanged(false) → onStop，
+        // 若在 onPause 里立刻停，用户就看不到"关小窗→回全屏继续播"了。
+        // 300ms 后若仍未回前台、也不在小窗里，才真正停（杜绝后台声音）。
+        mainHandler.postDelayed(pauseIfHidden, 300)
+    }
+
+    /** 延后停播：确认真的回到后台了才停，避免误停小窗/正在拉回前台的播放 */
+    private val pauseIfHidden = object : Runnable {
+        override fun run() {
+            if (activityResumed) return
+            if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
+            if (VideoFloatState.running) return   // 悬浮窗正在别的页面播，不算"回后台"
+            if (pipRestorePending) return
+            if (player?.isPlaying == true) {
+                Log.d("VidPlay", "已回后台且未在小窗：停掉播放")
+                player?.pause()
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d("VidPlay", "onStop inPip=$isInPictureInPictureMode float=${VideoFloatState.running} playing=${player?.isPlaying} pipRestorePending=$pipRestorePending")
+        // 被切到后台又不在小窗里（小窗被"×"关掉、或小窗里按返回退到后台）：
+        // 停掉播放，避免出现"画面没了、后台还在响"。（按 Home 进的小窗会 isInPictureInPictureMode=true，不受影响，继续悬浮播）
+        if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) return
+        // 系统悬浮窗正在别的页面/别的 App 上播，这是用户要的效果，绝不能停
+        if (VideoFloatState.running) {
+            Log.d("VidPlay", "onStop：悬浮窗播放中，不停播")
+            return
+        }
+        // 小窗刚被关掉、正在拉回前台全屏播放 → 不能停播（否则"回到全屏"会变成暂停/黑屏）
+        if (pipRestorePending) {
+            Log.d("VidPlay", "onStop：小窗关闭中，等待拉回前台，不停播")
+            return
+        }
+        if (player?.isPlaying == true) {
+            Log.d("VidPlay", "onStop 且非小窗：停掉后台播放")
+            player?.pause()
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
+        Log.d("VidPlay", "onResume playing=${player?.isPlaying} float=${VideoFloatState.running}")
+        // 悬浮窗还在（用户在别的页面看过又回来）：保持悬浮，不抢回全屏
+        if (VideoFloatState.running) {
+            floatWasRunning = true
+            return
+        }
+        // 悬浮窗已被 ✕ 关掉（之前在悬浮）：把页面/播放器状态收干净，别留后台声音
+        if (floatWasRunning) {
+            floatWasRunning = false
+            Log.d("VidPlay", "悬浮窗已关闭：收起播放器并恢复页面")
+            if (overlay.visibility == View.VISIBLE || player?.isPlaying == true) closeVideo()
+        }
         // 回到前台：播放层还开着就继续 5 秒存点
         if (curHisKey.isNotBlank() && overlay.visibility == View.VISIBLE) hisTick.run()
     }
@@ -767,8 +1306,15 @@ class VideoActivity : AppCompatActivity() {
         saveHisPosition()
         clockHandler.removeCallbacks(clockTick)
         hisHandler.removeCallbacks(hisTick)
-        player?.release()
-        player = null
+        mainHandler.removeCallbacksAndMessages(null)
+        if (VideoFloatState.running) {
+            // 悬浮窗还在播：播放器已归服务所有，这里绝不能 release（否则浮层立刻黑掉）
+            player = null
+            Log.d("VidPlay", "onDestroy：悬浮窗播放中，播放器交给服务")
+        } else {
+            player?.release()
+            player = null
+        }
         webView.destroy()
     }
 }

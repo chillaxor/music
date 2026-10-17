@@ -160,7 +160,19 @@ object DownloadStore {
         val have = (0 until arr.length()).map { arr.getJSONObject(it).optString("uri") }.toMutableSet()
         for (it in items) {
             val u = it.uri.toString()
-            if (u in have) continue
+            if (u in have) {
+                // 已存在：之前没找到歌词、这次扫到了就补上（用户事后给旧歌补 .lrc
+                // 再导入同一个文件夹，歌词也能生效——否则去重直接跳过，永远补不上）
+                if (it.lyricUri.isNotBlank()) {
+                    val idx = (0 until arr.length()).indexOfFirst { i ->
+                        arr.getJSONObject(i).optString("uri") == u
+                    }
+                    if (idx >= 0 && arr.getJSONObject(idx).optString("lyricUri").isBlank()) {
+                        arr.getJSONObject(idx).put("lyricUri", it.lyricUri)
+                    }
+                }
+                continue
+            }
             arr.put(recordOf(it.song, u, it.kind, it.folder, it.sizeBytes, it.lyricUri))
             have.add(u)
         }

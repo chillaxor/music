@@ -32,7 +32,8 @@
   .eye-btn:hover{background:var(--line)}
   .section{background:var(--card);border-radius:14px;padding:14px 14px 6px;
     box-shadow:var(--shadow);margin-bottom:14px}
-  .section h2{font-size:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .section h2{font-size:14px;margin-bottom:10px;display:flex;justify-content:flex-start;align-items:center;gap:8px}
+  .section h2[data-collapse]{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .section h2 .coll{cursor:pointer;flex:0 0 auto;width:20px;height:20px;margin-right:4px;border-radius:6px;
     display:inline-flex;align-items:center;justify-content:center;color:var(--sub);transition:transform .15s,background .15s}
   .section h2 .coll:active{background:var(--line)}
@@ -62,7 +63,8 @@
      放在标题行右侧，体积小、不抢空间 */
   .head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
   .head-row h1{margin:0}
-  .home-pick{display:none;align-items:center;gap:6px;flex:0 1 auto}
+  /* 顶栏右侧操作区：主题🎨与音乐🎵成组贴右，始终挨在一起 */
+  .head-actions{display:flex;align-items:center;gap:2px;margin-left:auto}  .home-pick{display:none;align-items:center;gap:6px;flex:0 1 auto}
   .home-pick.on{display:flex}
   .home-pick .hp-lbl{font-size:11px;color:var(--sub);white-space:nowrap}
   .home-pick select{padding:3px 6px;font-size:12px;width:auto;border-radius:6px}
@@ -140,28 +142,30 @@
   .mini:hover{border-color:var(--accent);color:var(--accent)}
   .mini.done{color:var(--accent);border-color:var(--accent)}
   .vlist{display:grid;gap:5px}
-  /* 6 列固定：手柄 | 名称(弹性) | 类别 | 金额 | 浮亏 | 操作。
-     必须与行内 6 个子元素一一对应（手柄曾漏掉轨道，导致整体右移一列、
-     金额/操作列宽变成 auto，资产与负债两栏对不齐） */
-  .vcard{display:grid;grid-template-columns:auto minmax(0,1fr) 76px 112px 88px auto;align-items:center;gap:10px;
+  /* flex 布局：名称(弹性撑满) | [类别+金额+浮亏] 成组靠右(vrow2) | 操作。
+     手柄 ⋮⋮ 在 .vcard-actions 内部，行内只有 5 个直接子元素——
+     旧 grid 版本按 6 轨道分配、手机端还给手柄留了空轨道，
+     导致名称列被挤到中间、左边一大块空白、名称折行、「编辑」竖排 */
+  .vcard{display:flex;align-items:center;gap:10px;
     background:var(--card);border:1px solid var(--line);border-left-width:3px;border-radius:9px;
     padding:6px 10px;box-shadow:none;transition:background .12s ease}
   .vcard:hover{background:color-mix(in srgb,var(--accent) 5%,var(--card))}
-  .vcard-name{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:0}
+  .vcard-name{flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:0}
+  /* 类别+金额+浮亏成组包一层：桌面端单行靠右，手机端整组换到第二行 */
+  .vrow2{flex:0 0 auto;display:flex;align-items:center;gap:10px;min-width:0}
   .vname-main{font-weight:600;font-size:13.5px;line-height:1.3;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .vname-sub{font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
-  .vcard-cat{display:flex;align-items:center;justify-content:flex-start}
+  .vcard-cat{display:flex;align-items:center;justify-content:flex-start;flex:0 0 auto}
   .vcard-cat .vcat{font-size:11px;color:var(--sub);background:var(--line);
     border-radius:5px;padding:2px 7px;font-weight:500;white-space:nowrap}
-  .vcard-amt{display:flex;align-items:center;justify-content:flex-end;
+  .vcard-amt{display:flex;align-items:center;justify-content:flex-end;margin-left:auto;min-width:112px;
     font-size:15px;font-weight:700;letter-spacing:0;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .vcard-pl{display:flex;align-items:center;justify-content:flex-end;
+  .vcard-pl{display:flex;align-items:center;justify-content:flex-end;flex:0 0 auto;min-width:88px;
     font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
   .vcard-pl.profit{color:var(--profit)} .vcard-pl.loss{color:var(--loss)}
-  .vcard-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end}
-  .vcard-edit{grid-template-columns:1fr 1fr;gap:8px;align-items:start}
-  .vcard-edit{padding:10px 12px}
+  .vcard-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex:0 0 auto;flex-wrap:nowrap}
+  .vcard-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;padding:10px 12px}
   .ef{display:flex;flex-direction:column;gap:3px;min-width:0}
   .ef label{font-size:12px;color:var(--sub)}
   .ef input,.ef select{border:1px solid var(--line);background:transparent;color:var(--ink);
@@ -242,16 +246,16 @@
     .sort-tip{display:none}
     /* 注意：touch-action:none 只加在 .vhandle 上，不要加回 .vcard.list，否则整卡无法滚动 */
     .add{margin:4px 0 8px;padding:9px}
-    /* 手机端两行紧凑：第一行 手柄+名称+操作，第二行 类别/金额/浮亏。
-       列宽全部固定（类别 76、浮亏 64），资产区与负债区的列严格对齐，不再错位 */
-    /* 第三/四列改固定宽度：浮亏/操作不再撑开 auto 列，资产区与负债区金额右边界一致 */
-    .vcard{grid-template-columns:76px minmax(0,1fr) 72px 84px;gap:4px 8px;padding:7px 10px}
-    .vcard-name{grid-column:2;grid-row:1}
-    .vcard-cat{grid-column:1;grid-row:2;width:76px;justify-content:flex-start}
-    .vcard-amt{grid-column:2;grid-row:2;justify-content:flex-end;font-size:14px}
-    .vcard-pl{grid-column:3;grid-row:2;width:72px;justify-content:flex-end;min-width:0;overflow:hidden;text-overflow:ellipsis}
-    .vcard-actions{grid-column:4;grid-row:1;justify-content:flex-end}
-    .vcard-edit{grid-template-columns:1fr}
+    /* 手机端两行紧凑：第一行 名称+操作，第二行(vrow2) 类别+金额/浮亏靠右。
+       DOM 顺序是 名称→金额组→操作，flex 换行按顺序断行会把手柄/操作挤到第三行，
+       所以用 order 重排：名称(1) 操作(2) 金额组(3, 独占整行) */
+    .vcard{flex-wrap:wrap;gap:4px 8px;padding:7px 10px}
+    .vcard-name{order:1}
+    .vcard-actions{order:2}
+    .vrow2{order:3;flex:1 1 100%;gap:8px}
+    .vcard-amt{min-width:0;font-size:14px}
+    .vcard-pl{min-width:0;overflow:hidden}
+    .vcard-edit{display:grid;grid-template-columns:1fr}
     .flow-form{grid-template-columns:1fr}
     .flow-item{font-size:13px}
     .fdate{flex:0 0 72px}
@@ -409,7 +413,10 @@
 <div class="wrap">
   <div class="head-row">
     <h1>净资产快照</h1>
-    <button id="themeBtn" class="theme-btn" title="主题皮肤">🎨</button>
+    <div class="head-actions">
+      <button id="themeBtn" class="theme-btn" title="主题皮肤">🎨</button>
+      <button id="musicBtn" class="theme-btn" title="切换到音乐播放">🎵</button>
+    </div>
 
     <div class="home-pick" id="homePick">
       <span class="hp-lbl">启动默认</span>
@@ -454,13 +461,13 @@
         <div class="card"><div class="lbl">投资浮亏（基金/股票）</div><div class="val" id="vFloat">¥0</div></div>
       </div>
       <div class="section" style="box-shadow:none;background:none;padding:0;margin:0">
-        <h2><span class="coll" data-collapse="asset">▾</span>资产 <span class="liab-note" style="font-weight:400">余额类填「当前金额」即可；基金/股票再填「投入成本」自动算浮亏</span></h2>
+        <h2 data-collapse="asset"><span class="coll">▾</span>资产</h2>
         <div class="sort-tip">拖动「编辑」左侧的小手柄可调整顺序，松手自动保存</div>
         <div class="vlist" id="assetBody"></div>
         <button class="add" data-add="asset">+ 添加一项资产</button>
       </div>
       <div class="section" style="box-shadow:none;background:none;padding:0;margin:0">
-        <h2><span class="coll" data-collapse="liab">▾</span>负债 <span class="liab-note" style="font-weight:400">信用卡/花呗待还单列，最后从资产里减掉</span></h2>
+        <h2 data-collapse="liab"><span class="coll">▾</span>负债</h2>
         <div class="sort-tip">拖动「编辑」左侧的小手柄可调整顺序，松手自动保存</div>
         <div class="vlist" id="liabBody"></div>
         <button class="add" data-add="liab">+ 添加一项负债</button>
@@ -797,6 +804,14 @@ function closeThemeModal(){ document.getElementById('themeModal').classList.remo
 try{
   document.getElementById('themeBtn').onclick=openThemeModal;
   document.getElementById('themeClose').onclick=closeThemeModal;
+  // 顶栏「🎵 音乐」：从记账页切回音乐播放页（原生桥拉起 MainActivity）
+  document.getElementById('musicBtn').onclick=function(){
+    if(window.Android&&typeof window.Android.openMusic==='function'){
+      try{window.Android.openMusic();return;}catch(e){}
+    }
+    // 回退（桌面/无原生桥）：原页面是 App 内嵌页，无法跨页，给出提示
+    console.log('openMusic bridge 不可用');
+  };
   document.getElementById('themeModal').addEventListener('click',function(e){ if(e.target.id==='themeModal')closeThemeModal(); });
 }catch(e){}
 
@@ -1021,9 +1036,11 @@ function renderAssets(){
           <div class="vname-main" title="${esc(it.name)}">${esc(it.name)||"未命名"}</div>
           ${pl!==null?`<div class="vname-sub">投入成本 ${fmtH(cost)}</div>`:""}
         </div>
-        <div class="vcard-cat"><span class="vcat">${catMeta(it.cat).t}</span></div>
-        <div class="vcard-amt">${fmtH(cur)}</div>
-        <div class="vcard-pl ${pl>=0?'profit':'loss'}">${pl!==null?(pl>=0?'+':'')+fmtH(pl):""}</div>
+        <div class="vrow2">
+          <div class="vcard-cat"><span class="vcat">${catMeta(it.cat).t}</span></div>
+          <div class="vcard-amt">${fmtH(cur)}</div>
+          <div class="vcard-pl ${pl>=0?'profit':'loss'}">${pl!==null?(pl>=0?'+':'')+fmtH(pl):""}</div>
+        </div>
         <div class="vcard-actions">
           <span class="vhandle" draggable="true" data-drag="asset" title="拖动排序">⋮⋮</span>
           <button class="mini" data-edit="asset" data-i="${i}">编辑</button>
@@ -1055,9 +1072,11 @@ function renderLiabs(){
           <div class="vname-main" title="${esc(it.name)}">${esc(it.name)||"未命名"}</div>
           <div class="vname-sub">待还（从净资产扣除）</div>
         </div>
-        <div class="vcard-cat"><span class="vcat">${LIAB_CATS.find(c=>c.v===it.cat)?.t||"其他"}</span></div>
-        <div class="vcard-amt" style="color:#e15759">${fmtH(pnum(it.amt))}</div>
-        <div class="vcard-pl"></div>
+        <div class="vrow2">
+          <div class="vcard-cat"><span class="vcat">${LIAB_CATS.find(c=>c.v===it.cat)?.t||"其他"}</span></div>
+          <div class="vcard-amt" style="color:#e15759">${fmtH(pnum(it.amt))}</div>
+          <div class="vcard-pl"></div>
+        </div>
         <div class="vcard-actions">
           <span class="vhandle" draggable="true" data-drag="liab" title="拖动排序">⋮⋮</span>
           <button class="mini" data-edit="liab" data-i="${i}">编辑</button>
@@ -1359,7 +1378,7 @@ document.addEventListener("click",e=>{
   else if(t.dataset.add==="liab"){data.liabs.push({name:"",cat:"credit",amt:""});editMode.liab[data.liabs.length-1]=true;save();renderLiabs();}
   else if(t.dataset.del==="asset"){data.assets.splice(+t.dataset.i,1);editMode.asset={};save();renderAssets();}
   else if(t.dataset.del==="liab"){data.liabs.splice(+t.dataset.i,1);editMode.liab={};save();renderLiabs();}
-  else if(t.dataset.collapse){const k=t.dataset.collapse;collapsed[k]=!collapsed[k];saveCollapse();t.closest(".section").classList.toggle("collapsed",collapsed[k]);}
+  else if(t.closest){const c=t.closest("[data-collapse]");if(c){const k=c.dataset.collapse;collapsed[k]=!collapsed[k];saveCollapse();c.closest(".section").classList.toggle("collapsed",collapsed[k]);}}
 });
 // —— 流水筛选事件 ——
 (function bindFlowFilter(){
@@ -1728,7 +1747,7 @@ function saveLink(){
   if(lkEditing){
     data.links.forEach(function(l){if(l&&l.id===lkEditing){l.title=title;l.url=url;l.cat=cat;l.note=note;}});
   }else{
-    data.links.push({id:lkId(),title:title,url:url,cat:cat,note:note});
+    data.links.unshift({id:lkId(),title:title,url:url,cat:cat,note:note});
   }
   save();renderLinks();closeLinkModal();
 }

@@ -99,5 +99,41 @@
             android:textSize="15sp"
             android:textColor="#cccccc"
             android:visibility="gone" />
+
+        <!-- 小窗模式：浮层（负责拖动 + 点击展开），默认隐藏 -->
+        <FrameLayout
+            android:id="@+id/videoMiniLayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <!-- 小窗上的「关闭」按钮：直接停播并关掉小窗（小窗不一定非要展开才能关） -->
+            <TextView
+                android:id="@+id/videoMiniClose"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="top|start"
+                android:layout_margin="4dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="✕"
+                android:textSize="18sp"
+                android:textColor="#ffffff"
+                android:contentDescription="关闭播放" />
+
+            <!-- 小窗上的「展开回全屏」按钮（用户要的：关闭小屏→回全屏播放） -->
+            <TextView
+                android:id="@+id/videoMiniBtn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="4dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="⤢"
+                android:textSize="18sp"
+                android:textColor="#ffffff"
+                android:contentDescription="展开回全屏播放" />
+        </FrameLayout>
     </FrameLayout>
 </FrameLayout>

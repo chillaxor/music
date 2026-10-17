@@ -34,9 +34,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden"/>
         <!-- 影视仓（TVBox / CatVod 风格视频模块）：不锁方向，视频可横屏，支持小窗(PiP)播放 -->
         <activity android:name=".VideoActivity" android:label="影视仓" android:exported="false"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:supportsPictureInPicture="true"/>
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <!-- 视频悬浮小窗：WindowManager 浮层 + 前台服务，可浮在任意页面/其他 App 之上 -->
+        <service android:name=".VideoFloatService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <receiver android:name=".PlayerBroadcastReceiver" android:exported="false"/>
     </application>
 </manifest>

@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
@@ -74,7 +75,7 @@ object PlayerManager {
     val queue = mutableListOf<Song>()
     var queueIndex = 0
         private set
-    var playMode = 0 // 0 顺序播完停，1 列表循环，2 随机
+    var playMode = 2 // 0 顺序播完停，1 列表循环，2 随机（默认随机）
     /**
      * 临时播放中：当前播放的歌不在播放列表里（点了搜索/导入/收藏里的单首）。
      * 此期间队列原样不动，这首播完或被切走时，自动回到队列里原来那首接着播。
@@ -435,13 +436,16 @@ object PlayerManager {
                 val embedded = withContext(Dispatchers.IO) {
                     runCatching { AudioTagUtil.readLyric(local.path ?: "") }.getOrNull()
                 }
+                if (BuildConfig.DEBUG) Log.d("Lyric", "① 内嵌歌词：${embedded?.length ?: 0} 字")
                 if (!embedded.isNullOrBlank()) { setLyricsState(embedded); return@launch }
             }
             // ② 伴生 .lrc
+            val lrcUri = withContext(Dispatchers.IO) { DownloadStore.lyricUriOf(appContext, s) }
             val sidecar = withContext(Dispatchers.IO) {
-                DownloadStore.lyricUriOf(appContext, s)?.let { LyricFiles.read(appContext, it) }
+                lrcUri?.let { LyricFiles.read(appContext, it) }
                     ?: LyricFiles.readCacheSidecar(appContext, s)
             }
+            if (BuildConfig.DEBUG) Log.d("Lyric", "② 伴生歌词：索引地址=${lrcUri ?: "无"} 读到=${sidecar?.length ?: 0} 字（歌=${s.name}）")
             if (!sidecar.isNullOrBlank()) { setLyricsState(sidecar); return@launch }
             // ③ 在线 API（无 source/id 的本地歌跳过，拉了也是报错）
             if (s.source.isBlank() || s.lyricId.isBlank()) { setLyricsState(""); return@launch }

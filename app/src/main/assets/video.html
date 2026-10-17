@@ -14,14 +14,33 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
     font-size:14px;overscroll-behavior:none}
+  /* 小窗播放中：底部留出空间，别让悬浮小播放器挡住页面底部内容 */
+  body.mini-playing{padding-bottom:130px}
   /* 顶栏 */
   .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;
     padding:10px 12px;background:linear-gradient(180deg,#15171c,#101116);border-bottom:1px solid var(--line)}
-  .topbar .logo{font-size:16px;font-weight:800;color:var(--accent)}
-  .topbar .logo small{font-weight:500;color:var(--sub);font-size:11px;margin-left:4px}
-  .search{flex:1;display:flex;background:var(--card);border:1px solid var(--line);
+  .topbar .musicswitch{flex:none;display:flex;align-items:center;gap:5px;height:38px;padding:0 13px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+    border:1px solid rgba(255,255,255,.15);white-space:nowrap}
+  .topbar .musicswitch:active{opacity:.85;transform:scale(.97)}
+  /* 窄屏：顶栏一行放不下时逐级压缩，保证「全网/历史/配置」始终可见 */
+  @media(max-width:420px){
+    .topbar{gap:6px;padding:8px 9px}
+    .topbar .musicswitch{padding:0 10px;gap:4px}
+    .scope{padding:6px 8px;font-size:11.5px}
+  }
+  @media(max-width:360px){
+    .topbar{gap:5px;padding:8px 7px}
+    .topbar .musicswitch .ms-txt{display:none}   /* 只留 🎵 图标 */
+    .search{padding:5px 9px}
+  }
+  .srcDrawer .cur{font-weight:600;color:var(--accent);font-size:12px;margin-left:8px}
+  /* min-width:0 必需：flex 项默认 min-width:auto（取内容最小宽度），
+     搜索框里的 input 有默认 size 宽度（约 200px），不置 0 就永远不收缩，
+     会把右边的「全网 / 🕘 / ☰」挤出屏幕（手机上表现为看不见） */
+  .search{flex:1 1 0;min-width:0;display:flex;background:var(--card);border:1px solid var(--line);
     border-radius:999px;padding:6px 12px;align-items:center}
-  .search input{flex:1;background:none;border:0;color:var(--txt);font-size:14px;outline:none;min-width:0}
+  .search input{flex:1 1 0;min-width:0;width:100%;background:none;border:0;color:var(--txt);font-size:14px;outline:none}
   .search .go{color:var(--accent);font-weight:700;padding:0 4px}
   .scope{flex:none;padding:6px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line);
     color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -44,7 +63,8 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .grpHead .gc{font-size:11px;color:var(--sub);flex:none}
   .grpHead .go2{font-size:11px;color:var(--accent);cursor:pointer;flex:none;padding:2px 6px}
-  .vcard2{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer}
+  .vcard2{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .08s,opacity .08s}
+  .vcard2:active{transform:scale(0.96);opacity:0.8}
   .vcard2 .pic{width:100%;aspect-ratio:2/3;background:#2a2d35;object-fit:cover;display:block}
   .vcard2 .ph{width:100%;aspect-ratio:2/3;background:linear-gradient(135deg,#2a2d35,#34373f);
     display:flex;align-items:center;justify-content:center;color:#555;font-size:24px}
@@ -54,8 +74,8 @@
   /* 状态条 */
   .status{padding:8px 14px;color:var(--sub);font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}
   .status .load{color:var(--accent2);flex:none}
-  /* 详情 / 选集 抽屉 */
-  .sheet{position:fixed;inset:0;z-index:40;display:none}
+  /* 详情 / 选集 抽屉（z-index 必须高于搜索页 55，否则从搜索结果点开详情时弹窗被搜索页盖住） */
+  .sheet{position:fixed;inset:0;z-index:60;display:none}
   .sheet.show{display:block}
   .sheet .mask{position:absolute;inset:0;background:rgba(0,0,0,.6)}
   .sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:88%;background:var(--card);
@@ -126,7 +146,7 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="logo">影视仓<small id="curSrc"></small></div>
+    <div class="musicswitch" onclick="switchToMusic()">🎵<span class="ms-txt"> 音乐</span></div>
     <div class="search">
       <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()">
       <span class="go" onclick="doSearch()">搜索</span>
@@ -173,7 +193,7 @@
   <div id="srcDrawer" class="srcDrawer">
     <div class="mask" onclick="closeSrcDrawer()"></div>
     <div class="panel">
-      <h3>影视仓接口源</h3>
+      <h3>影视仓接口源<span id="curSrc" class="cur"></span></h3>
       <div id="srcList"></div>
       <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px">
         <input id="newName" class="field" placeholder="名称，如：盒子迷多仓">
@@ -221,11 +241,30 @@ function decodeB64(s){
   // 部分站点返回带 UTF-8 BOM 的 JSON，JSON.parse 会直接抛错，先剥掉
   return t.replace(/^﻿/,'');
 }
-function get(url){return new Promise(function(res){
-  var id=CBID++; CB[id]=function(ok,txt,code){res({ok:ok,text:txt,code:code|0});};
-  if(window.Android&&Android.httpGet) Android.httpGet(url,id);
-  else res({ok:false,text:"",code:0});
-});}
+function get(url){return withTimeout(function(){
+  return new Promise(function(res){
+    var id=CBID++; CB[id]=function(ok,txt,code){res({ok:ok,text:txt,code:code|0});};
+    if(window.Android&&Android.httpGet) Android.httpGet(url,id);
+    else res({ok:false,text:"",code:0});
+  });
+}, 40000, 'httpGet');}
+/** 兜底超时：原生超时（连接/读取 30s）后回调本应已返回；若回调意外丢失（如 WebView
+ *  抖动、evaluateJavascript 被丢弃），这里兜底 resolve，保证 await 永远会结束，
+ *  不会让详情/列表永久卡在「加载中」。返回 ok:false 让上层走失败分支而非无限等待。
+ *  inner 既可以是 Promise，也可以是「返回 Promise 的函数」（工厂），统一处理。 */
+function withTimeout(inner, ms, tag){
+  return new Promise(function(res){
+    var settled=false;
+    var p = (typeof inner === 'function') ? inner() : inner;
+    var t=setTimeout(function(){
+      if(settled)return; settled=true;
+      console.log('TIMEOUT '+tag+' ('+ms+'ms) 未收到回调，兜底结束');
+      res({ok:false,text:"",code:0,timeout:true});
+    }, ms);
+    p.then(function(v){ if(settled)return; settled=true; clearTimeout(t); res(v); },
+           function(){ if(settled)return; settled=true; clearTimeout(t); res({ok:false,text:"",code:0}); });
+  });
+}
 
 /* ============ Spider 爬虫源桥（DexClassLoader 引擎，见 SpiderEngine.kt） ============ */
 var SCB={}; var SCBID=1;
@@ -236,23 +275,78 @@ window.__spiderCb=function(id,ok,b64){
 };
 function spiderReady(){return !!(window.Android&&Android.spiderSearch);}
 /** 爬虫源搜索：t={ri,si,name,api,ext,jar,key} */
-function spiderSearch(t,w){return new Promise(function(res){
-  if(!spiderReady()){res(null);return;}
-  var id=SCBID++; SCB[id]=res;
-  Android.spiderSearch(t.jar||'',t.api||'',t.ext||'',t.key||t.name,w,id);
-});}
+function spiderSearch(t,w){return withTimeout(function(){
+  return new Promise(function(res){
+    if(!spiderReady()){res(null);return;}
+    var id=SCBID++; SCB[id]=res;
+    Android.spiderSearch(t.jar||'',t.api||'',t.ext||'',t.key||t.name,w,id);
+  });
+}, 35000, 'spiderSearch');}
 /** 爬虫源详情 */
-function spiderDetail(t,id){return new Promise(function(res){
-  if(!spiderReady()){res(null);return;}
-  var cid=SCBID++; SCB[cid]=res;
-  Android.spiderDetail(t.jar||'',t.api||'',t.ext||'',t.key||t.name,id,cid);
-});}
+function spiderDetail(t,id){return withTimeout(function(){
+  return new Promise(function(res){
+    if(!spiderReady()){res(null);return;}
+    var cid=SCBID++; SCB[cid]=res;
+    Android.spiderDetail(t.jar||'',t.api||'',t.ext||'',t.key||t.name,id,cid);
+  });
+}, 30000, 'spiderDetail');}
 /** 爬虫源播放解析（playerContent） */
-function spiderPlay(t,flag,id){return new Promise(function(res){
-  if(!spiderReady()){res(null);return;}
-  var cid=SCBID++; SCB[cid]=res;
-  Android.spiderPlay(t.jar||'',t.api||'',t.ext||'',t.key||t.name,flag,id,cid);
-});}
+function spiderPlay(t,flag,id){return withTimeout(function(){
+  return new Promise(function(res){
+    if(!spiderReady()){res(null);return;}
+    var cid=SCBID++; SCB[cid]=res;
+    Android.spiderPlay(t.jar||'',t.api||'',t.ext||'',t.key||t.name,flag,id,cid);
+  });
+}, 35000, 'spiderPlay');}
+/** 轻量解析/嗅探：抓播放页 HTML 抠真实直链（覆盖 /share/ 页、parse=1 播放页） */
+var NCB={}; var NCBID=1;
+window.__sniffCb=function(id,ok,b64){
+  var f=NCB[id]; if(!f)return; delete NCB[id];
+  var j={ok:false}; if(ok&&b64){ try{ j=JSON.parse(decodeB64(b64)); }catch(e){} }
+  f(j);
+};
+function sniff(url,ref){return withTimeout(function(){
+  return new Promise(function(res){
+    if(!(window.Android&&Android.sniff)){res({ok:false,msg:'no bridge'});return;}
+    var id=NCBID++; NCB[id]=res;
+    Android.sniff(url, ref||'', id);
+  });
+}, 30000, 'sniff');}
+/** 是否看起来就是直链媒体（m3u8/mp4/mpd/flv/ts/mkv…），是则无需解析 */
+function isDirectMedia(u){
+  return /\.(m3u8|mp4|mpd|flv|ts|mkv|mov|avi|webm)(\?|#|$)/i.test(u||'') || /\/index\.m3u8/i.test(u||'');
+}
+/** 系统返回键交由此函数逐层关闭浮层：详情弹窗→搜索页→源抽屉；都没开则返回 false（原生再决定退出）。
+ *  这样“后退”和点“✕/‹”一样，都是回到刚才的搜索位置，而不是直接退回主页。 */
+window.__videoBack=function(){
+  try{
+    if($('sheet')&&$('sheet').classList.contains('show')){ closeSheet(); return true; }
+    if($('searchPage')&&$('searchPage').classList.contains('show')){ closeSearchPage(); return true; }
+    if($('srcDrawer')&&$('srcDrawer').classList.contains('show')){ closeSrcDrawer(); return true; }
+  }catch(e){}
+  return false;
+};
+/** 播放中按返回关掉播放器后调用：把"播放前那一页"恢复出来。
+ *  刚才是全网搜索 → 恢复搜索页（否则退回首页推荐流）；正看着某视频详情 → 恢复详情弹窗。 */
+window.__restoreAfterPlay=function(){
+  try{
+    if(STATE.wd && STATE.groups && STATE.groups.length && !$('searchPage').classList.contains('show')){
+      console.log('restoreAfterPlay: 恢复搜索页 wd="'+STATE.wd+'" 组='+STATE.groups.length);
+      openSearchPage();
+    }
+    if(STATE.detail && !$('sheet').classList.contains('show')){
+      console.log('restoreAfterPlay: 恢复详情弹窗 '+(STATE.detail.vod_name||''));
+      renderDetail(STATE.detail, STATE.detailSite||null, STATE.detailSpider||null);
+    }
+  }catch(e){ console.log('restoreAfterPlay err: '+e); }
+};
+/** 原生通知：进/出 App 内小窗。进小窗时给页面底部留出空间，别让小播放器挡住"加载更多"等底部内容 */
+window.__onMiniChange=function(on){
+  try{
+    document.body.classList.toggle('mini-playing', !!on);
+    console.log('onMiniChange: '+!!on);
+  }catch(e){}
+};
 /** 是否 jar 爬虫源站点（csp_ 前缀，由 dex jar 实现） */
 function isSpiderSite(site){
   return !!(site&&site.api&&String(site.api).indexOf('csp_')===0);
@@ -270,6 +364,32 @@ function $(id){return document.getElementById(id);}
 function isDirect(site){
   return !!(site&&site.api&&(site.type===0||site.type===1)&&/^https?:/i.test(site.api));
 }
+
+/* 放不了/需登录的源：不过滤掉会反复初始化、点进去也放不了（转圈 15s 超时或报错）。
+ * 判定两类：
+ *  1) ext 里显式带 cookie 字段（如 csp_Bili 的 bili_cookie.txt / SESSDATA=…）
+ *  2) api 属于已知必须登录/带 Cookie/走网盘 OAuth 的爬虫（实测这些 spiderPlay 超时或返回"请扫码登录"）
+ * 要增删名单，直接改下面的 NEEDS_LOGIN_API 集合即可。 */
+var NEEDS_LOGIN_API={
+  'TTian':1,'TianTian':1,                                  // 天天影视家族（日志刷"未检测到有效的Cookie"）
+  'PanAli':1,'PanQuark':1,'PanUc':1,'PanBaiDu':1,          // 我的云盘：阿里/夸克/UC/百度，需扫码登录
+  'PanSou':1,                                              // 云盘搜索，需 Cookie
+  'Ddyy':1,                                                // 多多影音：百度/UC 网盘，返回"请扫码登录百度网盘"
+  'Wogg':1,'Mogg':1,'Kwps':1,                              // 玩偶/木偶哥哥、夸克盘社：网盘 OAuth，spiderPlay 超时
+  'Duopan':1,'PanWebShare':1,                              // 玩歌/装歌、多多|木偶|蜡笔|小米|玩偶 4K弹幕：走网盘，需登录
+  'JianPian':1,                                            // 荐片 P2P：需荐片 App/协议，非 HTTP 直链
+  'Bili':1,'Bili2':1,'Bilimd':1                            // 哔哩哔哩：返回 DASH 且要带 cookie 请求头，本播放器放不了（用户要求去掉）
+};
+function needsLogin(site){
+  if(!site)return false;
+  var ext=site.ext;
+  if(ext&&typeof ext==='object'){ try{ext=JSON.stringify(ext);}catch(e){} }
+  ext=String(ext||'');
+  if(/cookie/i.test(ext))return true;
+  var api=String(site.api||'').replace(/^csp_/,'');
+  return !!NEEDS_LOGIN_API[api];
+}
+
 
 /* ============ 源管理 ============ */
 function loadSources(){
@@ -308,6 +428,8 @@ function addSrc(){
 }
 function openSrcDrawer(){renderSrcDrawer();$('srcDrawer').classList.add('show');}
 function closeSrcDrawer(){$('srcDrawer').classList.remove('show');}
+/** 顶栏 🎵 音乐：切到主 App 的音乐播放页 */
+function switchToMusic(){ if(window.Android&&Android.openMusic) Android.openMusic(); }
 
 /* ============ 选源 → 拉配置 → 拉分类 ============ */
 /** 拉取单个订阅源的 sites 列表，缓存到 STATE.srcSites[i] */
@@ -318,14 +440,16 @@ async function loadOneSource(i){
   var cfg; try{cfg=JSON.parse(r.text);}catch(e){
     console.log('loadOneSource NOT JSON: src='+i+' head='+r.text.slice(0,80));STATE.srcSites[i]=[];return [];
   }
-  var sites=(cfg.sites||[]).filter(function(x){return x&&x.api;});
+  var all=(cfg.sites||[]).filter(function(x){return x&&x.api;});
+  var sites=all.filter(function(x){return !needsLogin(x);});
+  var dropped=all.length-sites.length;
   STATE.srcJars[i]=cfg.spider||''; // 仓级 spider jar 地址（type3 爬虫源用）
   if(!sites.length&&(cfg.class||cfg.list)){
     console.log('loadOneSource: src='+i+' 返回的是单站数据（有 class/list 无 sites），不是多仓订阅地址');
   }
   STATE.srcSites[i]=sites;
   var direct=sites.filter(isDirect).length;
-  console.log('loadOneSource: src='+i+' ('+s.name+') 站点',sites.length,'个, 直连',direct,'个');
+  console.log('loadOneSource: src='+i+' ('+s.name+') 站点',sites.length,'个, 直连',direct,'个'+(dropped?'（已隐藏需登录/Cookie源 '+dropped+' 个）':''));
   return sites;
 }
 /** 启动时并发预加载所有订阅源（失败不影响当前源渲染） */
@@ -499,9 +623,7 @@ function renderSrcResults(emptyMsg){
   }
   var h=document.createElement('div'); h.className='grpHead';
   h.innerHTML='<span class="gn">'+esc((g.spider?'🕷 ':'▣ ')+g.name)+'</span>'+
-    '<span class="gc">'+g.items.length+' 条</span>'+
-    (g.spider?'':'<span class="go2">进入该站 ▸</span>');
-  if(!g.spider){ h.querySelector('.go2').onclick=function(){ enterGroupSite(g); }; }
+    '<span class="gc">'+g.items.length+' 条</span>';
   box.appendChild(h);
   var grid=document.createElement('div'); grid.className='grid';
   g.items.forEach(function(v){
@@ -530,6 +652,8 @@ function enterGroupSite(g){
 }
 /** 跨源卡片点击：按结果所属源解析站点上下文再开详情 */
 function openGroupDetail(g,v){
+  // 点搜索结果的卡片：保证搜索页在前（详情弹窗 z 更高，会浮在它上面），别落回首页
+  if($('searchPage')&&!$('searchPage').classList.contains('show')) $('searchPage').classList.add('show');
   if(g.spider||v._spider){ openSpiderDetail(v); return; }
   var sites=(STATE.srcSites&&STATE.srcSites[g.ri])||[];
   var site=sites[g.si];
@@ -769,7 +893,8 @@ function renderEps(v){
  * 爬虫源列表原生侧只存元数据，切集时回传 __playSpiderAt 重新解析。
  */
 function playEp(from,eps,idx){
-  closeSheet();
+  // 注意：不再在这里 closeSheet()。详情页留在 WebView 里（被全屏播放器盖住），
+  // 这样播放中按返回关掉播放器后，能回到「播放前那个视频的详情/选集页」，而不是列表或主页。
   var spiderT=STATE.detailSpider;
   STATE.playFrom=from; STATE.playEps=eps; STATE.playIdx=idx;
   var epsJson=JSON.stringify(eps.map(function(x){
@@ -785,12 +910,22 @@ function playEp(from,eps,idx){
   // 爬虫源：先经 playerContent 解析出直链再交原生播放器
   if(spiderT){ playSpiderEp(spiderT,from,e,idx,epsJson,spJson,meta); return; }
   var url=e.url, name=(STATE.detail.vod_name||'')+' · '+from+' · '+e.name;
-  // 一律交给原生 ExoPlayer 在本 App 内横屏播放，不再跳外部播放器
   // 很多 CDN 校验 Referer：带上详情所属站点的 origin，否则 403
   var ref='';
   try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
-  if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson,meta);
-  else toast('当前环境不支持播放');
+  // 直链媒体直接播；否则（/share/<hash> 等播放页）先嗅探抠直链再播
+  (async function(){
+    var finalUrl=url;
+    if(url && !isDirectMedia(url)){
+      toast('正在解析播放地址…');
+      var j=await sniff(url, ref);
+      console.log('SNIFF direct['+(STATE.detailSite&&STATE.detailSite.name||'')+'] '+url+' => '+(j&&j.ok?j.url:('fail:'+(j&&j.msg))));
+      if(j&&j.ok&&j.url) finalUrl=j.url;
+      else { toast('该线路解析失败，可换其他线路/源'); return; }
+    }
+    if(window.Android&&Android.playVideo) Android.playVideo(finalUrl,name,ref,epsJson,idx,spJson,meta);
+    else toast('当前环境不支持播放');
+  })();
 }
 /** 起播时的历史记录元数据（与当前详情上下文绑定） */
 function playMeta(e){
@@ -807,25 +942,38 @@ function playMeta(e){
 }
 /** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器。
  *  epsJson/spJson/idx/meta 一并回传，原生侧才能维护整条播放列表和历史记录。 */
+function playResolved(url,name,ref,idx,epsJson,spJson,meta){
+  if(window.Android&&Android.playResolved) Android.playResolved(url,name,ref,idx,epsJson,spJson,meta);
+  else if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson,meta);
+  else toast('当前环境不支持播放');
+}
 async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
   toast('正在解析播放地址…');
   var txt=await spiderPlay(t,flag,e.url);
   var j=null; try{j=JSON.parse(txt);}catch(err){}
+  console.log('SPIDERDBG['+(t.key||t.name||t.api)+'] resolve => '+(txt?String(txt).slice(0,220):'(empty/timeout)'));
   if(!j){toast('该线路解析失败，可换其他线路/源');return;}
   var url=j.url||'';
   var parse=(j.parse===1||j.parse==='1');
   var ref='';
   try{ if(j.header&&j.header.Referer) ref=j.header.Referer; }catch(err){}
-  if(url&&!parse&&/^https?:/i.test(url)){
-    var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
-    if(window.Android&&Android.playResolved) Android.playResolved(url,name,ref,idx,epsJson,spJson,meta);
-    else if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson,meta);
-    else toast('当前环境不支持播放');
-  } else if(parse){
-    toast('该线路需要解析，暂不支持（可换其他线路）');
-  } else {
-    toast('未获取到播放地址，可换其他线路');
+  var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
+  // 已是直链媒体 → 直接播
+  if(url && !parse && isDirectMedia(url)){
+    console.log('SPIDERDBG['+(t.key||t.name)+'] DIRECT '+url.slice(0,140));
+    playResolved(url,name,ref,idx,epsJson,spJson,meta);
+    return;
   }
+  // parse=1 或非直链 → 抓播放页 HTML 嗅探真实直链（旺旺 mac_url、量子 var main 等）
+  if(url && /^https?:/i.test(url)){
+    toast('正在解析播放地址…');
+    var s=await sniff(url, ref);
+    console.log('SPIDERDBG['+(t.key||t.name)+'] SNIFF '+(s&&s.ok?('OK '+s.url.slice(0,140)):('fail:'+(s&&s.msg))));
+    if(s&&s.ok&&s.url){ playResolved(s.url,name,ref,idx,epsJson,spJson,meta); return; }
+    toast('该线路解析失败，可换其他线路/源'); return;
+  }
+  console.log('SPIDERDBG['+(t.key||t.name)+'] NO_URL msg='+(j.msg||''));
+  toast('未获取到播放地址，可换其他线路');
 }
 /** 原生播放器切集回调（上一集/下一集/自动连播）：爬虫源剧集需重新解析 */
 window.__playSpiderAt=function(i){
@@ -916,6 +1064,7 @@ async function boot(){
   });
 }
 boot();
+
 </script>
 </body>
 </html>
