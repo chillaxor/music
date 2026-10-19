@@ -11,8 +11,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Environment
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.*
@@ -34,6 +37,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 data class Song(
     val id:String, val name:String, val artist:String, val album:String,
@@ -93,8 +97,31 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var queueEmpty:View
     private lateinit var queueCount:TextView
     private lateinit var queueAdapter:QueueAdapter
-    /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加，长按删除） */
+    /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加；点=进入，长按抓起可拖动排序，按住不动=删除） */
     private lateinit var shortcutRow: FlowLayout
+    // —— 首页自定义入口拖动排序状态（长按抓起 → 移动=实时换序，按住不动=删除） ——
+    private var dragChip: TextView? = null
+    private var dragIndex = -1
+    private var dragOrder: MutableList<HomeShortcutStore.Item> = mutableListOf()
+    private var grabReady = false
+    private var dragging = false
+    private var downRawX = 0f
+    private var downRawY = 0f
+    private val flowLoc = IntArray(2)
+    /** 当前已确认的落点槽位（带迟滞，见 hitSlot）：防止手指停在两 chip 边界时来回翻 */
+    private var hitHold = -1
+    private val grabHandler = Handler(Looper.getMainLooper())
+    /** 长按抓起延时：比系统长按(500ms)略短，先抓住并给视觉反馈 */
+    private val grabDelayMs = 420L
+    private val chipTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
+    private val grabRun = Runnable {
+        grabReady = true
+        dragChip?.let { c ->
+            c.isPressed = false
+            c.animate().scaleX(1.12f).scaleY(1.12f).alpha(0.75f).setDuration(90).start()
+            c.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+    }
     private var showSearch=false
     private val uiHandler=Handler(Looper.getMainLooper())
     private lateinit var adapter:SongAdapter
@@ -322,7 +349,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::shortcutRow.isInitialized) renderShortcuts()
     }
 
-    /** 渲染首页自定义资源位（不限量；点=进入，长按=删除） */
+    /** 渲染首页自定义资源位（不限量；点=进入，长按抓起可拖动排序，按住不动=删除） */
     private fun renderShortcuts() {
         shortcutRow.removeAllViews()
         val items = HomeShortcutStore.list(this)
@@ -336,23 +363,153 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             tv.setBackgroundResource(R.drawable.bg_pill_soft)
             tv.setPadding(padH, padV, padH, padV)
             tv.setOnClickListener { openShortcut(item) }
-            tv.setOnLongClickListener {
-                AlertDialog.Builder(this)
-                    .setTitle("移除「${item.label}」？")
-                    .setPositiveButton("移除") { _, _ ->
-                        HomeShortcutStore.remove(this, item.id())
-                        renderShortcuts()
-                    }
-                    .setNegativeButton("取消", null)
-                    .show()
-                true
-            }
+            tv.setOnTouchListener { _, ev -> onChipTouch(tv, item, ev) }
             val lp = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             )
             shortcutRow.addView(tv, lp)
         }
+    }
+
+    // ==================== 首页自定义入口：拖动排序 ====================
+
+    /**
+     * 自定义入口 chip 的手势：
+     *  - 轻点 → 打开（交还 View 默认点击逻辑，返回 false）
+     *  - 按住拖动（不等长按，超过触摸 slop 即开始）→ 跟手移动，
+     *    手指落在哪个槽位就实时换到哪，松手保存新顺序
+     *  - 按住不动约 420ms → 抓起视觉反馈；此时直接松手 = 删除（原长按行为）
+     */
+    private fun onChipTouch(chip: TextView, item: HomeShortcutStore.Item, ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (dragChip != null) return true // 防御：同屏只拖一个
+                downRawX = ev.rawX; downRawY = ev.rawY
+                dragChip = chip
+                dragIndex = shortcutRow.indexOfChild(chip)
+                dragOrder = HomeShortcutStore.list(this)
+                shortcutRow.getLocationOnScreen(flowLoc)
+                grabReady = false; dragging = false
+                hitHold = shortcutRow.indexOfChild(chip)
+                grabHandler.removeCallbacks(grabRun)
+                grabHandler.postDelayed(grabRun, grabDelayMs)
+                return false // 先交还：也可能只是普通点击
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = ev.rawX - downRawX
+                val dy = ev.rawY - downRawY
+                val moved = abs(dx) > chipTouchSlop || abs(dy) > chipTouchSlop
+                if (!dragging) {
+                    if (!moved) return false
+                    // 按住直接拖动：不等长按，超过 slop 立即进入拖动排序
+                    grabHandler.removeCallbacks(grabRun)
+                    if (!grabReady) grabRun.run() // 补上「抓起」视觉+震动（长按抓起过的跳过）
+                    dragging = true
+                }
+                // 跟手：平移量=手指位移（相对按下的位置，抓取点自动保持）
+                chip.translationX = dx
+                chip.translationY = dy
+                // 实时换序：手指落在哪个槽位就换到哪（拖动中的 chip 始终是同一个 view）
+                val t = hitSlot(ev.rawX - flowLoc[0], ev.rawY - flowLoc[1])
+                if (t in 0 until dragOrder.size && t != dragIndex) {
+                    java.util.Collections.swap(dragOrder, dragIndex, t)
+                    // 视图同步：把【另一个】chip 挪到被拖 chip 的位置。
+                    // 千万别 removeViewAt(被拖的 chip)——它正是当前手势的触摸目标，
+                    // 移除会触发框架同步下发 ACTION_CANCEL，手势当场断裂、顺序也不会保存。
+                    val other = shortcutRow.getChildAt(t)
+                    shortcutRow.removeViewAt(t)
+                    shortcutRow.addView(other, dragIndex)
+                    dragIndex = t
+                    hitHold = t
+                    shortcutRow.requestLayout()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                grabHandler.removeCallbacks(grabRun)
+                val wasDragging = dragging
+                val wasGrab = grabReady
+                dragging = false; grabReady = false; dragChip = null
+                when {
+                    wasDragging -> {
+                        HomeShortcutStore.replaceAll(this, dragOrder)
+                        renderShortcuts() // 重建一行，清掉拖动位移/缩放
+                    }
+                    wasGrab -> {
+                        renderShortcuts() // 复位抓起动画
+                        showRemoveShortcutDialog(item)
+                    }
+                }
+                return wasDragging || wasGrab
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                // 被系统打断（来电/通知等）：已经拖出来的顺序照常保存，别让用户白拖
+                grabHandler.removeCallbacks(grabRun)
+                val wasDragging = dragging
+                dragging = false; grabReady = false; dragChip = null
+                if (wasDragging) {
+                    HomeShortcutStore.replaceAll(this, dragOrder)
+                    renderShortcuts()
+                }
+                return wasDragging
+            }
+        }
+        return false
+    }
+
+    /** 命中测试：FlowLayout 坐标 (x,y) 落在哪个子 view 上（边界外扩 14dp，更容易落位） */
+    private fun childIndexAt(x: Float, y: Float): Int {
+        val infl = 14 * resources.displayMetrics.density
+        var best = -1
+        var bestD = Float.MAX_VALUE
+        for (i in 0 until shortcutRow.childCount) {
+            val c = shortcutRow.getChildAt(i)
+            if (x < c.left - infl || x > c.right + infl ||
+                y < c.top - infl || y > c.bottom + infl
+            ) continue
+            val cx = (c.left + c.right) / 2f
+            val cy = (c.top + c.bottom) / 2f
+            val d = (x - cx) * (x - cx) + (y - cy) * (y - cy)
+            if (d < bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+
+    /**
+     * 命中槽位（带迟滞）：候选槽位必须比当前已确认槽位（hitHold）明显更近（≥10dp）才切换。
+     * 两个用途：
+     *  1) requestLayout 后有一帧多边界没刷新，此时按旧边界算出的最近槽位会闪一下；
+     *  2) 手指恰停在两个 chip 中点附近时，最近中心会在两者间反复翻转。
+     * 有了迟滞，这两种抖动都不会引发来回换序。
+     */
+    private fun hitSlot(x: Float, y: Float): Int {
+        if (hitHold !in 0 until shortcutRow.childCount) return childIndexAt(x, y)
+        val hold = shortcutRow.getChildAt(hitHold)
+        val dHold = distTo(hold, x, y)
+        val best = childIndexAt(x, y)
+        if (best < 0 || best == hitHold) return hitHold
+        if (distTo(shortcutRow.getChildAt(best), x, y) + 10 * resources.displayMetrics.density < dHold)
+            return best
+        return hitHold
+    }
+
+    private fun distTo(v: View, x: Float, y: Float): Float {
+        val dx = x - (v.left + v.right) / 2f
+        val dy = y - (v.top + v.bottom) / 2f
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    /** 长按（按住不动）删除自定义入口 */
+    private fun showRemoveShortcutDialog(item: HomeShortcutStore.Item) {
+        AlertDialog.Builder(this)
+            .setTitle("移除「${item.label}」？")
+            .setPositiveButton("移除") { _, _ ->
+                HomeShortcutStore.remove(this, item.id())
+                renderShortcuts()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 点自定义资源位：link=直接开链接，page=进对应功能/记账子页 */
@@ -363,8 +520,21 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     Toast.makeText(this, "这个链接没有地址", Toast.LENGTH_SHORT).show()
                     return
                 }
-                // 在 App 内嵌浏览器打开（不跳出 App，可返回）
-                startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", item.url))
+                val u = LinkRouter.normalize(item.url)
+                // 深链 / 小红书分享链接 → 先尝试唤起指定的 App
+                val appLink = LinkRouter.resolveAppLink(u)
+                if (appLink != null) {
+                    val ok = LinkRouter.openApp(this, appLink)
+                    if (!ok && (u.startsWith("http://") || u.startsWith("https://"))) {
+                        // 没装目标 App，但原始链接本身是网页（如小红书分享链接）→ 退回内嵌浏览器
+                        startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", u))
+                    } else if (!ok) {
+                        Toast.makeText(this, "未安装对应的应用，无法跳转", Toast.LENGTH_SHORT).show()
+                    }
+                    return
+                }
+                // 网页网址：在 App 内嵌浏览器打开（不跳出 App，可返回）
+                startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", u))
             }
             else -> when (item.target) {
                 "video" -> startActivity(Intent(this, VideoActivity::class.java))

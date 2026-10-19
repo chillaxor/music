@@ -1,6 +1,5 @@
 package com.linghit.gdmusic
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
@@ -263,10 +262,13 @@ class NetAssetActivity : AppCompatActivity() {
             fun pickBackupDir() {
                 runOnUiThread { dirLauncher.launch(null) }
             }
-            // 打开网页链接：在 app 内嵌浏览器（browserPanel 覆盖层）里打开，不跳出 App。
+            // 打开网页链接：深链（weixin://、alipays:// 等）直接唤起指定的 App；
+            // 普通网址在 app 内嵌浏览器（browserPanel 覆盖层）里打开，不跳出 App。
             // 浏览器标签不挂账本 JS 桥，外部站点无法接触 data。
             @JavascriptInterface
-            fun openUrl(url: String) { showBrowser(url) }
+            fun openUrl(url: String) {
+                runOnUiThread { openLinkOrApp(url) }
+            }
 
             // 顶栏「🎵 音乐」：从记账页切回音乐播放页（MainActivity）
             @JavascriptInterface
@@ -337,8 +339,8 @@ class NetAssetActivity : AppCompatActivity() {
             }
         }
         webView.loadUrl("file:///android_asset/index.html")
-        // 首页钉的链接：直接在 App 内嵌浏览器打开（不跳出 App）
-        intent.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { showBrowser(it) }
+        // 首页钉的链接：深链唤起指定 App，普通网址进 App 内嵌浏览器（不跳出 App）
+        intent.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { openLinkOrApp(it) }
 
         // —— app 内嵌浏览器（链接页用）——
         // 多标签：每个标签一个独立 WebView，只开 JS/DOM，不挂任何 JS 桥；
@@ -354,7 +356,7 @@ class NetAssetActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent?.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { showBrowser(it) }
+        intent?.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { openLinkOrApp(it) }
     }
 
     // ==================== 内嵌浏览器：多标签 ====================
@@ -367,6 +369,27 @@ class NetAssetActivity : AppCompatActivity() {
             if (tabs.isEmpty()) createTab(url)
             else currentTab?.webView?.loadUrl(url)
         }
+    }
+
+    /**
+     * 打开一条链接（链接页点开 / 首页自定义链接）：
+     *  - 深链（xhsdiscover://、weixin:// 等）或小红书分享链接 → 唤起指定的 App；
+     *  - 普通网址 → 走 App 内嵌浏览器。
+     */
+    private fun openLinkOrApp(url: String) {
+        val u = LinkRouter.normalize(url)
+        val appLink = LinkRouter.resolveAppLink(u)
+        if (appLink != null) {
+            // 跳 App 前把内嵌浏览器收起来：否则从目标 App 回来时浏览器面板还挡在记账页上
+            closeAllTabs()
+            if (!LinkRouter.openApp(this, appLink)) {
+                // 没装目标 App：分享链接(https)兜底走网页；纯深链没有网页可开，只能提示
+                if (u.startsWith("http://") || u.startsWith("https://")) showBrowser(u)
+                else Toast.makeText(this, "未安装对应的应用，无法跳转", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        showBrowser(u)
     }
 
     /** 新建标签并切过去；url 为空时建空白页（供网页 window.open 使用） */
@@ -613,42 +636,19 @@ class NetAssetActivity : AppCompatActivity() {
     }
 
     /**
-     * 处理 WebView 里的非 http(s) 跳转。
+     * 内嵌浏览器里【网页自身】的跳转拦截。
      * 返回 true = 已接管（WebView 不要再加载，避免 net::ERR_UNKNOWN_URL_SCHEME 错误页）。
      *
-     * 覆盖场景：
-     *  - baiduboxapp://、weixin://、alipays://、tmall:// 等 App 深链 → 尝试唤起对应 App；
-     *  - intent:// 协议（带 #Intent;end 的那种）→ Intent.parseUri 解析后唤起，
-     *    目标 App 没装时回退到它自带的 BROWSER_FALLBACK_URL 网页；
-     *  - tel: / mailto: / sms: 等 → 交给系统应用；
-     *  - 全都失败（比如模拟器没装百度 App）→ 静默拦截，停在当前页不弹错误页。
+     * 规则（产品需求）：网页里打开的网址，一律不允许跳转到外部 App。
+     * 只放行 http/https/file/about（网页内导航/本页资源），其余自定义 scheme
+     * （weixin://、alipays://、tmall://、intent://、tel:、mailto: 等）全部静默拦截，停在当前页。
+     * 要跳指定 App，请在「链接页 / 首页自定义链接」里配对应深链（走 LinkRouter 唤起）。
      */
     private fun handleExternalUrl(view: WebView, url: String): Boolean {
         if (url.startsWith("http://") || url.startsWith("https://") ||
             url.startsWith("file://") || url.startsWith("about:")
         ) return false
-        return try {
-            val intent = if (url.startsWith("intent://")) {
-                Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-            } else {
-                Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            true
-        } catch (e: ActivityNotFoundException) {
-            // intent:// 深链没装目标 App：有兜底网址就加载兜底，否则静默拦截
-            if (url.startsWith("intent://")) {
-                val fallback = try {
-                    Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-                        .getStringExtra("android.intent.extra.BROWSER_FALLBACK_URL")
-                } catch (_: Exception) { null }
-                if (!fallback.isNullOrEmpty()) { view.loadUrl(fallback); true }
-                else true
-            } else true
-        } catch (e: Exception) {
-            true
-        }
+        return true
     }
 
     // 退到后台时让页面把内存里的最新数据再刷一次盘，

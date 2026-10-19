@@ -69,4 +69,9 @@ object HomeShortcutStore {
         l.removeAll { it.id() == id }
         save(ctx, l)
     }
+
+    /** 整体替换（拖动排序后按新顺序写回） */
+    fun replaceAll(ctx: Context, l: List<Item>) {
+        save(ctx, l)
+    }
 }
