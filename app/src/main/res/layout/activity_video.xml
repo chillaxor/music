@@ -134,6 +134,34 @@
                 android:textSize="18sp"
                 android:textColor="#ffffff"
                 android:contentDescription="展开回全屏播放" />
+
+            <!-- 小窗缩放：左下角 ＋/－（兜底保证能改尺寸；双指捏合在部分 ROM 收不到第二指时备用） -->
+            <TextView
+                android:id="@+id/videoMiniZoomIn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="4dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="＋"
+                android:textSize="20sp"
+                android:textColor="#ffffff"
+                android:contentDescription="放大小窗" />
+
+            <TextView
+                android:id="@+id/videoMiniZoomOut"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="bottom|start"
+                android:layout_marginStart="48dp"
+                android:layout_marginBottom="4dp"
+                android:background="#66000000"
+                android:gravity="center"
+                android:text="－"
+                android:textSize="20sp"
+                android:textColor="#ffffff"
+                android:contentDescription="缩小小窗" />
         </FrameLayout>
     </FrameLayout>
 </FrameLayout>

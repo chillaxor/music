@@ -191,14 +191,13 @@ class SpiderEngine private constructor(private val appCtx: Context) {
                 file.setReadOnly()
                 val odex = File(appCtx.filesDir, "spider/odex").apply { mkdirs() }
                 val loader = DexClassLoader(file.absolutePath, odex.absolutePath, null, appCtx.classLoader)
-                try {
-                    val initClz = loader.loadClass("com.github.catvod.spider.Init")
-                    val m = initClz.getMethod("init", Context::class.java)
-                    m.invoke(null, appCtx)
-                    Log.d(TAG, "Init.init 完成 (${file.name}, ${file.length()}B)")
-                } catch (e: Throwable) {
-                    Log.w(TAG, "Init.init 失败: ${e.message}")
-                }
+                // 注意：这里【不再】调用 jar 的 com.github.catvod.spider.Init.init(appCtx)。
+                // 那些 jar 的 Init.init 在加载时会尝试启动一个 Go 语言写的本地代理（goproxy），
+                // 我们 APK 没打包那个 Go 原生二进制，它起不来就弹「go代理启动失败」Toast。
+                // 而本宿主提供的 Spider 基类静态初始化本就是空实现（见 Spider.java），
+                // spider 真正需要的上下文已由每个实例的 obj.init(appCtx, ext) 提供，
+                // 因此跳过 jar 的 Init.init 既能彻底消掉弹窗，又不会丢失任何功能
+                // （那个 Go 代理在本地本就跑不起来，只会弹窗、不干事）。
                 loaders[key] = loader
                 loader
             } catch (e: Throwable) {

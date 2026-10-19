@@ -95,6 +95,8 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var videoMiniLayer: FrameLayout
     private lateinit var videoMiniBtn: TextView
     private lateinit var videoMiniClose: TextView
+    private lateinit var videoMiniZoomIn: TextView
+    private lateinit var videoMiniZoomOut: TextView
     /** 小窗（App 内悬浮小窗）模式：播放器缩到角落，页面可继续浏览 */
     private var miniMode = false
     /** 用户是否手动拖过小窗：拖动后不再被 applyMiniLayout 复位回右下角 */
@@ -107,6 +109,14 @@ class VideoActivity : AppCompatActivity() {
     private var miniDownX = 0f
     private var miniDownY = 0f
     private var miniDragged = false
+    /** 小窗手势缩放倍数（双指捏合调整），默认 1.0 */
+    private var miniScale = 1.0f
+    /** 是否正在双指捏合缩放 */
+    private var pinching = false
+    /** 捏合起始两指间距 */
+    private var pinchStartDist = 0f
+    /** 捏合起始缩放倍数 */
+    private var pinchStartScale = 1.0f
 
     private var backCallback: OnBackPressedCallback? = null
     private var player: ExoPlayer? = null
@@ -216,6 +226,8 @@ class VideoActivity : AppCompatActivity() {
         videoMiniLayer = findViewById(R.id.videoMiniLayer)
         videoMiniBtn = findViewById(R.id.videoMiniBtn)
         videoMiniClose = findViewById(R.id.videoMiniClose)
+        videoMiniZoomIn = findViewById(R.id.videoMiniZoomIn)
+        videoMiniZoomOut = findViewById(R.id.videoMiniZoomOut)
         miniTouchSlop = ViewConfiguration.get(this).scaledTouchSlop
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
@@ -232,24 +244,52 @@ class VideoActivity : AppCompatActivity() {
         videoMiniBtn.setOnClickListener { exitMini() }
         // 小窗上的 ✕：直接停播并关掉播放器（不用先展开再返回）
         videoMiniClose.setOnClickListener { closeVideo() }
-        // 小窗拖动 + 点击展开
+        // 小窗缩放：＋/－ 改 miniScale（兜底；双指捏合在部分 ROM 收不到第二指时也能调尺寸）
+        videoMiniZoomIn.setOnClickListener { zoomMini(1.18f) }
+        videoMiniZoomOut.setOnClickListener { zoomMini(0.85f) }
+        // 小窗拖动 + 点击展开 + 双指捏合缩放（手指放大/缩小播放窗口）
         videoMiniLayer.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     // 落在 ⤢/✕ 按钮上：交给按钮自己处理（父层若返回 true 会吞掉点击，
                     // 按钮的 OnClick 永远不触发——✕ 会变成"展开"而不是"关闭"）
                     if (hitMiniButton(ev)) { miniDragged = false; return@setOnTouchListener false }
+                    // 捏合中第二指已抬起，第一指重新落下：继续吞掉，别误判成"点击展开"
+                    if (pinching) { miniDownX = ev.rawX; miniDownY = ev.rawY; return@setOnTouchListener true }
                     miniDownX = ev.rawX; miniDownY = ev.rawY; miniDragged = false; true
                 }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    // 第二指落下：进入捏合缩放
+                    if (ev.pointerCount >= 2) { startPinch(ev); true } else false
+                }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.rawX - miniDownX
-                    val dy = ev.rawY - miniDownY
-                    if (!miniDragged && (abs(dx) > miniTouchSlop || abs(dy) > miniTouchSlop)) miniDragged = true
-                    if (miniDragged) { moveMiniBy(dx, dy); miniDownX = ev.rawX; miniDownY = ev.rawY }
+                    when {
+                        pinching && ev.pointerCount >= 2 -> { doPinch(ev); true }
+                        pinching -> true // 捏合中暂时不足两指：吞掉，避免误拖动
+                        else -> {
+                            val dx = ev.rawX - miniDownX
+                            val dy = ev.rawY - miniDownY
+                            if (!miniDragged && (abs(dx) > miniTouchSlop || abs(dy) > miniTouchSlop)) miniDragged = true
+                            if (miniDragged) { moveMiniBy(dx, dy); miniDownX = ev.rawX; miniDownY = ev.rawY }
+                            true
+                        }
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    // 抬起一只手导致只剩一指：退出捏合，并标记为已拖动，
+                    // 这样最后那只手抬起时不会被误判成"点击展开回全屏"
+                    if (pinching && ev.pointerCount < 2) {
+                        pinching = false
+                        miniDragged = true
+                    }
                     true
                 }
-                MotionEvent.ACTION_UP -> { if (!miniDragged) exitMini(); true }
-                MotionEvent.ACTION_CANCEL -> { miniDragged = false; true }
+                MotionEvent.ACTION_UP -> {
+                    if (pinching) { pinching = false; true }       // 捏合收尾，不展开
+                    else if (!miniDragged) { exitMini(); true }    // 单指轻点 → 展开回全屏
+                    else true
+                }
+                MotionEvent.ACTION_CANCEL -> { pinching = false; miniDragged = false; true }
                 else -> false
             }
         }
@@ -995,6 +1035,7 @@ class VideoActivity : AppCompatActivity() {
         if (miniMode) return
         miniMode = true
         miniUserMoved = false   // 每次进小窗回到默认右下角；拖动后不再被转屏/换清晰度弹回
+        miniScale = 1.0f        // 每次进小窗回到默认大小，缩放从 1.0 重新开始
         // 先缩窗口再转竖屏，避免全屏播放器在竖屏下闪一下
         applyMiniLayout()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -1031,15 +1072,23 @@ class VideoActivity : AppCompatActivity() {
         webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(false)") }
     }
 
-    /** 计算并应用小窗尺寸/位置（按视频宽高比，默认右下角；竖屏视频则收窄一点） */
+    /** 计算并应用小窗尺寸/位置（按视频宽高比，默认右下角；竖屏视频则收窄一点）。
+     *  再叠加 miniScale（双指捏合缩放）：让用户把"太小了"的小窗放大到想要的大小。 */
     private fun applyMiniLayout() {
         val dm = resources.displayMetrics
         val vs = player?.videoSize
         val ar = if (vs != null && vs.width > 0 && vs.height > 0) vs.width.toFloat() / vs.height else 16f / 9f
-        var w = (dm.widthPixels * if (ar >= 1f) 0.46f else 0.38f).toInt()
+        // 默认基准大小稍微放大一点（原 0.46/0.38 在手机上确实偏小），再用捏合倍数进一步调整
+        var w = (dm.widthPixels * if (ar >= 1f) 0.5f else 0.42f).toInt()
         var h = (w / ar).toInt()
-        val maxH = (dm.heightPixels * 0.45f).toInt()
+        val maxH = (dm.heightPixels * 0.5f).toInt()
         if (h > maxH) { h = maxH; w = (h * ar).toInt() }
+        // 应用用户手势缩放（双指放大/缩小）：0.5x ~ 3x
+        w = (w * miniScale).toInt()
+        h = (h * miniScale).toInt()
+        // 夹回屏幕范围内，最小 90px 防止缩到看不见
+        w = w.coerceIn(90, dm.widthPixels - 24)
+        h = h.coerceIn(90, dm.heightPixels - 24)
         val m = (12 * dm.density).toInt()
         val bottom = (56 * dm.density).toInt()
         val lp = overlay.layoutParams as FrameLayout.LayoutParams
@@ -1061,7 +1110,37 @@ class VideoActivity : AppCompatActivity() {
         overlay.layoutParams = lp
     }
 
-    /** 触摸点是否落在小窗上的按钮（⤢ 展开 / ✕ 关闭）上 */
+    /** 双指捏合：记录起始间距与起始缩放倍数 */
+    private fun startPinch(ev: MotionEvent) {
+        val d = pinchDist(ev)
+        if (d > 0) {
+            pinchStartDist = d
+            pinchStartScale = miniScale
+            pinching = true
+            miniDragged = true    // 捏合期间不算"轻点"，避免松手误判成展开回全屏
+            miniUserMoved = true  // 捏合时保持当前位置，别被 applyMiniLayout 弹回右下角
+        }
+    }
+
+    /** 双指捏合：按两指间距变化实时缩放小窗 */
+    private fun doPinch(ev: MotionEvent) {
+        val d = pinchDist(ev)
+        if (pinchStartDist > 0 && d > 0) {
+            val s = (pinchStartScale * (d / pinchStartDist)).coerceIn(0.5f, 3.0f)
+            miniScale = s
+            applyMiniLayout()
+        }
+    }
+
+    /** 两指间距（用相对坐标即可，比例与原点无关） */
+    private fun pinchDist(ev: MotionEvent): Float {
+        if (ev.pointerCount < 2) return 0f
+        val dx = ev.getX(0) - ev.getX(1)
+        val dy = ev.getY(0) - ev.getY(1)
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    /** 触摸点是否落在小窗上的按钮（⤢ 展开 / ✕ 关闭 / ＋ － 缩放）上 */
     private fun hitMiniButton(ev: MotionEvent): Boolean {
         fun hit(v: View): Boolean {
             if (v.visibility != View.VISIBLE) return false
@@ -1070,7 +1149,15 @@ class VideoActivity : AppCompatActivity() {
             return ev.rawX >= loc[0] && ev.rawX <= loc[0] + v.width &&
                 ev.rawY >= loc[1] && ev.rawY <= loc[1] + v.height
         }
-        return hit(videoMiniBtn) || hit(videoMiniClose)
+        return hit(videoMiniBtn) || hit(videoMiniClose) ||
+            hit(videoMiniZoomIn) || hit(videoMiniZoomOut)
+    }
+
+    /** 小窗缩放：按倍数调整 miniScale（保持 0.5x~3x），并保留当前位置 */
+    private fun zoomMini(factor: Float) {
+        miniScale = (miniScale * factor).coerceIn(0.5f, 3.0f)
+        miniUserMoved = true
+        applyMiniLayout()
     }
 
     /** 拖动小窗（在父容器范围内移动） */

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -50,6 +51,13 @@ class VideoFloatService : Service() {
     private var downY = 0
     private var dragged = false
     private var touchSlop = 0
+
+    // 双指捏合缩放状态（改用 ScaleGestureDetector，兼容各机型多点分发）
+    private var baseW = 0
+    private var pinching = false
+    private var pinchStartW = 0
+    private var pinchFactor = 1f
+    private var scaleDetector: ScaleGestureDetector? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -98,8 +106,12 @@ class VideoFloatService : Service() {
     private fun startFloat() {
         if (root != null) return
         val dm = resources.displayMetrics
-        val w = (dm.widthPixels * 0.46f).toInt().coerceAtMost(dm.heightPixels / 2)
-        val h = (w * 9 / 16)
+        // 默认尺寸放大到 0.55 屏宽（用户反馈 0.46 太小），保持 16:9，超高则压回
+        var w = (dm.widthPixels * 0.55f).toInt()
+        var h = (w * 9 / 16)
+        val maxH = (dm.heightPixels * 0.5f).toInt()
+        if (h > maxH) { h = maxH; w = h * 16 / 9 }
+        baseW = w
         val margin = (12 * dm.density).toInt()
 
         val container = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -134,11 +146,54 @@ class VideoFloatService : Service() {
             container.addView(tv, lp)
             if (txt == "✕") btnClose = tv else btnExpand = tv
         }
+        fun addZoomBtn(txt: String, topDp: Int, onClick: () -> Unit) {
+            val tv = TextView(this).apply {
+                text = txt
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x66000000.toInt()); cornerRadius = 20f
+                }
+                setOnClickListener { onClick() }
+            }
+            val lp = FrameLayout.LayoutParams(dp(36), dp(36)).apply {
+                gravity = Gravity.TOP or Gravity.START
+                setMargins(dp(4), dp(topDp), dp(4), dp(4))
+            }
+            container.addView(tv, lp)
+            if (txt == "＋") btnZoomIn = tv else btnZoomOut = tv
+        }
         button("✕", Gravity.TOP or Gravity.START) { stopFloat() }
         button("⤢", Gravity.TOP or Gravity.END) { expandBack() }
+        // 缩放按钮：保证一定能改尺寸；双指捏合在部分 ROM 收不到第二指时作为兜底
+        addZoomBtn("－", 44) { zoomFloat(0.85f) }
+        addZoomBtn("＋", 90) { zoomFloat(1.18f) }
 
-        // 拖动；落在按钮上则放行给按钮（否则父层吞掉点击，✕ 会点不动）
+        // 双指捏合缩放：用系统 ScaleGestureDetector，正确处理多点分发的各种边界
+        scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                pinching = true
+                pinchStartW = params?.width ?: baseW
+                pinchFactor = 1f
+                return true
+            }
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                pinchFactor *= detector.scaleFactor
+                resizeFloat((pinchStartW * pinchFactor).toInt())
+                return true
+            }
+            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                // 收尾标记已拖动：避免最后一只手抬起被误判成「点击→全屏」
+                pinching = false
+                dragged = true
+            }
+        })
+
+        // 拖动 + 双指捏合缩放；落在按钮上则放行给按钮（否则父层吞掉点击，✕ 会点不动）
         container.setOnTouchListener { _, ev ->
+            // 所有事件先喂给缩放手势检测器（内部处理双指捏合 / 指针上下）
+            scaleDetector?.onTouchEvent(ev)
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     if (hitButton(ev)) return@setOnTouchListener false
@@ -148,23 +203,25 @@ class VideoFloatService : Service() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (pinching) return@setOnTouchListener true   // 捏合中：缩放交给 detector，这里不拖动
                     val dx = ev.rawX - downRawX
                     val dy = ev.rawY - downRawY
                     if (!dragged && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) dragged = true
                     if (dragged) {
                         val p = params ?: return@setOnTouchListener true
-                        p.x = clamp(downX + dx.toInt(), 0, dm.widthPixels - w)
-                        p.y = clamp(downY + dy.toInt(), 0, dm.heightPixels - h)
+                        p.x = clamp(downX + dx.toInt(), 0, dm.widthPixels - p.width)
+                        p.y = clamp(downY + dy.toInt(), 0, dm.heightPixels - p.height)
                         runCatching { wm.updateViewLayout(root, p) }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    // 点画面（没拖动）= 展开回全屏，与页内小窗一致
-                    if (!dragged) expandBack()
-                    true
+                    if (pinching) { pinching = false; true }   // 捏合收尾，不展开
+                    else if (!dragged) { expandBack(); true }  // 点画面（没拖动）= 展开回全屏
+                    else true
                 }
-                else -> false
+                MotionEvent.ACTION_CANCEL -> { pinching = false; dragged = false; true }
+                else -> true   // 其余动作（指针上下等）放行给 detector，不吞事件
             }
         }
 
@@ -199,6 +256,28 @@ class VideoFloatService : Service() {
 
     private var btnClose: View? = null
     private var btnExpand: View? = null
+    private var btnZoomIn: View? = null
+    private var btnZoomOut: View? = null
+
+    // 缩放改用 ScaleGestureDetector（见 scaleDetector），不再手算两指间距
+
+    /** 双指捏合缩放：按新的宽度更新悬浮窗（保持 16:9、中心点不动、夹回屏幕内，0.5x~3x） */
+    private fun resizeFloat(newW: Int) {
+        val p = params ?: return
+        if (root == null) return
+        val dm = resources.displayMetrics
+        val w = newW.coerceIn((baseW * 0.5f).toInt(), baseW * 3)
+        val h = w * 9 / 16
+        // 保持窗口中心不动
+        p.x += (p.width - w) / 2
+        p.y += (p.height - h) / 2
+        p.width = w
+        p.height = h
+        // 夹回屏幕内
+        p.x = clamp(p.x, 0, (dm.widthPixels - w).coerceAtLeast(0))
+        p.y = clamp(p.y, 0, (dm.heightPixels - h).coerceAtLeast(0))
+        runCatching { wm.updateViewLayout(root, p) }
+    }
 
     private fun hitButton(ev: MotionEvent): Boolean {
         fun hit(v: View?): Boolean {
@@ -208,7 +287,13 @@ class VideoFloatService : Service() {
             return ev.rawX >= l[0] && ev.rawX <= l[0] + v.width &&
                 ev.rawY >= l[1] && ev.rawY <= l[1] + v.height
         }
-        return hit(btnClose) || hit(btnExpand)
+        return hit(btnClose) || hit(btnExpand) || hit(btnZoomIn) || hit(btnZoomOut)
+    }
+
+    /** 缩放按钮：按倍数改窗口宽度（保持 16:9、中心不动、夹回屏内，0.5x~3x 基准） */
+    private fun zoomFloat(factor: Float) {
+        val p = params ?: return
+        resizeFloat((p.width * factor).toInt())
     }
 
     /** ⤢ / 点画面 / 通知：把 Activity 拉回前台全屏播放。

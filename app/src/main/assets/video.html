@@ -351,6 +351,18 @@ window.__onMiniChange=function(on){
 function isSpiderSite(site){
   return !!(site&&site.api&&String(site.api).indexOf('csp_')===0);
 }
+/**
+ * 兜底名单：下列爬虫源（api 去掉 csp_ 前缀）若出现在订阅里，直接从搜索跳过。
+ * 说明：「go代理启动失败」弹窗的根因已在引擎层解决——SpiderEngine 不再调用 jar 的
+ * Init.init（它会在加载时尝试启动一个我们APK没打包的Go本地代理，起不来就Toast）。
+ * 这里保留一份轻量 deny 名单，仅用于：某源单独在另一个 jar 里且确实不可用/拖慢搜索时，
+ * 把它的 api 去掉 csp_ 前缀加进来即可跳过。日常无需维护。
+ */
+var SPIDER_DENY = ['XBPQ','AppGet','XYQHiker'];
+function deniedSpider(api){
+  var k=String(api||'').replace(/^csp_/,'');
+  return SPIDER_DENY.indexOf(k)>=0;
+}
 function norm(u){
   // new URL() 会同时做两件事：中文主机转 punycode、中文路径转百分号编码。
   // 绝不能再 encodeURIComponent 一遍——% 会变成 %25 造成双重编码，
@@ -526,7 +538,7 @@ async function loadList(){
   if(STATE.loading)return; STATE.loading=true; $('sload').textContent='加载中…';
   var site=STATE.site, api=site.api, items=[];
   var spiderT=null;
-  if(STATE.wd&&isSpiderSite(site)){
+  if(STATE.wd&&isSpiderSite(site)&&!deniedSpider(site.api)){
     // 本站就是爬虫源：搜索走 Spider 桥
     spiderT={ri:STATE.cur,si:STATE.siteIdx,name:site.name||site.key,api:site.api,
       ext:site.ext?(typeof site.ext==='string'?site.ext:JSON.stringify(site.ext)):'',
@@ -580,12 +592,21 @@ function setLoad(t){var a=$('sload');if(a)a.textContent=t;syncStat();}
 
 /* ============ 全网搜索结果页（左源 tab + 右结果） ============ */
 var SRC_TAB_IDX=-1; // 当前选中的分组下标
+var LOADING_MORE=false; // 翻页防并发：一次只拉一页，避免快速滚动/自动补满时叠发请求
 function openSearchPage(){
   console.log('openSearchPage: 组数='+STATE.groups.length);
   $('searchPage').classList.add('show');
   $('spKw').textContent=STATE.wd?('“'+STATE.wd+'”的结果'):'全网推荐';
   refreshSrcTabs();
   renderSrcResults(STATE.groups.length?'':'正在搜索…<br>有结果的源会出现在左侧列表');
+  // 绑定一次 #srcResults 滚动监听：滑到接近底部自动拉取下一页（无限滚动，替代「加载更多」按钮）
+  var sr=$('srcResults');
+  if(sr&&!sr._wired){
+    sr._wired=true;
+    sr.addEventListener('scroll',function(){
+      if(sr.scrollTop + sr.clientHeight >= sr.scrollHeight - 80) loadMoreSrc();
+    });
+  }
 }
 function closeSearchPage(){
   $('searchPage').classList.remove('show');
@@ -611,7 +632,7 @@ function refreshSrcTabs(){
   }
   console.log('refreshSrcTabs: 有结果的源 '+n+' 个, 选中='+(SRC_TAB_IDX>=0?(STATE.groups[SRC_TAB_IDX]||{}).name:'无'));
 }
-/** 渲染右侧：当前源的结果网格 + 该源自己的「加载更多」 */
+/** 渲染右侧：当前源的结果网格（不再有「加载更多」按钮，改为自动补满 + 下滑无限加载） */
 function renderSrcResults(emptyMsg){
   var box=$('srcResults'); if(!box)return;
   box.innerHTML='';
@@ -635,12 +656,10 @@ function renderSrcResults(emptyMsg){
   box.appendChild(grid);
   if(g.noMore){
     var e=document.createElement('div'); e.className='src-empty'; e.style.padding='18px';
-    e.textContent='该源已全部加载'; box.appendChild(e);
-  } else {
-    var m=document.createElement('div'); m.className='more'; m.style.display='block';
-    m.textContent='加载更多 ▾'; m.onclick=loadMoreSrc;
-    box.appendChild(m);
+    e.textContent='已加载全部结果'; box.appendChild(e);
   }
+  // 自动补满屏幕；配合 #srcResults 的滚动监听实现「下滑自动拉取」，不再有「加载更多」按钮
+  maybeAutoLoad();
 }
 /** 进入分组对应的站点（切到该源浏览） */
 function enterGroupSite(g){
@@ -660,11 +679,11 @@ function openGroupDetail(g,v){
   if(!site){ setState('该来源站点已不存在'); return; }
   openDetailAt(v.vod_id,site);
 }
-/** 搜索结果页「加载更多」：只翻当前选中的这一个源 */
+/** 搜索结果页翻页：只翻当前选中的这一个源；被自动补满 / 滚动监听调用，不再有按钮 */
 async function loadMoreSrc(){
   var g=STATE.groups[SRC_TAB_IDX];
-  if(!g||g.noMore)return;
-  setLoad('加载中…');
+  if(!g||g.noMore||LOADING_MORE)return;
+  LOADING_MORE=true; setLoad('加载中…');
   g.pg++;
   var sep=g.api.indexOf('?')>=0?'&':'?';
   var r=await get(norm(g.api+sep+'ac=videolist&wd='+encodeURIComponent(STATE.wd)+'&pg='+g.pg));
@@ -674,7 +693,16 @@ async function loadMoreSrc(){
   if(items.length){
     items.forEach(function(v){v._ri=g.ri;v._si=g.si;g.items.push(v);});
   } else { g.noMore=true; }
+  LOADING_MORE=false;
   refreshSrcTabs(); renderSrcResults();
+}
+/** 自动补满：结果还没填满可视区（无滚动条/接近底部）就继续拉下一页，直到填满或到底；
+ *  配合 #srcResults 滚动监听，实现「默认加载全部 + 下滑无限加载」，不再有「加载更多」按钮 */
+function maybeAutoLoad(){
+  var box=$('srcResults'); if(!box)return;
+  var g=STATE.groups[SRC_TAB_IDX];
+  if(!g||g.noMore||LOADING_MORE)return;
+  if(box.scrollHeight <= box.clientHeight + 60) loadMoreSrc();
 }
 
 /* ============ 搜索：全网聚合 / 单站 ============ */
@@ -701,7 +729,7 @@ function collectSpiderSites(){
   (STATE.srcSites||[]).forEach(function(sites,ri){
     var jar=(STATE.srcJars&&STATE.srcJars[ri])||'';
     (sites||[]).forEach(function(s,si){
-      if(s&&s.api&&String(s.api).indexOf('csp_')===0){
+      if(s&&s.api&&String(s.api).indexOf('csp_')===0&&!deniedSpider(s.api)){
         out.push({ri:ri,si:si,name:s.name||s.key||('站点'+(si+1)),api:s.api,
           ext:s.ext?(typeof s.ext==='string'?s.ext:JSON.stringify(s.ext)):'',
           jar:jar,key:s.key||s.name||('site'+ri+'_'+si)});
@@ -872,20 +900,37 @@ function renderEps(v){
   var box=$('dEps'); box.innerHTML='';
   var groups=parsePlay(v);
   if(!groups.length){box.innerHTML='<div style="color:var(--sub);padding:12px">该资源没有可播放的集数（可能是需解析的站点）</div>';return;}
-  // 默认展开第一个来源
-  groups.forEach(function(g,gi){
-    var blk=document.createElement('div'); blk.className='epblock';
-    blk.innerHTML='<div class="from">'+esc(g.from)+(gi>0?' <small>点此展开</small>':'')+'</div>';
-    var ep=document.createElement('div'); ep.className='eps'; ep.style.display=(gi===0?'grid':'none');
+  // 单线路：直接显示该线路的选集
+  if(groups.length===1){
+    var g0=groups[0]; var ep0=document.createElement('div'); ep0.className='eps';
+    g0.eps.forEach(function(e,ei){
+      var b=document.createElement('div'); b.className='ep'; b.textContent=e.name;
+      b.onclick=function(){playEp(g0.from,g0.eps,ei);};
+      ep0.appendChild(b);
+    });
+    box.appendChild(ep0); return;
+  }
+  // 多线路：用 Tab 分隔（横向滚动），点击切换线路，下方只展示当前线路的选集。
+  // 不再用「线路1/线路2…」堆成列表逐条展开，避免详情过长、要点好几次才看到想看的线路。
+  var tabs=document.createElement('div'); tabs.className='srcTabs'; tabs.style.padding='6px 0 10px';
+  var grid=document.createElement('div'); grid.className='eps'; grid.id='epsGrid';
+  function select(gi){
+    tabs.querySelectorAll('.srcTab').forEach(function(t,i){t.classList.toggle('on',i===gi);});
+    var g=groups[gi]; grid.innerHTML='';
     g.eps.forEach(function(e,ei){
       var b=document.createElement('div'); b.className='ep'; b.textContent=e.name;
       b.onclick=function(){playEp(g.from,g.eps,ei);};
-      ep.appendChild(b);
+      grid.appendChild(b);
     });
-    blk.appendChild(ep);
-    if(gi>0){blk.querySelector('.from').onclick=function(){ep.style.display=(ep.style.display==='none'?'grid':'none');};}
-    box.appendChild(blk);
+  }
+  groups.forEach(function(g,gi){
+    var t=document.createElement('div'); t.className='srcTab'+(gi===0?' on':'');
+    t.textContent=g.from+' ('+g.eps.length+')';
+    t.onclick=function(){select(gi);};
+    tabs.appendChild(t);
   });
+  box.appendChild(tabs); box.appendChild(grid);
+  select(0);
 }
 /**
  * 点选集起播。from=线路名，eps=该线路全部剧集，idx=起始集下标。
