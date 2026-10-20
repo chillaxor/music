@@ -7,6 +7,7 @@
 
     <!-- 顶部：渐变头部 + 分段页签合成一个设计块（去标题后单独一行图标太秃，把页签收进来） -->
     <LinearLayout
+        android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
@@ -31,10 +32,20 @@
                 android:textColor="@color/on_primary"
                 android:maxLines="1"
                 android:includeFontPadding="false"/>
+            <!-- 弹性间隔：把右侧图标推到最右，品牌与图标左右分开 -->
             <View
                 android:layout_width="0dp"
-                android:layout_height="1dp"
+                android:layout_height="0dp"
                 android:layout_weight="1"/>
+            <ImageButton
+                android:id="@+id/themeBtn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_theme"
+                android:tint="@color/on_primary"
+                android:scaleType="centerInside"
+                android:contentDescription="切换主题"/>
             <ImageButton
                 android:id="@+id/openFavorites"
                 android:layout_width="40dp"
@@ -81,7 +92,7 @@
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:background="@drawable/bg_pill_white"
-                android:textColor="@color/primary"/>
+                android:textColor="?attr/colorPrimary"/>
             <TextView
                 android:id="@+id/tabSearch"
                 android:layout_width="0dp"
@@ -93,6 +104,46 @@
                 android:textSize="14sp"
                 android:background="@drawable/bg_pill_glass"
                 android:textColor="@color/on_primary"/>
+        </LinearLayout>
+
+        <!-- 金价行情条：国内(左)+国际(右) 横排；接口失败则整条不显示（融入头部渐变，与顶部圆弧一体） -->
+        <LinearLayout
+            android:id="@+id/goldBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="6dp"
+            android:paddingBottom="2dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/goldDom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:includeFontPadding="false"/>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="13dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:background="@color/on_primary"
+                android:alpha="0.45"/>
+
+            <TextView
+                android:id="@+id/goldIntl"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:includeFontPadding="false"/>
         </LinearLayout>
     </LinearLayout>
 
@@ -181,10 +232,13 @@
                     android:id="@+id/shortcutRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"/>
+                    android:layout_marginTop="8dp"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"/>
             </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/queueCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="16dp"
@@ -216,7 +270,7 @@
                         android:text="▶ 播放全部"
                         android:textSize="13sp"
                         android:textStyle="bold"
-                        android:textColor="@color/primary"
+                        android:textColor="?attr/colorPrimary"
                         android:paddingStart="12dp"
                         android:paddingEnd="12dp"
                         android:paddingTop="6dp"
@@ -291,6 +345,7 @@
 
             <!-- 搜索卡片 -->
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/searchCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="16dp"
@@ -354,7 +409,6 @@
         android:id="@+id/playerBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:cardCornerRadius="16dp"
         app:cardElevation="3dp"
         app:cardBackgroundColor="?attr/colorSurface"
         android:layout_marginStart="12dp"
@@ -372,7 +426,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_prev"
-                android:tint="@color/primary"
+                android:tint="?attr/colorPrimary"
                 android:scaleType="centerInside"
                 android:contentDescription="上一首"/>
             <ImageButton
@@ -391,7 +445,7 @@
                 android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_next"
-                android:tint="@color/primary"
+                android:tint="?attr/colorPrimary"
                 android:scaleType="centerInside"
                 android:contentDescription="下一首"/>
             <LinearLayout
@@ -428,7 +482,7 @@
                 android:layout_height="34dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_sequence"
-                android:tint="@color/primary"
+                android:tint="?attr/colorPrimary"
                 android:scaleType="centerInside"
                 android:contentDescription="播放模式"/>
             <ImageButton
@@ -438,7 +492,7 @@
                 android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_lyric_page"
-                android:tint="@color/primary"
+                android:tint="?attr/colorPrimary"
                 android:scaleType="centerInside"
                 android:contentDescription="歌词页"/>
             <ImageButton
@@ -448,7 +502,7 @@
                 android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_lyric_float"
-                android:tint="@color/primary"
+                android:tint="?attr/colorPrimary"
                 android:scaleType="centerInside"
                 android:contentDescription="桌面歌词"/>
         </LinearLayout>

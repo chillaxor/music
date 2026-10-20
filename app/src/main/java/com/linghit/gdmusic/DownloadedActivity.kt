@@ -44,6 +44,7 @@ class DownloadedActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_downloaded)
 
         emptyText = findViewById(R.id.emptyText)

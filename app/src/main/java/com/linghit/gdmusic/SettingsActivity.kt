@@ -31,6 +31,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_settings)
 
         val input = findViewById<TextInputEditText>(R.id.apiInput)

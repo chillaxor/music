@@ -62,6 +62,7 @@ class LyricActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_lyric)
 
         titleView = findViewById(R.id.lyricTitle)

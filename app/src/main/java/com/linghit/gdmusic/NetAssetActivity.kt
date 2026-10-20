@@ -185,6 +185,7 @@ class NetAssetActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_net_asset)
         webView = findViewById(R.id.webView)
         browserPanel = findViewById(R.id.browserPanel)

@@ -25,6 +25,7 @@ class VideoHistoryActivity : AppCompatActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_video_history)
 
         emptyText = findViewById(R.id.emptyText)

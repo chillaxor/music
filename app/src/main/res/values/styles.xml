@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        主题色弹窗：12 套只换主色（colorPrimary / colorPrimaryDark / colorAccent），
+        背景、卡片、文字等中性色全部共享同一套 → 切换只换主色，不改变明暗与形状
+        （暗色套装曾造成「浅色页面底 + 深色卡片」叠影，已明确不做）。
+        渐变套（Sunset/Ocean/Nebula/Sakura/Aurora/Dusk）的 colorPrimary 取起点色，
+        真正的渐变换色由 MainActivity.applyThemeColors() 用 GradientDrawable 画在
+        header 与播放圈上。
+        顺序与 ThemePrefs.PACKS 一一对应。
+    -->
+
+    <!-- 默认主题（薄荷青）：manifest 也指向它，避免冷启动瞬间闪别的色 -->
     <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="colorAccent">@color/primary</item>
+        <item name="colorPrimary">#0E9C8F</item>
+        <item name="colorPrimaryDark">#00796B</item>
+        <item name="colorAccent">#0E9C8F</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/on_surface</item>
@@ -12,5 +23,82 @@
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- 天空蓝 -->
+    <style name="AppTheme_Sky" parent="AppTheme">
+        <item name="colorPrimary">#4AA8FF</item>
+        <item name="colorPrimaryDark">#2B7FD4</item>
+        <item name="colorAccent">#4AA8FF</item>
+    </style>
+
+    <!-- 马卡龙粉 -->
+    <style name="AppTheme_Macaron" parent="AppTheme">
+        <item name="colorPrimary">#FFB3C6</item>
+        <item name="colorPrimaryDark">#E58AA6</item>
+        <item name="colorAccent">#FFB3C6</item>
+    </style>
+
+    <!-- 香芋紫 -->
+    <style name="AppTheme_Taro" parent="AppTheme">
+        <item name="colorPrimary">#A78BFA</item>
+        <item name="colorPrimaryDark">#7C5CC8</item>
+        <item name="colorAccent">#A78BFA</item>
+    </style>
+
+    <!-- 蜜桃橙 -->
+    <style name="AppTheme_Peach" parent="AppTheme">
+        <item name="colorPrimary">#FF9A62</item>
+        <item name="colorPrimaryDark">#E57238</item>
+        <item name="colorAccent">#FF9A62</item>
+    </style>
+
+    <!-- 抹茶绿 -->
+    <style name="AppTheme_Matcha" parent="AppTheme">
+        <item name="colorPrimary">#8BC34A</item>
+        <item name="colorPrimaryDark">#689F38</item>
+        <item name="colorAccent">#8BC34A</item>
+    </style>
+
+    <!-- 落日渐变：橙 → 金 -->
+    <style name="AppTheme_Sunset" parent="AppTheme">
+        <item name="colorPrimary">#FF7E5F</item>
+        <item name="colorPrimaryDark">#F08A50</item>
+        <item name="colorAccent">#FF7E5F</item>
+    </style>
+
+    <!-- 海洋渐变：蓝 → 青 -->
+    <style name="AppTheme_Ocean" parent="AppTheme">
+        <item name="colorPrimary">#2E9BFF</item>
+        <item name="colorPrimaryDark">#00B8A9</item>
+        <item name="colorAccent">#2E9BFF</item>
+    </style>
+
+    <!-- 星云渐变：紫 → 亮紫 -->
+    <style name="AppTheme_Nebula" parent="AppTheme">
+        <item name="colorPrimary">#7C5CFC</item>
+        <item name="colorPrimaryDark">#5A3FD6</item>
+        <item name="colorAccent">#7C5CFC</item>
+    </style>
+
+    <!-- 樱花渐变：粉 → 浅粉 -->
+    <style name="AppTheme_Sakura" parent="AppTheme">
+        <item name="colorPrimary">#FF9AC1</item>
+        <item name="colorPrimaryDark">#E87BA8</item>
+        <item name="colorAccent">#FF9AC1</item>
+    </style>
+
+    <!-- 极光渐变：荧光青 → 蓝 -->
+    <style name="AppTheme_Aurora" parent="AppTheme">
+        <item name="colorPrimary">#00E5C0</item>
+        <item name="colorPrimaryDark">#00B894</item>
+        <item name="colorAccent">#00E5C0</item>
+    </style>
+
+    <!-- 暮光渐变：玫红 → 金 -->
+    <style name="AppTheme_Dusk" parent="AppTheme">
+        <item name="colorPrimary">#FF6B8A</item>
+        <item name="colorPrimaryDark">#E05270</item>
+        <item name="colorAccent">#FF6B8A</item>
     </style>
 </resources>
