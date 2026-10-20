@@ -29,6 +29,7 @@ import android.webkit.WebChromeClient
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import android.view.Gravity
@@ -136,6 +137,8 @@ class VideoActivity : AppCompatActivity() {
     private var skipEndMs: Long = 0
     private lateinit var skipStartBtn: TextView
     private lateinit var skipEndBtn: TextView
+    /** 控制条上的投屏入口 */
+    private lateinit var castBtn: TextView
     /** 用户手动把进度拖过结束时间：本次播放不再自动跳（换片/重新起播后重置） */
     private var skipEndManual = false
     /**
@@ -155,6 +158,62 @@ class VideoActivity : AppCompatActivity() {
 
     private var backCallback: OnBackPressedCallback? = null
     private var player: ExoPlayer? = null
+
+    // ===================== DLNA 投屏 =====================
+    /** true 时本地播放器已停，播放位置来自电视端轮询，手机变遥控器 */
+    private var casting = false
+    private var castDevice: DlnaDevice? = null
+    private var castCtrl: DlnaController? = null
+    /** 当前直链 + 标题（投屏/切集重投都用；爬虫源的集不含直链，投屏中切集受限） */
+    private var curCastUrl = ""
+    private var curCastTitle = ""
+    /** 电视端轮询出来的播放状态 */
+    private var castPosMs = 0L
+    private var castDurMs = 0L
+    private var castPlaying = false
+    /** 用户正在拖遥控进度条：暂停轮询回写，松手再 seek，避免边拖边回跳 */
+    private var castTouchingSeek = false
+    /** 轮询连续失败计数，达到阈值认为掉线，自动切回本地 */
+    private var castFailCount = 0
+    private lateinit var castLayer: LinearLayout
+    private lateinit var castStatus: TextView
+    private lateinit var castExit: TextView
+    private lateinit var castPlayPause: TextView
+    private lateinit var castHint: TextView
+    private lateinit var castSeek: SeekBar
+    private lateinit var castPosTv: TextView
+    private lateinit var castDurTv: TextView
+    private lateinit var castPrev: TextView
+    private lateinit var castNext: TextView
+    /** 投屏遥控层进度/状态轮询（1s）：同时驱动片头片尾跳过（checkSkipEnd 用 currentPosMs） */
+    private val castTick = object : Runnable {
+        override fun run() {
+            if (!casting) return
+            val c = castCtrl ?: return
+            c.getPositionInfo { pos, dur, state ->
+                if (!casting) return@getPositionInfo
+                if (state == "ERR") {
+                    castFailCount++
+                    if (castFailCount >= 5) {
+                        toast("投屏设备无响应，已切回本地播放")
+                        stopCast(true)
+                        return@getPositionInfo
+                    }
+                } else castFailCount = 0
+                castPosMs = pos
+                castDurMs = dur
+                if (!castTouchingSeek && dur > 0) {
+                    castSeek.max = dur.toInt()
+                    castSeek.progress = pos.toInt()
+                    castPosTv.text = fmtTime(pos)
+                    castDurTv.text = fmtTime(dur)
+                }
+                // 片尾到点：有下一集接着投，最后一集暂停
+                checkSkipEnd()
+            }
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     /** Activity 当前是否处于 resumed（小窗里是 paused，点小窗画面展开才会 resumed） */
     private var activityResumed = false
@@ -270,6 +329,9 @@ class VideoActivity : AppCompatActivity() {
         skipEndBtn = playerView.findViewById(R.id.skipEndBtn)
         skipStartBtn.setOnClickListener { showSkipTimeDialog(true) }
         skipEndBtn.setOnClickListener { showSkipTimeDialog(false) }
+        // 投屏按钮（控制条进度条下方第三个 chip）
+        castBtn = playerView.findViewById(R.id.castBtn)
+        castBtn.setOnClickListener { showCastDevices() }
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
             controlsVisible = visibility == View.VISIBLE
@@ -288,6 +350,47 @@ class VideoActivity : AppCompatActivity() {
         // 小窗缩放：＋/－ 改 miniScale（兜底；双指捏合在部分 ROM 收不到第二指时也能调尺寸）
         videoMiniZoomIn.setOnClickListener { zoomMini(1.18f) }
         videoMiniZoomOut.setOnClickListener { zoomMini(0.85f) }
+
+        // ===================== DLNA 投屏遥控层 =====================
+        castLayer = findViewById(R.id.castLayer)
+        castStatus = findViewById(R.id.castStatus)
+        castExit = findViewById(R.id.castExit)
+        castPlayPause = findViewById(R.id.castPlayPause)
+        castHint = findViewById(R.id.castHint)
+        castSeek = findViewById(R.id.castSeek)
+        castPosTv = findViewById(R.id.castPos)
+        castDurTv = findViewById(R.id.castDur)
+        castPrev = findViewById(R.id.castPrev)
+        castNext = findViewById(R.id.castNext)
+        // 退出投屏：停电视播放，从当前进度切回本地继续播
+        castExit.setOnClickListener { stopCast(true) }
+        castPlayPause.setOnClickListener {
+            val c = castCtrl ?: return@setOnClickListener
+            if (castPlaying) c.pause { ok, msg ->
+                if (ok) { castPlaying = false; castPlayPause.text = "▶" }
+                else toast(msg.ifBlank { "暂停失败" })
+            } else c.play { ok, msg ->
+                if (ok) { castPlaying = true; castPlayPause.text = "⏸" }
+                else toast(msg.ifBlank { "播放失败" })
+            }
+        }
+        castSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                // 拖动中只本地预览时间，不回写 castPosMs（防轮询把 UI 拽回去）
+                if (fromUser) castPosTv.text = fmtTime(progress.toLong())
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) { castTouchingSeek = true }
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                castTouchingSeek = false
+                castCtrl?.seekTo(sb.progress.toLong()) { ok, msg ->
+                    if (!ok) toast(msg.ifBlank { "跳转失败" })
+                }
+            }
+        })
+        castPrev.setOnClickListener {
+            if (curIdx <= 0) toast("已经是第一集") else playIndex(curIdx - 1)
+        }
+        castNext.setOnClickListener { playNext() }
         // 小窗拖动 + 点击展开 + 双指捏合缩放（手指放大/缩小播放窗口）
         videoMiniLayer.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
@@ -805,6 +908,7 @@ class VideoActivity : AppCompatActivity() {
         metaJson: String = ""
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx")
+        curCastTitle = title          // 投屏时作为 DIDL-Lite 标题展示在电视端
         if (epsJson.isNotBlank()) epsList = parseEps(epsJson)
         if (referer.isNotBlank()) curReferer = referer
         if (idx >= 0) curIdx = idx
@@ -873,10 +977,10 @@ class VideoActivity : AppCompatActivity() {
     /** 存当前播放位置（每 5 秒 + 退出/关播放器时调） */
     private fun saveHisPosition() {
         if (curHisKey.isBlank()) return
-        val p = player ?: return
-        val pos = runCatching { p.currentPosition }.getOrDefault(0L)
+        val pos = currentPosMs()
         if (pos <= 0) return
-        val dur = runCatching { p.duration }.getOrDefault(0L).takeIf { it > 0 } ?: 0
+        val dur = if (casting) castDurMs
+        else runCatching { player?.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
         VideoHistoryStore.updatePosition(this, curHisKey, pos, dur)
     }
 
@@ -959,11 +1063,18 @@ class VideoActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(skipTick)
     }
 
+    /**
+     * 当前播放位置（毫秒）：本地播时取 ExoPlayer，投屏时取电视端轮询位置。
+     * 片头/片尾跳过、历史断点都走这个口，两条播放路径行为一致。
+     */
+    private fun currentPosMs(): Long =
+        if (casting) castPosMs
+        else runCatching { player?.currentPosition }.getOrNull() ?: 0L
+
     /** 到结束时间：有下一集就接着播，最后一集（或单集影片）则停在结束点 */
     private fun checkSkipEnd() {
-        val p = player ?: return
         if (skipEndMs <= 0 || skipEndManual || !skipEndArmed) return
-        val pos = runCatching { p.currentPosition }.getOrDefault(0L)
+        val pos = currentPosMs()
         if (pos < skipEndMs) return
         // 触发一次就卸武装：杜绝「切集后位置没重置 → 连续跳集」和「暂停后反复弹提示」
         skipEndArmed = false
@@ -973,7 +1084,7 @@ class VideoActivity : AppCompatActivity() {
             toast("已到结束播放时间，进入下一集")
             playIndex(curIdx + 1)
         } else {
-            p.pause()
+            if (casting) castCtrl?.pause { _, _ -> } else player?.pause()
             toast("已到设置的结束播放时间")
         }
     }
@@ -1091,6 +1202,7 @@ class VideoActivity : AppCompatActivity() {
 
     /** 播放单条直链（Referer 很多 CDN 校验，不带 403） */
     private fun playMediaUrl(url: String, referer: String) {
+        curCastUrl = url              // 投屏用：记住当前直链，随时可投/切回本地续投
         skipEndManual = false          // 换片：手动拖动越过片尾的豁免重置
         skipEndArmed = false           // 换片：等新 media STATE_READY 再武装，防旧进度误触发
         if (skipEndMs > 0) startSkipTick()
@@ -1123,10 +1235,135 @@ class VideoActivity : AppCompatActivity() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
+    // ===================== DLNA 投屏 =====================
+
+    /** 投屏按钮：先组播搜索局域网渲染器，再选设备 */
+    private fun showCastDevices() {
+        if (casting) { toast("正在投屏中，先退出再换设备"); return }
+        if (curCastUrl.isBlank()) { toast("请先播放视频再投屏"); return }
+        val pd = AlertDialog.Builder(this)
+            .setTitle("投屏")
+            .setMessage(
+                "正在搜索同一 Wi-Fi 下的电视 / 盒子…\n\n" +
+                    "搜不到时请检查：手机与电视在同一网络、路由器没开 AP 隔离"
+            )
+            .setNegativeButton("取消", null)
+            .create()
+        pd.show()
+        DlnaScanner(this).scan { devices ->
+            if (isFinishing || isDestroyed) return@scan
+            runCatching { pd.dismiss() }
+            if (devices.isEmpty()) {
+                toast("未发现可投屏设备")
+                return@scan
+            }
+            AlertDialog.Builder(this)
+                .setTitle("选择投屏设备")
+                .setItems(
+                    devices.map { "${it.name}  (${it.ip})" }.toTypedArray()
+                ) { _, i -> startCast(devices[i]) }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+    }
+
+    /** 开始投屏：本地停播，手机切遥控层，位置轮询接管进度 */
+    private fun startCast(d: DlnaDevice) {
+        Log.d("VidCast", "投屏到 ${d.name} (${d.ip}) url=$curCastUrl")
+        castDevice = d
+        castCtrl = DlnaController(d)
+        casting = true
+        castPosMs = 0
+        castDurMs = 0
+        castPlaying = false
+        castFailCount = 0
+        castTouchingSeek = false
+        castSeek.progress = 0
+        castSeek.max = 100
+        castPosTv.text = "00:00"
+        castDurTv.text = "00:00"
+        castStatus.text = "📺 正在投屏：${d.name}"
+        castPlayPause.text = "⏸"
+        castHint.text = if (curCastUrl.contains(".m3u8", true)) {
+            "部分电视不支持 m3u8 直链，放不出来请退出用本地播放"
+        } else {
+            "画面在电视上播放，手机可作遥控"
+        }
+        castLayer.visibility = View.VISIBLE
+        playerView.visibility = View.GONE
+        videoPip.visibility = View.GONE
+        stopSkipTick()                       // 本地轮询停，位置改由 castTick 提供
+        player?.pause()
+        player?.stop()
+        castCtrl?.cast(curCastUrl, curCastTitle) { ok, msg ->
+            if (!casting) return@cast
+            if (!ok) {
+                toast("投屏失败：${msg.ifBlank { "设备拒绝播放" }}")
+                stopCast(true)
+                return@cast
+            }
+            castPlaying = true
+            skipEndArmed = skipEndMs > 0     // 和本地 STATE_READY 武装一致
+            mainHandler.removeCallbacks(castTick)
+            castTick.run()
+        }
+    }
+
+    /**
+     * 停止投屏。backLocal=true 时从电视端当前进度切回本地继续播（退出/掉线都用它）；
+     * backLocal=false 只停电视（关播放器场景）。
+     */
+    private fun stopCast(backLocal: Boolean) {
+        if (!casting) return
+        val resume = castPosMs
+        casting = false
+        mainHandler.removeCallbacks(castTick)
+        castCtrl?.stop { _, _ -> }
+        castCtrl = null
+        castDevice = null
+        castLayer.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        updatePipButton()
+        if (backLocal && curCastUrl.isNotBlank()) {
+            seekAfterReady = resume             // STATE_READY 时 seek 到电视端进度
+            playMediaUrl(curCastUrl, curReferer)
+            toast("已切回本地播放")
+        }
+    }
+
     /** 切到第 i 集：直链直接播；爬虫源回传 JS 经 playerContent 解析后再起播 */
     private fun playIndex(i: Int) {        if (i < 0 || i >= epsList.size) return
         val ep = epsList[i]
         curIdx = i
+        // 投屏中切集：把新集重新推给电视（旧 URI 先 Stop 再 SetAVTransportURI）
+        if (casting) {
+            if (ep.spider) {
+                toast("投屏中不能切换爬虫源的剧集，请先退出投屏")
+                return
+            }
+            Log.d("VidPlay", "投屏切集 -> ${ep.name}")
+            curCastUrl = ep.url
+            curCastTitle = ep.name
+            castPosMs = 0
+            castDurMs = 0
+            castSeek.progress = 0
+            castPosTv.text = "00:00"
+            castDurTv.text = "00:00"
+            castPlayPause.text = "⏸"
+            castCtrl?.cast(ep.url, ep.name) { ok, msg ->
+                if (ok) {
+                    castPlaying = true
+                    castFailCount = 0
+                    skipEndArmed = skipEndMs > 0
+                } else {
+                    toast("切换失败：${msg.ifBlank { "设备拒绝" }}")
+                    stopCast(true)
+                }
+            }
+            VideoHistoryStore.updateEpisode(this, curHisKey, ep.name, i, ep.url)
+            curHisRec?.put("epName", ep.name)?.put("idx", i)?.put("url", ep.url)?.put("positionMs", 0)
+            return
+        }
         if (ep.spider) {
             Log.d("VidPlay", "切集(爬虫源) -> __playSpiderAt($i)")
             safeEval("if(window.__playSpiderAt)window.__playSpiderAt($i)")
@@ -1166,6 +1403,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun closeVideo() {
+        if (casting) stopCast(false)   // 关播放器：电视端也要停，但不切回本地
         saveHisPosition()
         hisHandler.removeCallbacks(hisTick)
         stopSkipTick()
@@ -1666,6 +1904,10 @@ class VideoActivity : AppCompatActivity() {
     override fun onDestroy() {
         Log.d("VidPlay", "onDestroy")
         super.onDestroy()
+        // DLNA 投屏收尾：标记先置 false，轮询与 SOAP 回调里的 `if (!casting) return` 全部短路，
+        // 防止 Activity 销毁后协程回调再来碰 UI
+        casting = false
+        mainHandler.removeCallbacks(castTick)
         setKeepScreenOn(false)
         webViewAlive = false
         saveHisPosition()

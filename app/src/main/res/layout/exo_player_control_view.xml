@@ -142,6 +142,21 @@
         android:textSize="13sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="设置结束播放时间" />
+
+    <!-- DLNA 投屏入口：点后组播搜索局域网渲染器（电视/盒子） -->
+    <TextView
+        android:id="@+id/castBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="34dp"
+        android:layout_marginStart="10dp"
+        android:background="#40000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:gravity="center"
+        android:text="投屏"
+        android:textSize="13sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="投屏到电视" />
   </LinearLayout>
 
   <LinearLayout android:id="@id/exo_minimal_controls"

@@ -8,6 +8,9 @@
     <!-- 桌面歌词悬浮窗：在其他 App 之上显示歌词，需用户在设置里授权 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- DLNA 投屏：SSDP 组播发现（MulticastLock）与 Wi-Fi 状态判断 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:theme="@style/AppTheme"
         android:label="@string/app_name"
