@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  media3 播放器控制条布局覆写（默认见 media3-ui 的 exo_player_control_view.xml）：
+  原布局整体照抄，只在 exo_progress_placeholder（进度条）下方插入一行
+  「片头 / 片尾跳过」配置按钮（skipCfgRow）。
+  进度条位置由 dimens 里 exo_styled_progress_margin_bottom 决定（见
+  values/media3_video_skip.xml 覆写为 108dp），给这一行让出空间，
+  视觉顺序自上而下：进度条 → 片头/片尾配置行 → 时间与按钮行。
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- 0dp dimensions are used to prevent this view from influencing the size of
+       the parent view if it uses "wrap_content". It is expanded to occupy the
+       entirety of the parent in code, after the parent's size has been
+       determined. See: https://github.com/google/ExoPlayer/issues/8726.
+  -->
+  <View android:id="@id/exo_controls_background"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:background="@color/exo_black_opacity_60"/>
+
+  <FrameLayout android:id="@id/exo_bottom_bar"
+      android:layout_width="match_parent"
+      android:layout_height="@dimen/exo_styled_bottom_bar_height"
+      android:layout_marginTop="@dimen/exo_styled_bottom_bar_margin_top"
+      android:layout_gravity="bottom"
+      android:background="@color/exo_bottom_bar_background"
+      android:layoutDirection="ltr">
+
+    <LinearLayout android:id="@id/exo_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingStart="@dimen/exo_styled_bottom_bar_time_padding"
+        android:paddingEnd="@dimen/exo_styled_bottom_bar_time_padding"
+        android:paddingLeft="@dimen/exo_styled_bottom_bar_time_padding"
+        android:paddingRight="@dimen/exo_styled_bottom_bar_time_padding"
+        android:layout_gravity="center_vertical|start"
+        android:layoutDirection="ltr">
+
+      <TextView android:id="@id/exo_position"
+          style="@style/ExoStyledControls.TimeText.Position"/>
+
+      <TextView
+          style="@style/ExoStyledControls.TimeText.Separator"/>
+
+      <TextView android:id="@id/exo_duration"
+          style="@style/ExoStyledControls.TimeText.Duration"/>
+
+    </LinearLayout>
+
+    <LinearLayout android:id="@id/exo_basic_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|end"
+        android:layoutDirection="ltr">
+
+      <ImageButton android:id="@id/exo_vr"
+          style="@style/ExoStyledControls.Button.Bottom.VR"/>
+
+      <ImageButton android:id="@id/exo_shuffle"
+          style="@style/ExoStyledControls.Button.Bottom.Shuffle"/>
+
+      <ImageButton android:id="@id/exo_repeat_toggle"
+          style="@style/ExoStyledControls.Button.Bottom.RepeatToggle"/>
+
+      <ImageButton android:id="@id/exo_subtitle"
+          style="@style/ExoStyledControls.Button.Bottom.CC"/>
+
+      <ImageButton android:id="@id/exo_settings"
+          style="@style/ExoStyledControls.Button.Bottom.Settings"/>
+
+      <ImageButton android:id="@id/exo_fullscreen"
+          style="@style/ExoStyledControls.Button.Bottom.FullScreen"/>
+
+      <ImageButton android:id="@id/exo_overflow_show"
+          style="@style/ExoStyledControls.Button.Bottom.OverflowShow"/>
+
+    </LinearLayout>
+
+    <HorizontalScrollView android:id="@id/exo_extra_controls_scroll_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|end"
+        android:visibility="invisible">
+
+      <LinearLayout android:id="@id/exo_extra_controls"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layoutDirection="ltr">
+
+        <ImageButton android:id="@id/exo_overflow_hide"
+            style="@style/ExoStyledControls.Button.Bottom.OverflowHide"/>
+
+      </LinearLayout>
+
+    </HorizontalScrollView>
+
+  </FrameLayout>
+
+  <View android:id="@id/exo_progress_placeholder"
+      android:layout_width="match_parent"
+      android:layout_height="@dimen/exo_styled_progress_layout_height"
+      android:layout_gravity="bottom"
+      android:layout_marginBottom="@dimen/exo_styled_progress_margin_bottom"/>
+
+  <!-- 片头 / 片尾跳过配置：紧贴进度条下方（bottom bar 高 60dp，故 marginBottom=60dp）。
+       配置按影片详情维度保存，对本影片所有剧集/线路生效，其他影片不受影响。 -->
+  <LinearLayout
+      android:id="@+id/skipCfgRow"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_gravity="bottom"
+      android:layout_marginBottom="60dp"
+      android:orientation="horizontal"
+      android:gravity="center"
+      android:paddingStart="12dp"
+      android:paddingEnd="12dp">
+
+    <TextView
+        android:id="@+id/skipStartBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="34dp"
+        android:background="#40000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:gravity="center"
+        android:text="片头 未设置"
+        android:textSize="13sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="设置开始播放时间" />
+
+    <TextView
+        android:id="@+id/skipEndBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="34dp"
+        android:layout_marginStart="10dp"
+        android:background="#40000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:gravity="center"
+        android:text="片尾 未设置"
+        android:textSize="13sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="设置结束播放时间" />
+  </LinearLayout>
+
+  <LinearLayout android:id="@id/exo_minimal_controls"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="bottom|end"
+      android:layout_marginBottom="@dimen/exo_styled_minimal_controls_margin_bottom"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:layoutDirection="ltr">
+
+    <ImageButton android:id="@id/exo_minimal_fullscreen"
+        style="@style/ExoStyledControls.Button.Bottom.FullScreen"/>
+
+  </LinearLayout>
+
+  <LinearLayout
+      android:id="@id/exo_center_controls"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="center"
+      android:background="@android:color/transparent"
+      android:gravity="center"
+      android:padding="@dimen/exo_styled_controls_padding"
+      android:clipToPadding="false"
+      android:layoutDirection="ltr">
+
+    <ImageButton android:id="@id/exo_prev"
+        style="@style/ExoStyledControls.Button.Center.Previous"/>
+
+    <include layout="@layout/exo_player_control_rewind_button" />
+
+    <ImageButton android:id="@id/exo_play_pause"
+        style="@style/ExoStyledControls.Button.Center.PlayPause"/>
+
+    <include layout="@layout/exo_player_control_ffwd_button" />
+
+    <ImageButton android:id="@id/exo_next"
+        style="@style/ExoStyledControls.Button.Center.Next"/>
+
+  </LinearLayout>
+
+</merge>

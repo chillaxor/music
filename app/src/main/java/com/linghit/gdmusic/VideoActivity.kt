@@ -3,6 +3,7 @@ package com.linghit.gdmusic
 import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
 import android.content.Intent
+import android.graphics.Typeface
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
@@ -10,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.text.InputType
 import android.util.Base64
 import android.util.Log
 import android.util.Rational
@@ -24,12 +26,15 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.view.Gravity
 import kotlin.math.abs
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -117,6 +122,36 @@ class VideoActivity : AppCompatActivity() {
     private var pinchStartDist = 0f
     /** 捏合起始缩放倍数 */
     private var pinchStartScale = 1.0f
+
+    // ===================== 片头 / 片尾跳过（按影片详情维度） =====================
+    /**
+     * 当前影片详情的配置 key（"d:<站点api>|<vod_id>" / "s:<源key>|<vod_id>"，
+     * 由起播 metaJson 推导，即历史 key 去掉集名）。同一影片下的所有剧集/线路
+     * 共用一份跳过配置；其他影片 key 不同，互不影响。
+     */
+    private var curDetailKey: String = ""
+    /** 开始播放时间（毫秒）：起播/切集时自动 seek 到这里 */
+    private var skipStartMs: Long = 0
+    /** 结束播放时间（毫秒）：到点自动下一集，已是最后一集则暂停 */
+    private var skipEndMs: Long = 0
+    private lateinit var skipStartBtn: TextView
+    private lateinit var skipEndBtn: TextView
+    /** 用户手动把进度拖过结束时间：本次播放不再自动跳（换片/重新起播后重置） */
+    private var skipEndManual = false
+    /**
+     * 片尾跳过「武装」标记：只有新 media 起播（STATE_READY）且进度还没到片尾时才为 true，
+     * 触发一次立即卸武装。切集后 currentPosition 不会立刻重置（还是上一集的位置），
+     * 没有这个标记会在缓冲期间用旧进度连续触发，一路空跳到最后一集。
+     */
+    private var skipEndArmed = false
+    /** 片尾到点轮询（500ms）：没配置或没在播时自动停掉，不空转 */
+    private val skipTick = object : Runnable {
+        override fun run() {
+            if (skipEndMs <= 0 || player == null) return
+            checkSkipEnd()
+            mainHandler.postDelayed(this, 500)
+        }
+    }
 
     private var backCallback: OnBackPressedCallback? = null
     private var player: ExoPlayer? = null
@@ -212,6 +247,7 @@ class VideoActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemePrefs.applyTheme(this)
         Log.d("VidPlay", "onCreate")
         setContentView(R.layout.activity_video)
 
@@ -229,6 +265,11 @@ class VideoActivity : AppCompatActivity() {
         videoMiniZoomIn = findViewById(R.id.videoMiniZoomIn)
         videoMiniZoomOut = findViewById(R.id.videoMiniZoomOut)
         miniTouchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        // 片头/片尾跳过配置按钮（在 media3 控制条进度条下方，见 exo_player_control_view.xml）
+        skipStartBtn = playerView.findViewById(R.id.skipStartBtn)
+        skipEndBtn = playerView.findViewById(R.id.skipEndBtn)
+        skipStartBtn.setOnClickListener { showSkipTimeDialog(true) }
+        skipEndBtn.setOnClickListener { showSkipTimeDialog(false) }
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
             controlsVisible = visibility == View.VISIBLE
@@ -674,8 +715,36 @@ class VideoActivity : AppCompatActivity() {
                             runCatching { it.seekTo(to) }
                             Log.d("VidPlay", "续播 seekTo=$to ms")
                         }
+                        // 片头跳过：没带续播位置、当前还在片头区间 → 直接跳到开始时间
+                        // （切集时每集都从头开始，所以这里对每一集都生效）
+                        if (state == Player.STATE_READY && skipStartMs > 0 &&
+                            seekAfterReady <= 0 && it.currentPosition < skipStartMs
+                        ) {
+                            runCatching { it.seekTo(skipStartMs) }
+                            Log.d("VidPlay", "片头跳过 seekTo=$skipStartMs ms")
+                        }
+                        // 片尾跳过武装：新 media 起播后才允许触发一次
+                        // （放在片头 seek 之后，让 currentPosition 反映跳过后的位置）
+                        if (state == Player.STATE_READY) {
+                            skipEndArmed = skipEndMs > 0 && it.currentPosition < skipEndMs
+                        }
                         // 播完自动下一集（影视仓主流体验）
                         if (state == Player.STATE_ENDED) playNext()
+                    }
+
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int
+                    ) {
+                        // 用户手动拖到结束时间之后：这次不自动跳下一集
+                        // （尊重意愿；换片/重新起播时 reset）
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK &&
+                            skipEndMs > 0 && newPosition.positionMs >= skipEndMs
+                        ) {
+                            skipEndManual = true
+                            Log.d("VidPlay", "手动拖动越过片尾时间：本次不再自动跳集")
+                        }
                     }
 
                     // 播放/暂停切换：播放时保持屏幕常亮，暂停后允许熄屏
@@ -739,7 +808,13 @@ class VideoActivity : AppCompatActivity() {
         if (epsJson.isNotBlank()) epsList = parseEps(epsJson)
         if (referer.isNotBlank()) curReferer = referer
         if (idx >= 0) curIdx = idx
-        recordHistory(url, title, referer, epsJson, idx, spiderJson, metaJson)
+        // 按影片详情取片头/片尾跳过配置（同一影片所有剧集/线路共用，其他影片不受影响）
+        val meta = runCatching {
+            if (metaJson.isBlank()) null else JSONObject(metaJson)
+        }.getOrNull()
+        curDetailKey = detailKeyOf(meta)
+        loadSkipConfig()
+        recordHistory(url, title, referer, epsJson, idx, spiderJson, meta)
         overlay.visibility = View.VISIBLE
         videoBuffering.visibility = View.VISIBLE
         // 小窗状态下又点了新视频 → 先展开回全屏再播
@@ -760,15 +835,14 @@ class VideoActivity : AppCompatActivity() {
         epsJson: String,
         idx: Int,
         spiderJson: String,
-        metaJson: String
+        meta: JSONObject?
     ) {
         var key = ""; var pic = ""; var epName = ""
         var vodId = ""; var siteApi = ""; var from = ""
-        try {
-            val m = JSONObject(metaJson)
-            key = m.optString("key"); pic = m.optString("pic"); epName = m.optString("epName")
-            vodId = m.optString("vodId"); siteApi = m.optString("siteApi"); from = m.optString("from")
-        } catch (e: Exception) { }
+        if (meta != null) {
+            key = meta.optString("key"); pic = meta.optString("pic"); epName = meta.optString("epName")
+            vodId = meta.optString("vodId"); siteApi = meta.optString("siteApi"); from = meta.optString("from")
+        }
         curHisKey = key
         if (key.isBlank()) { curHisRec = null; return }
         val old = VideoHistoryStore.find(this, key)
@@ -806,6 +880,206 @@ class VideoActivity : AppCompatActivity() {
         VideoHistoryStore.updatePosition(this, curHisKey, pos, dur)
     }
 
+    // ===================== 片头 / 片尾跳过 =====================
+    /**
+     * 影片详情标识：历史 key 去掉集名的部分（"d:<站点api>|<vod_id>" /
+     * "s:<源key>|<vod_id>"）。同一影片下的所有剧集、所有线路共用一份配置；
+     * 不同影片 key 不同，互不影响。推导不出来返回空串（该影片不启用跳过）。
+     */
+    private fun detailKeyOf(meta: JSONObject?): String {
+        if (meta == null) return ""
+        val vodId = meta.optString("vodId").trim()
+        val siteApi = meta.optString("siteApi").trim()
+        val hisKey = meta.optString("key").trim()
+        val spider = hisKey.startsWith("s:")
+        // 爬虫源详情没带 siteApi：站点身份取 hisKey 里 "s:" 与第一个 "|" 之间的源 key
+        val site = if (siteApi.isNotBlank()) siteApi
+        else if (spider) hisKey.removePrefix("s:").substringBefore('|') else ""
+        if (site.isBlank() && vodId.isBlank()) return ""
+        return (if (spider) "s:" else "d:") + site + "|" + vodId
+    }
+
+    /** 起播时按详情 key 读配置（切集不重新读：同一影片配置不变） */
+    private fun loadSkipConfig() {
+        val cfg = if (curDetailKey.isBlank()) null else VideoSkipStore.get(this, curDetailKey)
+        skipStartMs = cfg?.startMs ?: 0
+        skipEndMs = cfg?.endMs ?: 0
+        skipEndManual = false
+        skipEndArmed = false
+        updateSkipButtons()
+        Log.d("VidPlay", "跳过配置 key=$curDetailKey 片头=$skipStartMs 片尾=$skipEndMs")
+    }
+
+    /** 刷新进度条下方两个配置按钮的文案/高亮 */
+    private fun updateSkipButtons() {
+        fun bind(btn: TextView, ms: Long, label: String) {
+            btn.text = if (ms > 0) "$label ${fmtTime(ms)}" else "$label 未设置"
+            btn.setTextColor(if (ms > 0) 0xFFFFFFFF.toInt() else 0x99FFFFFF.toInt())
+            btn.setTypeface(null, if (ms > 0) Typeface.BOLD else Typeface.NORMAL)
+        }
+        bind(skipStartBtn, skipStartMs, "片头")
+        bind(skipEndBtn, skipEndMs, "片尾")
+    }
+
+    /** 毫秒 → "m:ss" / "h:mm:ss" */
+    private fun fmtTime(ms: Long): String {
+        val s = (ms / 1000).coerceAtLeast(0)
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        val sec = s % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, sec)
+        else String.format("%d:%02d", m, sec)
+    }
+
+    /**
+     * 解析用户输入的时间："90"→90 秒；"1:30"→90 秒；"01:01:30"→3690 秒；
+     * 空串→0（清除）；解析不了返回 -1。
+     */
+    private fun parseTime(text: String): Long {
+        val t = text.trim()
+        if (t.isEmpty()) return 0
+        if (t.all { it.isDigit() }) return t.toLong() * 1000
+        val parts = t.split(":")
+        if (parts.size !in 2..3) return -1
+        val nums = parts.map { it.trim().toLongOrNull() ?: return -1 }
+        return when (nums.size) {
+            2 -> (nums[0] * 60 + nums[1]) * 1000
+            else -> (nums[0] * 3600 + nums[1] * 60 + nums[2]) * 1000
+        }
+    }
+
+    private fun startSkipTick() {
+        // 只 post 不立即 run：playMediaUrl→playIndex→playMediaUrl 的调用链里
+        // 同步执行会把整个剧集列表瞬间空跳一遍
+        mainHandler.removeCallbacks(skipTick)
+        mainHandler.postDelayed(skipTick, 500)
+    }
+
+    private fun stopSkipTick() {
+        mainHandler.removeCallbacks(skipTick)
+    }
+
+    /** 到结束时间：有下一集就接着播，最后一集（或单集影片）则停在结束点 */
+    private fun checkSkipEnd() {
+        val p = player ?: return
+        if (skipEndMs <= 0 || skipEndManual || !skipEndArmed) return
+        val pos = runCatching { p.currentPosition }.getOrDefault(0L)
+        if (pos < skipEndMs) return
+        // 触发一次就卸武装：杜绝「切集后位置没重置 → 连续跳集」和「暂停后反复弹提示」
+        skipEndArmed = false
+        val hasNext = curIdx in 0 until epsList.size - 1
+        Log.d("VidPlay", "到结束播放时间 $skipEndMs → ${if (hasNext) "下一集" else "暂停"}")
+        if (hasNext) {
+            toast("已到结束播放时间，进入下一集")
+            playIndex(curIdx + 1)
+        } else {
+            p.pause()
+            toast("已到设置的结束播放时间")
+        }
+    }
+
+    /**
+     * 片头 / 片尾时间设置弹窗。配置按影片详情维度保存：
+     * 对本影片所有剧集/线路生效，其他影片不受影响。
+     */
+    private fun showSkipTimeDialog(isStart: Boolean) {
+        val label = if (isStart) "片头" else "片尾"
+        val cur = if (isStart) skipStartMs else skipEndMs
+        val input = EditText(this).apply {
+            setText(if (cur > 0) fmtTime(cur) else "")
+            hint = "mm:ss 或 hh:mm:ss，留空=不跳过"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_DATETIME
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = (18 * resources.displayMetrics.density).toInt()
+            setPadding(p, p / 2, p, 0)
+            addView(input)
+        }
+        // 快捷档位：片头给固定值；片尾按当前时长给「距结尾 X 分钟」
+        val dur = runCatching { player?.duration }.getOrNull() ?: 0L
+        val quicks: List<Pair<String, Long>> =
+            if (isStart) listOf("30秒" to 30_000L, "1分" to 60_000L, "1分半" to 90_000L, "2分" to 120_000L)
+            else buildList {
+                if (dur > 0) {
+                    add("剩3分" to (dur - 180_000L))
+                    add("剩5分" to (dur - 300_000L))
+                    add("剩10分" to (dur - 600_000L))
+                }
+            }
+        if (quicks.isNotEmpty()) {
+            val density = resources.displayMetrics.density
+            fun dp(v: Int) = (v * density).toInt()
+            val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            (quicks + ("清除" to 0L)).forEach { (text, ms) ->
+                val chip = TextView(this).apply {
+                    this.text = text
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+                    // 弹窗是浅色卡片：用深字 + 淡灰底（白字白底会完全看不见）
+                    setTextColor(0xDE000000.toInt())
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = dp(14).toFloat()
+                        setColor(0x14000000)
+                    }
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                    setOnClickListener { input.setText(if (ms > 0) fmtTime(ms) else "") }
+                }
+                chipRow.addView(
+                    chip,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { marginEnd = dp(8) }
+                )
+            }
+            box.addView(chipRow)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("设置$label 播放时间")
+            .setMessage("对本影片的所有剧集/线路生效，其他影片不受影响")
+            .setView(box)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确定") { _, _ ->
+                val ms = parseTime(input.text.toString())
+                if (ms < 0) toast("时间格式不对，示例：1:30")
+                else applySkipTime(isStart, ms)
+            }
+            .show()
+    }
+
+    /** 保存并应用片头/片尾配置 */
+    private fun applySkipTime(isStart: Boolean, ms: Long) {
+        var s = skipStartMs
+        var e = skipEndMs
+        if (isStart) s = ms else e = ms
+        val dur = runCatching { player?.duration }.getOrNull() ?: 0L
+        if (s > 0 && e > 0 && e <= s) { toast("结束时间要晚于开始时间"); return }
+        if (dur > 0 && s > 0 && s >= dur) { toast("开始时间超过了影片时长"); return }
+        if (dur > 0 && e > 0 && e > dur) { toast("结束时间超过了影片时长"); return }
+        if (curDetailKey.isBlank()) { toast("当前影片无法记录配置"); return }
+        VideoSkipStore.save(this, curDetailKey, s, e)
+        skipStartMs = s
+        skipEndMs = e
+        skipEndManual = false
+        updateSkipButtons()
+        val pos = runCatching { player?.currentPosition }.getOrNull() ?: 0L
+        if (skipEndMs > 0) {
+            startSkipTick()
+            // 播放中补设片尾：只要当前进度还没到，这一集也立刻生效
+            skipEndArmed = pos < skipEndMs
+        } else {
+            stopSkipTick()
+            skipEndArmed = false
+        }
+        // 片头设在当前进度之前：立刻跳过去（不用等下一集）
+        if (isStart && s > 0 && pos < s) runCatching { player?.seekTo(s) }
+        // 片尾设在当前进度之前：这次不自动跳（用户明显是想往前看），换片后恢复
+        if (!isStart && e > 0 && pos > e) skipEndManual = true
+        toast("已设置：片头 ${if (s > 0) fmtTime(s) else "无"} / 片尾 ${if (e > 0) fmtTime(e) else "无"}")
+    }
+
     /** 把续播记录交给页面 JS：重新拉详情/重新解析，再从记录位置起播 */
     private fun fireResume(json: String) {
         if (!pageReady) { pendingResumeJson = json; return }
@@ -817,6 +1091,9 @@ class VideoActivity : AppCompatActivity() {
 
     /** 播放单条直链（Referer 很多 CDN 校验，不带 403） */
     private fun playMediaUrl(url: String, referer: String) {
+        skipEndManual = false          // 换片：手动拖动越过片尾的豁免重置
+        skipEndArmed = false           // 换片：等新 media STATE_READY 再武装，防旧进度误触发
+        if (skipEndMs > 0) startSkipTick()
         ensurePlayer()
         val itemBuilder = MediaItem.Builder().setUri(url)
         // 只有明确扩展名时才指定 mime；否则交给 DefaultMediaSourceFactory
@@ -891,6 +1168,7 @@ class VideoActivity : AppCompatActivity() {
     private fun closeVideo() {
         saveHisPosition()
         hisHandler.removeCallbacks(hisTick)
+        stopSkipTick()
         player?.pause()
         player?.stop()
         overlay.visibility = View.GONE
