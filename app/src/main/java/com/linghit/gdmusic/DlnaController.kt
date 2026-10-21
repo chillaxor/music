@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -62,9 +63,27 @@ class DlnaController(private val device: DlnaDevice) {
                         cb.onDone(false, msg)
                         return@setUri
                     }
-                    play { ok2, msg2 ->
-                        lastOk = ok2
-                        cb.onDone(ok2, msg2)
+                    // SetAVTransportURI 成功后设备进入 TRANSITIONING（正在加载源），
+                    // 立刻发 Play 会被小米/索尼等设备以 705 拒绝——而电视其实已经自己
+                    // 起播了，误判失败会把用户踢回本地。等 400ms 离开过渡态再 Play，
+                    // 仍报 705 就再重试一次，两次都挂才当真失败。
+                    scope.launch {
+                        delay(400)
+                        play { ok2, msg2 ->
+                            if (!ok2 && msg2.contains("705")) {
+                                Log.w(TAG, "Play 705（设备过渡中），500ms 后重试")
+                                scope.launch {
+                                    delay(500)
+                                    play { ok3, msg3 ->
+                                        lastOk = ok3
+                                        cb.onDone(ok3, msg3)
+                                    }
+                                }
+                            } else {
+                                lastOk = ok2
+                                cb.onDone(ok2, msg2)
+                            }
+                        }
                     }
                 }
             }
@@ -90,7 +109,13 @@ class DlnaController(private val device: DlnaDevice) {
         b.append("<Target>${fmtTime(posMs)}</Target>")
     }
 
-    /** 轮询播放位置与状态。失败时 pos/dur 回 0、state="ERR" */
+    /**
+     * 轮询播放位置。注意：GetPositionInfo 的响应**不带** TransportState 字段
+     * （那是 GetTransportInfo 才有的），所以不能拿它判活——以前每次轮询都解析出
+     * "ERR"，castFailCount 每秒 +1，第 5 次就把正常投屏误踢回本地。
+     * 现在只有 SOAP 无响应或返回 fault 才算 "ERR"；正常响应即使位置字段缺失
+     * （NOT_IMPLEMENTED，解析为 -1 → 0）也算成功。
+     */
     fun getPositionInfo(cb: PosCallback) {
         scope.launch {
             var pos = 0L; var dur = 0L; var state = "ERR"
@@ -98,10 +123,10 @@ class DlnaController(private val device: DlnaDevice) {
                 val body = soap("GetPositionInfo") {
                     it.append("<InstanceID>$INSTANCE</InstanceID>")
                 }
-                val xml = body ?: return@runCatching
-                pos = parseTime(xml, "RelTime")
-                dur = parseTime(xml, "TrackDuration")
-                state = parseState(xml)
+                if (body == null || body.contains("fault", true)) return@runCatching
+                pos = parseTime(body, "RelTime")
+                dur = parseTime(body, "TrackDuration")
+                state = "OK"
             }
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 cb.onPos(if (pos < 0) 0 else pos, if (dur < 0) 0 else dur, state)
