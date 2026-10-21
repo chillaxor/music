@@ -5,14 +5,21 @@ import android.content.Context
 /**
  * 启动背景图配置（闪屏页用）。
  *
- * 存储形态：用户选图后经 [ImagePrep] 受限解码（按屏幕比例 centerCrop、宽 1080、
- * JPEG 85）落盘 files/splash_bg.jpg，这里只记路径 + 开关。
+ * 存储形态：用户选图后经 [ImagePrep.copyOriginal] 原图字节级拷贝落盘
+ * files/splash_bg.jpg（不压缩不裁切），这里只记路径 + 开关 + 显示时长。
  */
 object SplashStore {
     private const val FILE = "splash_bg"
     private const val KEY_PATH = "path"
     private const val KEY_ENABLED = "enabled"
+    private const val KEY_DURATION_MS = "duration_ms"
     private const val FILE_NAME = "splash_bg.jpg"
+
+    /** 显示时长可选项（毫秒） */
+    val DURATION_OPTIONS = listOf(500, 1000, 2000, 3000, 5000)
+
+    /** 默认 2 秒：原 600ms 一闪而过，用户根本看不清启动图 */
+    const val DEFAULT_DURATION_MS = 2000L
 
     fun file(ctx: Context) = java.io.File(ctx.filesDir, FILE_NAME)
 
@@ -49,6 +56,14 @@ object SplashStore {
     /** 当前是否有可用的自定义背景图（开关开着且文件在） */
     fun hasCustom(ctx: Context): Boolean =
         enabled(ctx) && path(ctx)?.let { java.io.File(it).exists() } == true
+
+    /** 闪屏显示时长（毫秒），默认 2 秒 */
+    fun durationMs(ctx: Context): Long =
+        prefs(ctx).getInt(KEY_DURATION_MS, DEFAULT_DURATION_MS.toInt()).toLong()
+
+    fun setDurationMs(ctx: Context, ms: Int) {
+        prefs(ctx).edit().putInt(KEY_DURATION_MS, ms.coerceIn(500, 5000)).apply()
+    }
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)

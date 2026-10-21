@@ -298,7 +298,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         applyThemeColors() // 按当前主题重画头部渐变与播放按钮圆圈（drawable 无法用 ?attr 上色）
         // 主题切换：弹出选色面板（12 套色板，含渐变），选中即应用并重建页面
         findViewById<View>(R.id.themeBtn).setOnClickListener { showThemePicker() }
+        // 等宽 chip 需要实测行宽：onCreate 时 shortcutRow.width 还是 0，
+        // 先按估算渲染一版，布局完成后再用真实宽度精确渲染一次
         renderShortcuts()
+        shortcutRow.post { renderShortcuts() }
         findViewById<View>(R.id.addShortcutBtn).setOnClickListener { showShortcutPicker() }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
@@ -383,6 +386,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val padV = (7 * resources.displayMetrics.density).toInt()
         val marginH = (6 * resources.displayMetrics.density).toInt()
         val marginV = (4 * resources.displayMetrics.density).toInt()
+        // 一行固定 4 个等宽：chip 宽 = (行宽 - 3 个右间距) / 4，第 5 个自然换行。
+        // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
+        val rowW = if (shortcutRow.width > 0) shortcutRow.width
+        else resources.displayMetrics.widthPixels - (24 * resources.displayMetrics.density).toInt()
+        val chipW = ((rowW - marginH * 3) / 4).coerceAtLeast((48 * resources.displayMetrics.density).toInt())
         items.forEach { item ->
             val tv = TextView(this)
             tv.text = "${item.emoji} ${item.label}"
@@ -390,14 +398,18 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             tv.setTextColor(ContextCompat.getColor(this, R.color.primary))
             tv.setBackgroundResource(R.drawable.bg_pill_soft)
             tv.setPadding(padH, padV, padH, padV)
+            // 等宽 + 单行 + 超出省略：字数超了显示 …，不撑宽不换行
+            tv.maxLines = 1
+            tv.ellipsize = android.text.TextUtils.TruncateAt.END
+            tv.gravity = android.view.Gravity.CENTER
             tv.setOnClickListener { openShortcut(item) }
             tv.tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
             tv.setOnTouchListener { _, ev -> onChipTouch(tv, item, ev) }
             val lp = android.view.ViewGroup.MarginLayoutParams(
-                android.view.ViewGroup.MarginLayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.MarginLayoutParams.WRAP_CONTENT
+                chipW,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气（原来零间距全挤在一起）
+                // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气
                 setMargins(0, 0, marginH, marginV)
             }
             shortcutRow.addView(tv, lp)

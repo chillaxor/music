@@ -187,6 +187,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupSplashBg() {
         val toggle = findViewById<MaterialButton>(R.id.splashToggle)
         val pickBtn = findViewById<MaterialButton>(R.id.splashPick)
+        val durBtn = findViewById<MaterialButton>(R.id.splashDuration)
         val resetBtn = findViewById<MaterialButton>(R.id.splashReset)
         val statusText = findViewById<TextView>(R.id.splashStatus)
 
@@ -195,8 +196,11 @@ class SettingsActivity : AppCompatActivity() {
             toggle.text = if (has) "关闭自定义启动背景" else "开启自定义启动背景"
             pickBtn.text = if (has) "换一张启动背景图…" else "从相册选启动背景图…"
             resetBtn.isVisible = SplashStore.path(this) != null
+            val sec = SplashStore.durationMs(this) / 1000.0
+            val secTxt = if (sec % 1.0 == 0.0) "${sec.toInt()} 秒" else "$sec 秒"
+            durBtn.text = "显示时长：$secTxt（点击可改）"
             statusText.text = if (has) {
-                "已启用：打开 App 先显示自定义背景图（约 0.6 秒）\n图片按原图保存，未压缩未裁剪（显示时自动适配屏幕）"
+                "已启用：打开 App 先显示自定义背景图 $secTxt\n图片按原图保存，未压缩未裁剪（显示时自动适配屏幕）"
             } else {
                 "未启用：打开 App 显示默认启动样式（应用图标 + 主题色）"
             }
@@ -214,6 +218,27 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         pickBtn.setOnClickListener { splashPicker.launch("image/*") }
+
+        // 显示时长：单选对话框（0.5~5 秒）
+        durBtn.setOnClickListener {
+            val labels = SplashStore.DURATION_OPTIONS.map { ms ->
+                val sec = ms / 1000.0
+                if (sec % 1.0 == 0.0) "${sec.toInt()} 秒" else "$sec 秒"
+            }.toTypedArray()
+            val checked = SplashStore.DURATION_OPTIONS.indexOf(
+                SplashStore.durationMs(this).toInt()
+            ).coerceAtLeast(0)
+            AlertDialog.Builder(this)
+                .setTitle("启动图显示时长")
+                .setSingleChoiceItems(labels, checked) { dlg, i ->
+                    SplashStore.setDurationMs(this, SplashStore.DURATION_OPTIONS[i])
+                    Toast.makeText(this, "已设为 ${labels[i]}，下次启动生效", Toast.LENGTH_SHORT).show()
+                    dlg.dismiss()
+                    refresh()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
         splashRefresh = { runCatching { refresh() } }
 
         resetBtn.setOnClickListener {

@@ -387,6 +387,14 @@
                         android:layout_marginTop="6dp"/>
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/splashDuration"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:text="显示时长：2 秒（点击可改）"/>
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/splashPick"
                         style="@style/Widget.Material3.Button"
                         android:layout_width="match_parent"

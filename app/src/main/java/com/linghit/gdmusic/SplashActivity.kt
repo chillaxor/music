@@ -26,7 +26,6 @@ class SplashActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "Splash"
-        private const val DELAY_MS = 600L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -71,7 +70,9 @@ class SplashActivity : AppCompatActivity() {
             caption.visibility = View.GONE
         }
 
-        handler.postDelayed(jump, DELAY_MS)
+        handler.postDelayed(jump, SplashStore.durationMs(this))
+        // 点击任意处跳过：不想等就直接进 App
+        findViewById<View>(R.id.splashRoot)?.setOnClickListener { jump.run() }
     }
 
     override fun onDestroy() {
