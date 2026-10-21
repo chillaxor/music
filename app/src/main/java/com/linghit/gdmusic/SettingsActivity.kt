@@ -196,7 +196,7 @@ class SettingsActivity : AppCompatActivity() {
             pickBtn.text = if (has) "换一张启动背景图…" else "从相册选启动背景图…"
             resetBtn.isVisible = SplashStore.path(this) != null
             statusText.text = if (has) {
-                "已启用：打开 App 先显示自定义背景图（约 0.6 秒）\n图片已压缩存放，不影响启动速度"
+                "已启用：打开 App 先显示自定义背景图（约 0.6 秒）\n图片按原图保存，未压缩未裁剪（显示时自动适配屏幕）"
             } else {
                 "未启用：打开 App 显示默认启动样式（应用图标 + 主题色）"
             }
@@ -231,22 +231,14 @@ class SettingsActivity : AppCompatActivity() {
     private val splashPicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             if (uri == null) return@registerForActivityResult
-            val dm = resources.displayMetrics
-            val portrait = dm.widthPixels < dm.heightPixels
-            // 竖屏按 宽:高 裁，横屏按 高:宽 裁（横竖屏启动都铺满不拉伸）
-            val rw = if (portrait) dm.widthPixels else dm.heightPixels
-            val rh = if (portrait) dm.heightPixels else dm.widthPixels
-            val path = runCatching {
-                val raw = ImagePrep.decodeSampled(this, uri, 1080) ?: return@runCatching null
-                val crop = ImagePrep.scaleCrop(raw, rw, rh, 1080)
-                if (crop !== raw) raw.recycle()
-                ImagePrep.save(this, crop, SplashStore.file(this).name, jpegQuality = 85)
-            }.getOrNull()
+            // 原图字节级拷贝：不压缩、不裁切、不改尺寸，保留相册原始质量。
+            // 显示时由 SplashActivity 按屏幕采样解码，清晰且不会 OOM
+            val path = ImagePrep.copyOriginal(this, uri, SplashStore.file(this).name)
             if (path != null) {
                 SplashStore.enable(this, path)
-                Toast.makeText(this, "已设置，下次启动 App 生效", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已按原图保存，下次启动 App 生效", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "图片处理失败，换一张试试", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "图片保存失败，换一张试试", Toast.LENGTH_SHORT).show()
             }
             splashRefresh?.invoke()
         }

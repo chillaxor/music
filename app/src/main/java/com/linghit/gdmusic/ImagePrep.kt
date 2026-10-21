@@ -138,6 +138,54 @@ object ImagePrep {
             .getOrNull()?.takeIf { !it.isRecycled }
     }
 
+    /**
+     * 原图字节级拷贝到 files 目录：不解码、不压缩、不裁切，保留相册原图的
+     * 完整质量与尺寸（启动背景图用）。
+     *
+     * ⚠️ 与 decodeSampled+save 路线的区别：那条路会把 4800 万像素相机图压成
+     * 1080 宽 JPEG 85%（用户看着糊）。这里只搬字节，内存占用约等于文件大小。
+     * 显示时的清晰度/内存问题由 decodeFileSampled 解决（按屏幕采样解码）。
+     */
+    fun copyOriginal(ctx: Context, uri: Uri, name: String): String? {
+        return try {
+            val out = File(ctx.filesDir, name)
+            val ins = ctx.contentResolver.openInputStream(uri) ?: return null
+            ins.use { i -> FileOutputStream(out).use { o -> i.copyTo(o) } }
+            Log.d(TAG, "原图拷贝：${out.length() / 1024}KB → ${out.name}")
+            out.absolutePath
+        } catch (e: Throwable) {
+            Log.w(TAG, "原图拷贝失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 显示用：把落盘文件按目标边长采样解码（大图也不会 OOM）。
+     * maxEdge 传屏幕长边×2 即可保证屏幕上 1:1 清晰。
+     */
+    fun decodeFileSampled(path: String?, maxEdge: Int): Bitmap? {
+        if (path.isNullOrBlank() || !File(path).exists()) return null
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return null
+            var sample = 1
+            while (w / sample > maxEdge || h / sample > maxEdge) sample *= 2
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bmp = BitmapFactory.decodeFile(path, opts)
+            Log.d(TAG, "启动图显示解码：原图 ${w}x${h} 采样/$sample → ${bmp?.width}x${bmp?.height}")
+            bmp
+        } catch (e: Throwable) {
+            Log.w(TAG, "显示解码失败: ${e.message}")
+            null
+        }
+    }
+
     /** 删除文件（恢复默认时用） */
     fun delete(path: String?) {
         if (path.isNullOrBlank()) return

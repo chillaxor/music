@@ -54,7 +54,10 @@ class SplashActivity : AppCompatActivity() {
         val caption = findViewById<TextView>(R.id.splashCaption)
 
         val customPath = if (SplashStore.enabled(this)) SplashStore.path(this) else null
-        val custom = ImagePrep.loadFile(customPath)
+        // 原图保留全质量，这里只按屏幕长边×2 采样解码：屏幕上 1:1 清晰，
+        // 又不会把 4800 万像素原图整个 decode 进内存（那要 ~300MB，必 OOM）
+        val edge = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 2
+        val custom = ImagePrep.decodeFileSampled(customPath, edge)
         if (custom != null) {
             bg.setImageBitmap(custom)
             bg.visibility = View.VISIBLE

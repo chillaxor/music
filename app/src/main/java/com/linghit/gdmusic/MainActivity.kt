@@ -381,8 +381,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val items = HomeShortcutStore.list(this)
         val padH = (12 * resources.displayMetrics.density).toInt()
         val padV = (7 * resources.displayMetrics.density).toInt()
-        val marginH = (8 * resources.displayMetrics.density).toInt()
-        val marginV = (8 * resources.displayMetrics.density).toInt()
+        val marginH = (6 * resources.displayMetrics.density).toInt()
+        val marginV = (4 * resources.displayMetrics.density).toInt()
         items.forEach { item ->
             val tv = TextView(this)
             tv.text = "${item.emoji} ${item.label}"
