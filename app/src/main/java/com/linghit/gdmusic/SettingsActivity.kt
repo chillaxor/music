@@ -16,8 +16,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.button.MaterialButton
+import androidx.activity.result.contract.ActivityResultContracts
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -70,6 +72,9 @@ class SettingsActivity : AppCompatActivity() {
 
         // ---- 常驻悬浮按钮 ----
         setupFloatButton()
+
+        // ---- 启动背景图 ----
+        setupSplashBg()
 
         // 版本与构建时间：装没装上新包，来这里看一眼就知道（崩溃日志头部也会带同样的信息）
         findViewById<TextView>(R.id.versionInfo).text =
@@ -136,6 +141,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         floatBtnRefresh?.invoke()
+        splashRefresh?.invoke()
     }
 
     private var floatBtnRefresh: (() -> Unit)? = null
@@ -176,6 +182,74 @@ class SettingsActivity : AppCompatActivity() {
 
         refresh()
     }
+
+    /** 启动背景图：相册选图（受限解码落盘）/ 开关 / 恢复默认 */
+    private fun setupSplashBg() {
+        val toggle = findViewById<MaterialButton>(R.id.splashToggle)
+        val pickBtn = findViewById<MaterialButton>(R.id.splashPick)
+        val resetBtn = findViewById<MaterialButton>(R.id.splashReset)
+        val statusText = findViewById<TextView>(R.id.splashStatus)
+
+        fun refresh() {
+            val has = SplashStore.hasCustom(this)
+            toggle.text = if (has) "关闭自定义启动背景" else "开启自定义启动背景"
+            pickBtn.text = if (has) "换一张启动背景图…" else "从相册选启动背景图…"
+            resetBtn.isVisible = SplashStore.path(this) != null
+            statusText.text = if (has) {
+                "已启用：打开 App 先显示自定义背景图（约 0.6 秒）\n图片已压缩存放，不影响启动速度"
+            } else {
+                "未启用：打开 App 显示默认启动样式（应用图标 + 主题色）"
+            }
+        }
+
+        toggle.setOnClickListener {
+            if (SplashStore.path(this) == null) {
+                Toast.makeText(this, "先选一张图片", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val on = !SplashStore.enabled(this)
+            SplashStore.setEnabled(this, on)
+            Toast.makeText(this, if (on) "已开启，下次启动 App 生效" else "已关闭，下次启动 App 生效", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+
+        pickBtn.setOnClickListener { splashPicker.launch("image/*") }
+        splashRefresh = { runCatching { refresh() } }
+
+        resetBtn.setOnClickListener {
+            SplashStore.clear(this)
+            Toast.makeText(this, "已恢复默认启动样式", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+
+        refresh()
+    }
+
+    private var splashRefresh: (() -> Unit)? = null
+
+    /** 相册选图回调：GetContent 无运行时权限；受限解码后落盘并自动开启 */
+    private val splashPicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            if (uri == null) return@registerForActivityResult
+            val dm = resources.displayMetrics
+            val portrait = dm.widthPixels < dm.heightPixels
+            // 竖屏按 宽:高 裁，横屏按 高:宽 裁（横竖屏启动都铺满不拉伸）
+            val rw = if (portrait) dm.widthPixels else dm.heightPixels
+            val rh = if (portrait) dm.heightPixels else dm.widthPixels
+            val path = runCatching {
+                val raw = ImagePrep.decodeSampled(this, uri, 1080) ?: return@runCatching null
+                val crop = ImagePrep.scaleCrop(raw, rw, rh, 1080)
+                if (crop !== raw) raw.recycle()
+                ImagePrep.save(this, crop, SplashStore.file(this).name, jpegQuality = 85)
+            }.getOrNull()
+            if (path != null) {
+                SplashStore.enable(this, path)
+                Toast.makeText(this, "已设置，下次启动 App 生效", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "图片处理失败，换一张试试", Toast.LENGTH_SHORT).show()
+            }
+            splashRefresh?.invoke()
+        }
 
     private fun showCrashLog() {
         val log = CrashHandler.read(this)

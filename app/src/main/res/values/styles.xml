@@ -23,6 +23,9 @@
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:fontFamily">sans-serif</item>
+        <!-- 启动窗口兜底：冷启动/系统闪屏以此画布为底，与首页底色一致，无白灰闪烁。
+             12 套主题只换主色，中性底色共享 → 子主题自动继承，无需逐套覆盖 -->
+        <item name="android:windowBackground">@drawable/bg_splash_window</item>
     </style>
 
     <!-- 天空蓝 -->

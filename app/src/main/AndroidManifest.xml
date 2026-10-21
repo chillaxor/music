@@ -21,12 +21,15 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:label="@string/app_name" android:screenOrientation="portrait" android:exported="true">
+        <!-- 启动闪屏页：Launcher 唯一入口。进程起来前系统按主题 windowBackground
+             画兜底色，本页再按用户配置显示自定义背景图，随后无动画切到 MainActivity -->
+        <activity android:name=".SplashActivity" android:label="@string/app_name" android:screenOrientation="portrait" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".MainActivity" android:label="@string/app_name" android:screenOrientation="portrait" android:exported="true"/>
         <activity android:name=".DownloadedActivity" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 全屏歌词页：从底部播放条的歌词按钮进入 -->
         <activity android:name=".LyricActivity" android:screenOrientation="portrait" android:exported="false"/>

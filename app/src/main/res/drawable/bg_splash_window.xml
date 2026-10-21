@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动窗口兜底背景：冷启动瞬间（App 进程还没起来）系统按主题 windowBackground
+  渲染这块。用与首页一致的中性底色，消除 Material3 默认的白/灰闪烁。
+  Android 12+ 的系统闪屏也以此画布为底。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/background"/>
+</layer-list>
