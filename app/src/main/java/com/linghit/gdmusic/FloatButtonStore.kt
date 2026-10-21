@@ -19,6 +19,8 @@ object FloatButtonStore {
     private const val KEY_ACTION = "action"
     private const val KEY_X = "x"
     private const val KEY_Y = "y"
+    /** 自定义图标落盘路径（相册图经 256px 圆形裁剪，见 FloatIcon）；空 = 默认 emoji 图标 */
+    private const val KEY_ICON = "icon_path"
 
     /** 默认动作：记一笔（和首页「＋」面板第一项一致） */
     val DEFAULT_ACTION = HomeShortcutStore.Item("page", "add", "记一笔", "✏️")
@@ -58,5 +60,12 @@ object FloatButtonStore {
 
     fun setPosition(ctx: Context, x: Int, y: Int) {
         prefs(ctx).edit().putInt(KEY_X, x).putInt(KEY_Y, y).apply()
+    }
+
+    /** 自定义图标路径；空串 = 用动作自带的 emoji 图标 */
+    fun iconPath(ctx: Context): String = prefs(ctx).getString(KEY_ICON, "") ?: ""
+
+    fun setIconPath(ctx: Context, path: String) {
+        prefs(ctx).edit().putString(KEY_ICON, path).apply()
     }
 }

@@ -12,6 +12,22 @@ import androidx.appcompat.app.AppCompatActivity
  */
 class FloatConfigActivity : AppCompatActivity() {
 
+    /** 相册选图（GetContent 全版本可用，不需要任何运行时权限；返回的 Uri 只用一次） */
+    private val pickImage = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val path = FloatIcon.saveFromUri(this, uri)
+        if (path == null) {
+            Toast.makeText(this, "这张图读不出来，换一张试试", Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+        FloatButtonStore.setIconPath(this, path)
+        FloatButtonService.refresh(this)
+        Toast.makeText(this, "图标已换成相册图片", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
     override fun onCreate(b: Bundle?) {
         ThemePrefs.applyTheme(this)   // 配置框也用当前主题色
         super.onCreate(b)
@@ -38,6 +54,11 @@ class FloatConfigActivity : AppCompatActivity() {
         if (cur.type == "link" && cur.url.isNotBlank()) {
             items.add(0, HomeShortcutStore.Item("link", "", "自定义链接：${cur.label}", "🌐", cur.url))
         }
+        // 图标项：换相册图片常驻；已用自定义图时才有「恢复默认」
+        items.add(HomeShortcutStore.Item("icon", "pick", "从相册选图片…", "🖼️"))
+        if (FloatButtonStore.iconPath(this).isNotBlank()) {
+            items.add(HomeShortcutStore.Item("icon", "default", "恢复默认图标", "🎯"))
+        }
         val labels = items.map { "${it.emoji} ${it.label}" }.toTypedArray()
         val checked = items.indexOfFirst {
             it.type == cur.type && it.target == cur.target &&
@@ -47,11 +68,23 @@ class FloatConfigActivity : AppCompatActivity() {
             .setTitle("悬浮按钮动作")
             .setSingleChoiceItems(labels, checked) { dlg, i ->
                 val a = items[i]
-                FloatButtonStore.setAction(this, a)
-                FloatButtonService.refresh(this)
-                Toast.makeText(this, "已设为：${a.label}", Toast.LENGTH_SHORT).show()
-                dlg.dismiss()
-                finish()
+                when (a.target) {
+                    // 选图不关对话框：相册返回后直接finish
+                    "pick" -> { pickImage.launch("image/*"); return@setSingleChoiceItems }
+                    "default" -> {
+                        FloatIcon.clear(this)
+                        FloatButtonStore.setIconPath(this, "")
+                        FloatButtonService.refresh(this)
+                        Toast.makeText(this, "已恢复默认图标", Toast.LENGTH_SHORT).show()
+                        dlg.dismiss(); finish()
+                    }
+                    else -> {
+                        FloatButtonStore.setAction(this, a)
+                        FloatButtonService.refresh(this)
+                        Toast.makeText(this, "已设为：${a.label}", Toast.LENGTH_SHORT).show()
+                        dlg.dismiss(); finish()
+                    }
+                }
             }
             .setNeutralButton("自定义链接…") { _, _ -> showLinkDialog() }
             .setNegativeButton("隐藏悬浮按钮") { _, _ ->

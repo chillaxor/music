@@ -19,6 +19,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import kotlin.math.abs
 
@@ -84,7 +86,7 @@ class FloatButtonService : Service() {
         when (intent?.action) {
             ACTION_STOP -> { removeView(); stopSelf() }
             ACTION_REFRESH -> {
-                if (root != null) applyAction()      // 配置变了：只换图标/颜色，不重建窗口
+                if (root != null) applyStyle()       // 配置/图标变了：只换内容，不重建窗口
                 else addView()
             }
             else -> addView()
@@ -134,20 +136,34 @@ class FloatButtonService : Service() {
         val dm = resources.displayMetrics
         val size = dp(52)
 
-        val tv = TextView(this).apply {
-            gravity = Gravity.CENTER
-            textSize = 20f
-            setTextColor(0xFFFFFFFF.toInt())
-            // 深色描边圈：任何主题色下都能和背景区分
+        // 根容器：ImageView（相册图片模式）与 TextView（emoji 模式）叠放，按配置显隐
+        val container = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setStroke(dp(2), 0x40000000)
             }
         }
+        val iconView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            visibility = View.GONE
+        }
+        val emojiTv = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 20f
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+        container.addView(
+            iconView,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
+        container.addView(
+            emojiTv,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
 
         // 拖动 + 点击 + 长按。长按 500ms 进配置；位移超过 touchSlop 算拖动，
         // 拖动后松手不再触发点击（和首页 chip 拖拽同一套阈值逻辑）
-        tv.setOnTouchListener { _, ev ->
+        container.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downRawX = ev.rawX; downRawY = ev.rawY
@@ -204,9 +220,11 @@ class FloatButtonService : Service() {
         }
         params = lp
         runCatching {
-            wm.addView(tv, lp)
-            root = tv
-            applyAction()
+            wm.addView(container, lp)
+            root = container
+            iconHost = iconView
+            emojiHost = emojiTv
+            applyStyle()
             Log.d(TAG, "悬浮球已显示 (${lp.x},${lp.y})")
         }.onFailure {
             Log.w(TAG, "添加悬浮球失败: ${it.message}")
@@ -215,12 +233,8 @@ class FloatButtonService : Service() {
         }
     }
 
-    /** 按当前配置刷新图标与主题色（配置页改完 / 换主题后调） */
-    private fun applyAction() {
-        val tv = root as? TextView ?: return
-        val a = FloatButtonStore.action(this)
-        tv.text = a.emoji.ifBlank { "✏️" }
-        tv.contentDescription = "悬浮按钮：${a.label}（点击进入，长按修改）"
+    /** 按当前配置刷新主题色与图标（配置页改完 / 换主题后调；只换内容，不重建窗口） */
+    private fun applyStyle() {
         val pack = ThemePrefs.currentPack(this)
         val bg = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -232,8 +246,27 @@ class FloatButtonService : Service() {
             }
             setStroke(dp(2), 0x40000000)
         }
-        tv.background = bg
+        root?.background = bg
+
+        val a = FloatButtonStore.action(this)
+        // 自定义相册图片优先（落盘前已缩成 256px 圆形，加载无内存风险）；
+        // 没有或读坏了再退回 emoji
+        val icon = FloatIcon.load(this)
+        if (icon != null) {
+            iconHost?.setImageBitmap(icon)
+            iconHost?.visibility = View.VISIBLE
+            emojiHost?.visibility = View.GONE
+        } else {
+            iconHost?.setImageDrawable(null)
+            iconHost?.visibility = View.GONE
+            emojiHost?.text = a.emoji.ifBlank { "✏️" }
+            emojiHost?.visibility = View.VISIBLE
+        }
+        root?.contentDescription = "悬浮按钮：${a.label}（点击进入，长按修改）"
     }
+
+    private var iconHost: ImageView? = null
+    private var emojiHost: TextView? = null
 
     private val longPressRunnable = Runnable {
         longPressed = true

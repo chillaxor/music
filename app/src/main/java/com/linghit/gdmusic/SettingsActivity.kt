@@ -151,7 +151,8 @@ class SettingsActivity : AppCompatActivity() {
             val perm = if (DesktopLyric.hasPermission()) "悬浮窗权限：已授予" else "悬浮窗权限：未授予（开启时会引导授权）"
             val a = FloatButtonStore.action(this)
             val linkPart = if (a.type == "link" && a.url.isNotBlank()) "（${a.url}）" else ""
-            statusText.text = "$perm\n当前动作：${a.emoji} ${a.label}$linkPart"
+            val iconPart = if (FloatButtonStore.iconPath(this).isNotBlank()) " · 自定义图标" else ""
+            statusText.text = "$perm\n当前动作：${a.emoji} ${a.label}$linkPart$iconPart"
         }
         floatBtnRefresh = { runCatching { refresh() } }
 
