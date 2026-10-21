@@ -2,6 +2,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- 常驻悬浮按钮：非媒体播放类前台服务，targetSdk 34 需声明 specialUse 类型 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- WifiLock 必需：缺此权限时 wifiLock.acquire() 会抛 SecurityException 直接崩进程 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -43,6 +45,20 @@
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <!-- 视频悬浮小窗：WindowManager 浮层 + 前台服务，可浮在任意页面/其他 App 之上 -->
         <service android:name=".VideoFloatService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <!-- 常驻悬浮按钮：WindowManager 浮层 + 前台服务保活，可浮在任意页面/其他 App 之上 -->
+        <service android:name=".FloatButtonService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_button"/>
+        </service>
+        <!-- 悬浮按钮配置页：透明底弹选择框，长按小球进入 -->
+        <activity
+            android:name=".FloatConfigActivity"
+            android:label="悬浮按钮动作"
+            android:theme="@style/Theme.FloatConfig"
+            android:screenOrientation="portrait"
+            android:excludeFromRecents="true"
+            android:exported="false"/>
         <receiver android:name=".PlayerBroadcastReceiver" android:exported="false"/>
     </application>
 </manifest>

@@ -101,4 +101,13 @@
         <item name="colorPrimaryDark">#E05270</item>
         <item name="colorAccent">#FF6B8A</item>
     </style>
+
+    <!-- 常驻悬浮按钮配置页：透明底，只弹一个 AlertDialog（ThemePrefs.applyTheme 会换成当前套件） -->
+    <style name="Theme.FloatConfig" parent="AppTheme">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

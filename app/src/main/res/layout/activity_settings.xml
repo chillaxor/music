@@ -303,6 +303,60 @@
                         android:text="配色：白字黑底"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+            <!-- 常驻悬浮按钮：可拖动小球，常驻所有页面，点击执行配置动作 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                xmlns:app="http://schemas.android.com/apk/res-auto"
+                android:layout_marginTop="14dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="常驻悬浮按钮"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="一个可拖动的小球常驻在所有页面之上，点击执行设定动作（默认记一笔），长按小球可改动作。需要授予「显示在其他应用上层」权限。"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/floatBtnToggle"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="12dp"
+                        android:text="开启常驻悬浮按钮"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/floatBtnConfig"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:text="配置跳转动作"/>
+
+                    <TextView
+                        android:id="@+id/floatBtnStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
             <!-- 版本信息：手机上直接确认装的是哪一版，排查"改了没生效/装的是旧包" -->
             <TextView
                 android:id="@+id/versionInfo"

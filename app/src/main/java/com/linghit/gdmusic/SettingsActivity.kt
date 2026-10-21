@@ -68,6 +68,9 @@ class SettingsActivity : AppCompatActivity() {
         // ---- 桌面歌词（悬浮窗） ----
         setupDesktopLyric()
 
+        // ---- 常驻悬浮按钮 ----
+        setupFloatButton()
+
         // 版本与构建时间：装没装上新包，来这里看一眼就知道（崩溃日志头部也会带同样的信息）
         findViewById<TextView>(R.id.versionInfo).text =
             "GD音乐 版本 ${BuildConfig.VERSION_NAME} · 构建 ${BuildConfig.BUILD_TIME}"
@@ -127,6 +130,50 @@ class SettingsActivity : AppCompatActivity() {
         override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) onChange(p) }
         override fun onStartTrackingTouch(sb: SeekBar?) {}
         override fun onStopTrackingTouch(sb: SeekBar?) {}
+    }
+
+    /** 从权限设置页回来时刷新权限状态（授权后用户还要再点一次开关才生效） */
+    override fun onResume() {
+        super.onResume()
+        floatBtnRefresh?.invoke()
+    }
+
+    private var floatBtnRefresh: (() -> Unit)? = null
+
+    private fun setupFloatButton() {
+        val toggle = findViewById<MaterialButton>(R.id.floatBtnToggle)
+        val configBtn = findViewById<MaterialButton>(R.id.floatBtnConfig)
+        val statusText = findViewById<TextView>(R.id.floatBtnStatus)
+
+        fun refresh() {
+            val on = FloatButtonStore.enabled(this)
+            toggle.text = if (on) "关闭常驻悬浮按钮" else "开启常驻悬浮按钮"
+            val perm = if (DesktopLyric.hasPermission()) "悬浮窗权限：已授予" else "悬浮窗权限：未授予（开启时会引导授权）"
+            val a = FloatButtonStore.action(this)
+            val linkPart = if (a.type == "link" && a.url.isNotBlank()) "（${a.url}）" else ""
+            statusText.text = "$perm\n当前动作：${a.emoji} ${a.label}$linkPart"
+        }
+        floatBtnRefresh = { runCatching { refresh() } }
+
+        toggle.setOnClickListener {
+            if (FloatButtonStore.enabled(this)) {
+                FloatButtonStore.setEnabled(this, false)
+                FloatButtonService.stop(this)
+                Toast.makeText(this, "悬浮按钮已关闭", Toast.LENGTH_SHORT).show()
+            } else {
+                if (!DesktopLyric.hasPermission()) { DesktopLyric.requestPermission(); return@setOnClickListener }
+                FloatButtonStore.setEnabled(this, true)
+                FloatButtonService.start(this)
+                Toast.makeText(this, "已开启，长按小球可改动作", Toast.LENGTH_SHORT).show()
+            }
+            refresh()
+        }
+
+        configBtn.setOnClickListener {
+            startActivity(Intent(this, FloatConfigActivity::class.java))
+        }
+
+        refresh()
     }
 
     private fun showCrashLog() {

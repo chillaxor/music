@@ -240,6 +240,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         refreshLyricBtn()
         // 上次开着桌面歌词的话，重启后自动恢复（进程被杀窗口也会没，需重建）
         if (DesktopLyric.enabled && DesktopLyric.hasPermission()) DesktopLyric.show()
+        // 常驻悬浮按钮：默认开启（真正显示还需「显示在其他应用上层」权限，服务里兜底判断）；
+        // 关掉/改动作在设置页或长按小球
+        if (FloatButtonStore.enabled(this)) FloatButtonService.start(this)
         uiHandler.post(progressRunnable)
 
         adapter=SongAdapter(
@@ -752,46 +755,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             .show()
     }
 
-    /** 点自定义资源位：link=直接开链接，page=进对应功能/记账子页 */
-    private fun openShortcut(item: HomeShortcutStore.Item) {
-        when (item.type) {
-            "link" -> {
-                if (item.url.isBlank()) {
-                    Toast.makeText(this, "这个链接没有地址", Toast.LENGTH_SHORT).show()
-                    return
-                }
-                val u = LinkRouter.normalize(item.url)
-                // 深链 / 小红书分享链接 → 先尝试唤起指定的 App
-                val appLink = LinkRouter.resolveAppLink(u)
-                if (appLink != null) {
-                    val ok = LinkRouter.openApp(this, appLink)
-                    if (!ok && (u.startsWith("http://") || u.startsWith("https://"))) {
-                        // 没装目标 App，但原始链接本身是网页（如小红书分享链接）→ 退回内嵌浏览器
-                        startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", u))
-                    } else if (!ok) {
-                        Toast.makeText(this, "未安装对应的应用，无法跳转", Toast.LENGTH_SHORT).show()
-                    }
-                    return
-                }
-                // 网页网址：在 App 内嵌浏览器打开（不跳出 App，可返回）
-                startActivity(Intent(this, NetAssetActivity::class.java).putExtra("open_url", u))
-            }
-            else -> when (item.target) {
-                "video" -> startActivity(Intent(this, VideoActivity::class.java))
-                "netasset" -> startActivity(Intent(this, NetAssetActivity::class.java))
-                "downloads" -> startActivity(Intent(this, DownloadedActivity::class.java))
-                "favorites" -> startActivity(Intent(this, FavoritesActivity::class.java))
-                "settings" -> startActivity(Intent(this, SettingsActivity::class.java))
-                // 记账页子视图：add 记一笔 / flow 收支查询 / journal 日志 / links 链接收藏
-                "add", "flow", "journal", "links", "calendar" ->
-                    startActivity(
-                        Intent(this, NetAssetActivity::class.java)
-                            .putExtra("open_view", item.target)
-                    )
-                else -> Toast.makeText(this, "未知入口", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    /** 点自定义资源位：link=直接开链接，page=进对应功能/记账子页（与悬浮按钮共用 ShortcutRouter） */
+    private fun openShortcut(item: HomeShortcutStore.Item) = ShortcutRouter.open(this, item)
 
     /** 「＋」添加面板：只列 App 内功能（资产页的链接在记账页卡片上 📌 钉入） */
     private fun showShortcutPicker() {
