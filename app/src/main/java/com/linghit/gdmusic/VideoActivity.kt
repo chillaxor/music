@@ -272,6 +272,7 @@ class VideoActivity : AppCompatActivity() {
     companion object {
         private const val KEY = "sources"
         private const val VER_KEY = "sources_ver"
+        private const val HIST_KEY = "search_history"
         /**
          * 默认源版本号：
          *  - v1：单源（已失效路径）
@@ -728,6 +729,16 @@ class VideoActivity : AppCompatActivity() {
         @JavascriptInterface
         fun saveSources(json: String) {
             prefs.edit().putString(KEY, json).apply()
+        }
+
+        /** 读取影视搜索历史（JSON 数组字符串，最新在前，最多 10 条） */
+        @JavascriptInterface
+        fun getSearchHistory(): String = prefs.getString(HIST_KEY, "[]") ?: "[]"
+
+        /** 保存影视搜索历史（JSON 数组字符串，JS 侧已去重并截断到 10 条） */
+        @JavascriptInterface
+        fun saveSearchHistory(json: String) {
+            prefs.edit().putString(HIST_KEY, json).apply()
         }
     }
 
