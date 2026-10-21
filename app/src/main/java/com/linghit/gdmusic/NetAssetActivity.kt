@@ -379,6 +379,8 @@ class NetAssetActivity : AppCompatActivity() {
      */
     private fun openLinkOrApp(url: String) {
         val u = LinkRouter.normalize(url)
+        // 内部伪协议（app://gallery / app://camera / app://<包名>）→ 本 App 接管
+        if (InternalScheme.isInternal(u) && InternalScheme.open(this, u)) return
         val appLink = LinkRouter.resolveAppLink(u)
         if (appLink != null) {
             // 跳 App 前把内嵌浏览器收起来：否则从目标 App 回来时浏览器面板还挡在记账页上

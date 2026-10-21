@@ -27,6 +27,9 @@ object ShortcutRouter {
                     return
                 }
                 val u = LinkRouter.normalize(item.url)
+                // 内部伪协议（app://gallery / app://camera / app://<包名>）→ 本 App 接管，
+                // 不再当深链去系统找接收方（否则报「无安卓对应软件」）
+                if (InternalScheme.isInternal(u) && InternalScheme.open(ctx, u)) return
                 // 深链 / 小红书分享链接 → 先尝试唤起指定的 App
                 val appLink = LinkRouter.resolveAppLink(u)
                 if (appLink != null) {
