@@ -386,11 +386,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val padV = (7 * resources.displayMetrics.density).toInt()
         val marginH = (6 * resources.displayMetrics.density).toInt()
         val marginV = (4 * resources.displayMetrics.density).toInt()
-        // 一行固定 4 个等宽：chip 宽 = (行宽 - 3 个右间距) / 4，第 5 个自然换行。
+        // 一行固定 4 个等宽：chip 宽 = (行宽 - 4 份右间距) / 4。
+        // ⚠️ 必须减 4 不是 3：第一行 4 个 chip 每个都带右 margin，FlowLayout
+        // 换行判断 x+cw>行宽 时第 4 个 chip 的右 margin 同样占宽度；少减一份
+        // 会让 4 个 chip 总宽超行宽几个 px，第 4 个被挤到第二行（5 个变 3+2）。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
         else resources.displayMetrics.widthPixels - (24 * resources.displayMetrics.density).toInt()
-        val chipW = ((rowW - marginH * 3) / 4).coerceAtLeast((48 * resources.displayMetrics.density).toInt())
+        val chipW = ((rowW - marginH * 4) / 4).coerceAtLeast((48 * resources.displayMetrics.density).toInt())
         items.forEach { item ->
             val tv = TextView(this)
             tv.text = "${item.emoji} ${item.label}"

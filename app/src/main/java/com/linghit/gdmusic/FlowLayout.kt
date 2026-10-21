@@ -19,9 +19,12 @@ class FlowLayout @JvmOverloads constructor(
     private val vSpacing: Int
 
     init {
-        val dm = context.resources.displayMetrics.density
-        hSpacing = (8 * dm).toInt()
-        vSpacing = (8 * dm).toInt()
+        // ⚠️ 间距必须为 0：本容器只用于首页自定义资源位，chip 的间距由
+        // MainActivity.renderShortcuts() 给每个 child 设的 margin 控制。
+        // 这里若再加内置间距，换行判断会和 chipW=(行宽-3×marginH)/4 的
+        // 公式对不上——每个 chip 实际多占 hSpacing，4 个塞不下变 3+2。
+        hSpacing = 0
+        vSpacing = 0
     }
 
     override fun generateLayoutParams(attrs: AttributeSet?): LayoutParams {
