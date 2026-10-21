@@ -45,6 +45,9 @@
             android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:supportsPictureInPicture="true"/>
+        <!-- 高铁往返记录：独立 WebView 页面（仿净资产记账），数据走 SharedPreferences 落地 -->
+        <activity android:name=".RailActivity" android:label="高铁往返" android:exported="false"
+            android:screenOrientation="portrait"/>
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <!-- 视频悬浮小窗：WindowManager 浮层 + 前台服务，可浮在任意页面/其他 App 之上 -->
         <service android:name=".VideoFloatService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>

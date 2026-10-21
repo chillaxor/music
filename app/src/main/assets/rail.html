@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>高铁往返</title>
+<style>
+:root{ --accent:#0E9C8F; --bg:#FAF6F2; --card:#FFFFFF; --text:#241A14; --muted:#7A6A60; --line:#E8DED6; --soft:#F3ECE6; }
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; font-size:14px;}
+.topbar{position:sticky; top:0; z-index:5; background:var(--accent); color:#fff; padding:13px 16px; display:flex; align-items:center; justify-content:space-between;}
+.topbar h1{font-size:17px; margin:0; font-weight:700;}
+.btn{background:rgba(255,255,255,.18); color:#fff; border:none; border-radius:18px; padding:7px 14px; font-size:13px; font-weight:600;}
+.btn:active{opacity:.7;}
+.wrap{padding:14px 14px 40px; max-width:760px; margin:0 auto;}
+.hero{background:var(--accent); color:#fff; border-radius:16px; padding:18px 18px 16px; margin-bottom:12px;}
+.hero .lbl{font-size:13px; opacity:.85;}
+.hero .big{font-size:40px; font-weight:700; line-height:1.1; margin:4px 0;}
+.hero .big small{font-size:18px; font-weight:600; opacity:.9;}
+.hero .sub{font-size:12px; opacity:.92; margin-top:4px;}
+.plan{display:inline-block; margin-top:10px; background:rgba(255,255,255,.2); border-radius:12px; padding:6px 12px; font-size:13px; font-weight:600;}
+.cards{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px;}
+.card .k{font-size:12px; color:var(--muted);}
+.card .v{font-size:22px; font-weight:700; margin-top:2px;}
+.card .v small{font-size:13px; color:var(--muted); font-weight:500;}
+.sec{font-size:15px; font-weight:700; margin:18px 2px 10px;}
+.tl{position:relative; margin-left:6px; padding-left:16px; border-left:2px solid var(--line);}
+.item{position:relative; padding:0 0 16px 4px;}
+.item .dot{position:absolute; left:-23px; top:4px; width:11px; height:11px; border-radius:50%; background:var(--accent);}
+.item.planned .dot{background:#fff; border:2px solid var(--accent);}
+.item .row1{font-size:14px; font-weight:600;}
+.item .row2{font-size:12px; color:var(--muted); margin-top:3px; display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center;}
+.badge{background:var(--soft); color:var(--accent); border-radius:8px; padding:1px 7px; font-size:11px; font-weight:600;}
+.gap{color:var(--muted);}
+.del{margin-left:auto; color:#C0492F; font-size:12px; font-weight:600; background:none; border:none;}
+.chart{display:flex; align-items:flex-end; gap:12px; height:130px; padding:0 4px; border-bottom:1px solid var(--line);}
+.bar{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;}
+.bar i{display:block; width:60%; background:var(--accent); border-radius:5px 5px 0 0;}
+.bar span{font-size:11px; color:var(--muted); margin-top:5px;}
+.empty{color:var(--muted); font-size:13px; padding:8px 2px;}
+.form{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-top:14px; display:none;}
+.form.show{display:block;}
+.field{margin-bottom:10px;}
+.field label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px;}
+.field input{width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:14px; background:#fff; color:var(--text);}
+.flex2{display:flex; gap:10px;}
+.flex2 .field{flex:1;}
+.actions{display:flex; gap:10px; margin-top:6px;}
+.primary{background:var(--accent); color:#fff; border:none; border-radius:12px; padding:10px; font-size:14px; font-weight:600; flex:1;}
+.ghost{background:var(--soft); color:var(--text); border:none; border-radius:12px; padding:10px; font-size:14px; font-weight:600; flex:1;}
+.city{display:flex; gap:10px; margin-bottom:14px;}
+.city .field{flex:1;}
+.foot{text-align:center; color:var(--muted); font-size:12px; margin-top:22px;}
+.foot a{color:var(--accent); font-weight:600;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🚄 高铁往返</h1>
+  <button class="btn" id="addBtn">＋ 记录一次</button>
+</div>
+<div class="wrap">
+  <div class="hero" id="hero"></div>
+  <div class="cards" id="cards"></div>
+
+  <div class="city">
+    <div class="field"><label>家（老婆小孩）</label><input id="home" placeholder="如：成都"></div>
+    <div class="field"><label>我所在城市</label><input id="away" placeholder="如：深圳"></div>
+  </div>
+
+  <div class="sec">时间轴</div>
+  <div class="tl" id="tl"></div>
+
+  <div class="sec">回去间隔（天）</div>
+  <div class="chart" id="chart"></div>
+
+  <div class="form" id="form">
+    <div class="flex2">
+      <div class="field"><label>出发日 *</label><input type="date" id="f_out"></div>
+      <div class="field"><label>返回日</label><input type="date" id="f_back"></div>
+    </div>
+    <div class="field"><label>事由</label><input id="f_note" placeholder="如：国庆 / 周末 / 接娃"></div>
+    <div class="flex2">
+      <div class="field"><label>车次</label><input id="f_train" placeholder="如 G1234"></div>
+      <div class="field"><label>花费(元)</label><input type="number" id="f_cost" placeholder="单程或往返"></div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="cancelBtn">取消</button>
+      <button class="primary" id="saveBtn">保存</button>
+    </div>
+  </div>
+
+  <div class="foot">数据仅存本机 · <a id="exportBtn">导出 JSON 备份</a></div>
+</div>
+<script>
+(function(){
+  var $ = function(s){ return document.querySelector(s); };
+  var ACCENT = (window.Android && window.Android.themeColor) ? window.Android.themeColor() : '#0E9C8F';
+  document.documentElement.style.setProperty('--accent', ACCENT);
+
+  // 节日表：农历节日按公历日期硬编码近三年；节气/公历节日用 MM-DD 兜底
+  var HOLIDAYS = {
+    "2026-01-01":"元旦","2027-01-01":"元旦","2028-01-01":"元旦",
+    "2026-02-17":"春节","2027-02-06":"春节","2028-01-26":"春节",
+    "2026-03-03":"元宵","2027-02-21":"元宵","2028-02-10":"元宵",
+    "2026-04-05":"清明","2027-04-05":"清明","2028-04-04":"清明",
+    "2026-05-01":"劳动节","2027-05-01":"劳动节","2028-05-01":"劳动节",
+    "2026-06-01":"儿童节","2027-06-01":"儿童节","2028-06-01":"儿童节",
+    "2026-06-19":"端午","2027-06-09":"端午","2028-05-28":"端午",
+    "2026-08-19":"七夕","2027-08-09":"七夕","2028-08-28":"七夕",
+    "2026-09-10":"教师节","2027-09-10":"教师节","2028-09-10":"教师节",
+    "2026-09-25":"中秋","2027-09-15":"中秋","2028-09-03":"中秋",
+    "2026-10-01":"国庆","2027-10-01":"国庆","2028-10-01":"国庆",
+    "2026-10-19":"重阳","2027-10-09":"重阳","2028-10-27":"重阳",
+    "2026-12-25":"圣诞","2027-12-25":"圣诞","2028-12-25":"圣诞"
+  };
+  var SOLAR = {"01-01":"元旦","05-01":"劳动节","06-01":"儿童节","09-10":"教师节","10-01":"国庆","12-25":"圣诞","03-08":"妇女节"};
+
+  function festival(d){
+    if(!d) return '';
+    if(HOLIDAYS[d]) return HOLIDAYS[d];
+    var md = d.slice(5);
+    return SOLAR[md] || '';
+  }
+
+  var data = {home:'',away:'',trips:[]};
+  function load(){
+    try{
+      var raw = (window.Android && window.Android.loadData) ? window.Android.loadData() : '';
+      if(raw){ var o = JSON.parse(raw); data = o; data.trips = data.trips||[]; }
+    }catch(e){}
+  }
+  function save(){
+    var raw = JSON.stringify(data);
+    if(window.Android && window.Android.saveData){ try{ window.Android.saveData(raw); }catch(e){} }
+  }
+  function pdate(d){ return new Date(d+'T00:00:00'); }
+  function today(){ var t=new Date(); return new Date(t.getFullYear(),t.getMonth(),t.getDate()); }
+  function ddays(a,b){ return Math.round((a-b)/86400000); }
+  function esc(s){ return String(s).replace(/[&<>]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+
+  function render(){
+    $('#home').value = data.home||'';
+    $('#away').value = data.away||'';
+    var t = today();
+    var trips = data.trips.slice();
+    var past = trips.filter(function(x){ return x.out && pdate(x.out)<=t; }).sort(function(a,b){ return pdate(b.out)-pdate(a.out); });
+    var planned = trips.filter(function(x){ return x.out && pdate(x.out)>t; }).sort(function(a,b){ return pdate(a.out)-pdate(b.out); });
+    var last = past[0];
+
+    // hero：距上次回家
+    var hero = '';
+    if(last){
+      var ds = ddays(t, pdate(last.out));
+      var sinceTxt = ds<=0 ? '今天刚回 🎉' : ds+' 天';
+      var f = festival(last.out);
+      hero += '<div class="lbl">距上次回家</div>';
+      hero += '<div class="big">'+sinceTxt+'</div>';
+      hero += '<div class="sub">上次：'+last.out+(f?'（'+f+'）':'')+'　·　距今 '+Math.floor(ds/7)+' 周 '+(ds%7)+' 天</div>';
+    } else {
+      hero += '<div class="lbl">还没记录过回家</div>';
+      hero += '<div class="big">👋</div>';
+      hero += '<div class="sub">点右上「记录一次」记下第一次出发吧</div>';
+    }
+    if(planned[0]){
+      var d2 = ddays(pdate(planned[0].out), t);
+      var fp = festival(planned[0].out);
+      hero += '<div class="plan">📅 下次计划 '+planned[0].out+(fp?'（'+fp+'）':'')+'　还有 '+d2+' 天</div>';
+    }
+    $('#hero').innerHTML = hero;
+
+    // 统计卡
+    var yr = String(t.getFullYear());
+    var thisYear = past.filter(function(x){ return x.out.slice(0,4)===yr; }).length;
+    var gaps = [];
+    for(var i=1;i<past.length;i++){ gaps.push(ddays(pdate(past[i-1].out), pdate(past[i].out))); }
+    var avg = gaps.length ? Math.round(gaps.reduce(function(a,b){return a+b;},0)/gaps.length) : 0;
+    var maxg = gaps.length ? Math.max.apply(null,gaps) : 0;
+    var cost = past.reduce(function(s,x){ return s+(Number(x.cost)||0); },0);
+    $('#cards').innerHTML =
+      card('今年已回', thisYear, '次') +
+      card('平均间隔', avg, '天') +
+      card('最长间隔', maxg, '天') +
+      card('累计花费', '¥'+cost.toLocaleString());
+
+    // 时间轴
+    var tl = '';
+    past.forEach(function(x,i){ tl += itemHtml(x, (i<gaps.length?gaps[i]:null), false); });
+    if(planned.length){
+      tl += '<div style="color:var(--muted);font-size:12px;margin:6px 0 4px;">— 计划中的行程 —</div>';
+      planned.forEach(function(x){ tl += itemHtml(x, null, true); });
+    }
+    $('#tl').innerHTML = tl || '<div class="empty">还没有行程，点「记录一次」开始</div>';
+
+    // 间隔柱状图
+    if(gaps.length){
+      var maxv = Math.max.apply(null,gaps);
+      var c = '';
+      gaps.forEach(function(g){
+        var h = maxv>0 ? (g/maxv*100) : 100;
+        c += '<div class="bar"><i style="height:'+h+'%"></i><span>'+g+'</span></div>';
+      });
+      $('#chart').innerHTML = c;
+    } else {
+      $('#chart').innerHTML = '<div class="empty">记录两次以上才有间隔图</div>';
+    }
+  }
+  function card(k,v,unit){
+    return '<div class="card"><div class="k">'+k+'</div><div class="v">'+v+(unit?' <small>'+unit+'</small>':'')+'</div></div>';
+  }
+  function itemHtml(x,g,planned){
+    var f = festival(x.out);
+    var range = x.out + (x.back ? ' → '+x.back : '（单程）');
+    var meta = '';
+    if(f) meta += '<span class="badge">'+f+'</span>';
+    if(g!=null) meta += '<span class="gap">距上次 '+g+' 天</span>';
+    if(x.note) meta += '<span>'+esc(x.note)+'</span>';
+    if(x.train) meta += '<span>🚄 '+esc(x.train)+'</span>';
+    if(x.cost) meta += '<span>¥'+Number(x.cost).toLocaleString()+'</span>';
+    return '<div class="item'+(planned?' planned':'')+'"><span class="dot"></span>'+
+      '<div class="row1">'+range+'</div>'+
+      '<div class="row2">'+meta+'<button class="del" data-id="'+x.id+'">删除</button></div></div>';
+  }
+
+  // 事件
+  $('#addBtn').onclick = function(){
+    $('#form').classList.add('show');
+    $('#f_out').value=''; $('#f_back').value=''; $('#f_note').value=''; $('#f_train').value=''; $('#f_cost').value='';
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+  $('#cancelBtn').onclick = function(){ $('#form').classList.remove('show'); };
+  $('#saveBtn').onclick = function(){
+    var out = $('#f_out').value;
+    if(!out){ alert('请填出发日'); return; }
+    data.trips.push({
+      id: Date.now(),
+      out: out,
+      back: $('#f_back').value||'',
+      note: $('#f_note').value.trim(),
+      train: $('#f_train').value.trim(),
+      cost: $('#f_cost').value||''
+    });
+    data.trips.sort(function(a,b){ return pdate(a.out)-pdate(b.out); });
+    save(); render(); $('#form').classList.remove('show');
+  };
+  $('#tl').onclick = function(e){
+    var b = e.target.closest('.del'); if(!b) return;
+    var id = b.getAttribute('data-id');
+    data.trips = data.trips.filter(function(x){ return String(x.id)!==id; });
+    save(); render();
+  };
+  $('#home').onchange = function(){ data.home=$('#home').value.trim(); save(); };
+  $('#away').onchange = function(){ data.away=$('#away').value.trim(); save(); };
+  $('#exportBtn').onclick = function(){
+    if(window.Android && window.Android.exportData){ try{ window.Android.exportData(JSON.stringify(data)); }catch(e){} }
+  };
+
+  load(); render();
+})();
+</script>
+</body>
+</html>

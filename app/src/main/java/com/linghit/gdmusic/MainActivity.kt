@@ -107,6 +107,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var goldIntl: TextView
     private lateinit var goldDom: TextView
     private lateinit var goldBar: View
+    private lateinit var railBar: View
+    private lateinit var railHome: TextView
     private lateinit var header: View
     // —— 首页自定义入口拖动排序状态（长按抓起 → 移动=实时换序，按住不动=删除） ——
     private var dragChip: TextView? = null
@@ -294,6 +296,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         goldIntl = findViewById(R.id.goldIntl)
         goldDom = findViewById(R.id.goldDom)
         goldBar = findViewById(R.id.goldBar)
+        railBar = findViewById(R.id.railBar)
+        railHome = findViewById(R.id.railHome)
         header = findViewById(R.id.header)
         applyThemeColors() // 按当前主题重画头部渐变与播放按钮圆圈（drawable 无法用 ?attr 上色）
         // 主题切换：弹出选色面板（12 套色板，含渐变），选中即应用并重建页面
@@ -302,6 +306,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 先按估算渲染一版，布局完成后再用真实宽度精确渲染一次
         renderShortcuts()
         shortcutRow.post { renderShortcuts() }
+        // 高铁往返状态条：首页头部「距上次回家 N 天」（有记录才显示）
+        loadRailHomeStat()
         findViewById<View>(R.id.addShortcutBtn).setOnClickListener { showShortcutPicker() }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
@@ -376,6 +382,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::shortcutRow.isInitialized) renderShortcuts()
         // 切回前台自动刷新顶部金价（首次进 App 也走这里；接口失败则保持隐藏）
         if (::goldIntl.isInitialized) loadGoldPrice()
+        // 高铁往返状态条：从高铁页保存后回到首页，同步「距上次回家 N 天」
+        if (::railBar.isInitialized) loadRailHomeStat()
     }
 
     /** 渲染首页自定义资源位（不限量；点=进入，长按抓起可拖动排序，按住不动=删除） */
@@ -554,6 +562,49 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 // API 挂了：保持隐藏，不显示
             }
         }
+    }
+
+    /**
+     * 首页头部高铁状态条：读 rail_store（高铁页落盘的数据），算「距上次回家 N 天」，
+     * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录则整条隐藏。
+     */
+    private fun loadRailHomeStat() {
+        if (!::railBar.isInitialized) return
+        val raw = getSharedPreferences("rail_store", Context.MODE_PRIVATE).getString("payload", "") ?: ""
+        if (raw.isBlank()) { railBar.visibility = View.GONE; return }
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val today = cal.time
+        val outs = try {
+            val arr = org.json.JSONArray(
+                org.json.JSONObject(raw).optJSONArray("trips").toString()
+            )
+            (0 until arr.length()).mapNotNull { i ->
+                arr.getJSONObject(i).optString("out", "").takeIf { it.isNotBlank() }
+                    ?.let { runCatching { sdf.parse(it) }.getOrNull() }
+            }
+        } catch (e: Exception) { emptyList<java.util.Date>() }
+        if (outs.isEmpty()) { railBar.visibility = View.GONE; return }
+        val past = outs.filter { !it.after(today) }
+        val next = outs.filter { it.after(today) }.minOrNull()
+        val sb = StringBuilder()
+        if (past.isNotEmpty()) {
+            val last = past.maxOrNull()!!
+            val daysSince = ((today.time - last.time) / 86400000L).toInt()
+            sb.append("🚄 距上次回家 ")
+                .append(if (daysSince <= 0) "今天刚回 🎉" else "$daysSince 天")
+        }
+        if (next != null) {
+            if (sb.isNotEmpty()) sb.append("　·　")
+            val d2 = ((next.time - today.time) / 86400000L).toInt()
+            sb.append("下次计划 ${sdf.format(next)}(还有${d2}天)")
+        }
+        if (sb.isEmpty()) { railBar.visibility = View.GONE; return }
+        railHome.text = sb.toString()
+        railBar.visibility = View.VISIBLE
     }
 
     // ==================== 首页自定义入口：拖动排序 ====================
@@ -790,6 +841,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
             HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
             HomeShortcutStore.Item("page", "netasset", "记账本", "📒"),
+            HomeShortcutStore.Item("page", "rail", "高铁往返", "🚄"),
             HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
             HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
             HomeShortcutStore.Item("page", "settings", "设置", "⚙")

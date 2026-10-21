@@ -145,6 +145,27 @@
                 android:textColor="@color/on_primary"
                 android:includeFontPadding="false"/>
         </LinearLayout>
+
+        <!-- 高铁往返状态条：距上次回家 N 天（有记录才显示，融入头部渐变） -->
+        <LinearLayout
+            android:id="@+id/railBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="4dp"
+            android:paddingBottom="2dp"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/railHome"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:includeFontPadding="false"/>
+        </LinearLayout>
     </LinearLayout>
 
     <!-- 主体 -->
