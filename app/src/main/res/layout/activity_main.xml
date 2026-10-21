@@ -170,7 +170,7 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="10dp">
 
-                <!-- 第一行：固定入口 + 添加按钮 -->
+                <!-- 第一行：固定入口 + 添加按钮（记账/看片均分宽度，消掉中间空白） -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -179,13 +179,15 @@
 
                     <TextView
                         android:id="@+id/openNetAsset"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
                         android:background="@drawable/bg_pill_soft"
                         android:text="📒 记账"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
+                        android:gravity="center"
                         android:paddingStart="12dp"
                         android:paddingEnd="12dp"
                         android:paddingTop="7dp"
@@ -194,37 +196,35 @@
 
                     <TextView
                         android:id="@+id/openVideo"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
                         android:background="@drawable/bg_pill_soft"
                         android:text="🎬 看片"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
+                        android:gravity="center"
                         android:paddingStart="12dp"
                         android:paddingEnd="12dp"
                         android:paddingTop="7dp"
                         android:paddingBottom="7dp"
                         android:layout_marginEnd="8dp"/>
 
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"/>
-
                     <TextView
                         android:id="@+id/addShortcutBtn"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="34dp"
                         android:background="@drawable/bg_pill_soft"
                         android:text="＋"
                         android:textSize="15sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="6dp"/>
+                        android:gravity="center"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="7dp"
+                        android:paddingBottom="7dp"/>
                 </LinearLayout>
 
                 <!-- 第二行：自定义资源位，超长自动换行 -->

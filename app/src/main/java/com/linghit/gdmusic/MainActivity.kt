@@ -381,6 +381,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val items = HomeShortcutStore.list(this)
         val padH = (12 * resources.displayMetrics.density).toInt()
         val padV = (7 * resources.displayMetrics.density).toInt()
+        val marginH = (8 * resources.displayMetrics.density).toInt()
+        val marginV = (8 * resources.displayMetrics.density).toInt()
         items.forEach { item ->
             val tv = TextView(this)
             tv.text = "${item.emoji} ${item.label}"
@@ -391,10 +393,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             tv.setOnClickListener { openShortcut(item) }
             tv.tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
             tv.setOnTouchListener { _, ev -> onChipTouch(tv, item, ev) }
-            val lp = android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            val lp = android.view.ViewGroup.MarginLayoutParams(
+                android.view.ViewGroup.MarginLayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.MarginLayoutParams.WRAP_CONTENT
+            ).apply {
+                // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气（原来零间距全挤在一起）
+                setMargins(0, 0, marginH, marginV)
+            }
             shortcutRow.addView(tv, lp)
         }
     }
