@@ -68,40 +68,43 @@
   .vcard2 .pic{width:100%;aspect-ratio:2/3;background:#2a2d35;object-fit:cover;display:block}
   .vcard2 .ph{width:100%;aspect-ratio:2/3;background:linear-gradient(135deg,#2a2d35,#34373f);
     display:flex;align-items:center;justify-content:center;color:#555;font-size:24px}
-  .vcard2 .meta{padding:6px 8px}
-  .vcard2 .nm{font-size:12.5px;line-height:1.3;height:2.6em;overflow:hidden;color:var(--txt)}
-  .vcard2 .rm{font-size:11px;color:var(--accent2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vcard2 .meta{padding:7px 9px}
+  .vcard2 .nm{font-size:13.5px;line-height:1.32;height:3.96em;overflow:hidden;color:var(--txt);font-weight:600}
+  .vcard2 .yr{font-size:11px;color:var(--sub);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vcard2 .rm{font-size:11.5px;color:var(--accent2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 状态条 */
   .status{padding:8px 14px;color:var(--sub);font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}
   .status .load{color:var(--accent2);flex:none}
-  /* 详情 / 选集 抽屉（z-index 必须高于搜索页 55，否则从搜索结果点开详情时弹窗被搜索页盖住） */
+  /* 详情 / 选集：整屏抽屉（不再半屏贴底），z-index 必须高于搜索页 55 */
   .sheet{position:fixed;inset:0;z-index:60;display:none}
   .sheet.show{display:block}
   .sheet .mask{position:absolute;inset:0;background:rgba(0,0,0,.6)}
-  .sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:88%;background:var(--card);
-    border-radius:16px 16px 0 0;padding:14px;overflow-y:auto;animation:up .2s ease}
+  .sheet .panel{position:absolute;inset:0;background:var(--card);
+    padding:16px 14px 24px;overflow-y:auto;animation:up .2s ease}
   @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
   .sheet .phead{display:flex;gap:12px;margin-bottom:10px}
-  .sheet .phead img{width:96px;height:138px;border-radius:10px;object-fit:cover;background:#2a2d35}
-  .sheet .phead .ph{width:96px;height:138px;border-radius:10px;background:linear-gradient(135deg,#2a2d35,#34373f);
+  .sheet .phead img{width:104px;height:150px;border-radius:10px;object-fit:cover;background:#2a2d35}
+  .sheet .phead .ph{width:104px;height:150px;border-radius:10px;background:linear-gradient(135deg,#2a2d35,#34373f);
     display:flex;align-items:center;justify-content:center;color:#555;font-size:30px;flex:none}
-  .sheet .ptit{font-size:17px;font-weight:800}
-  .sheet .pinfo{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.5}
-  .sheet .pdesc{font-size:12.5px;color:#b8bcc6;margin-top:8px;line-height:1.6;max-height:80px;overflow:auto}
-  .closeX{position:absolute;right:12px;top:10px;font-size:20px;color:var(--sub);cursor:pointer;padding:4px 8px}
+  .sheet .ptit{font-size:18px;font-weight:800;line-height:1.35}
+  .sheet .pinfo{font-size:12.5px;color:var(--sub);margin-top:5px;line-height:1.55}
+  .sheet .pdesc{font-size:13px;color:#b8bcc6;margin-top:8px;line-height:1.65;max-height:110px;overflow:auto}
+  .closeX{position:absolute;right:12px;top:10px;font-size:22px;color:var(--sub);cursor:pointer;padding:4px 8px;z-index:2}
   .srcTabs{display:flex;gap:8px;overflow-x:auto;padding:6px 0 2px;scrollbar-width:none}
   .srcTabs::-webkit-scrollbar{display:none}
   .srcTab{flex:none;padding:5px 12px;border-radius:8px;background:var(--card2);border:1px solid var(--line);
     color:var(--sub);font-size:12px;cursor:pointer;white-space:nowrap}
   .srcTab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .epblock{margin-top:10px}
-  .epblock .from{font-size:13px;font-weight:700;margin:6px 0;color:var(--txt)}
-  .epblock .from small{color:var(--sub);font-weight:400;font-size:11px;margin-left:6px}
-  .eps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
-  @media(max-width:420px){.eps{grid-template-columns:repeat(4,1fr)}}
-  .ep{padding:8px 4px;border-radius:8px;background:var(--card2);border:1px solid var(--line);
-    text-align:center;font-size:12px;color:var(--txt);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .epblock .from{font-size:13.5px;font-weight:700;margin:6px 0;color:var(--txt)}
+  .epblock .from small{color:var(--sub);font-weight:400;font-size:11.5px;margin-left:6px}
+  .eps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  @media(min-width:560px){.eps{grid-template-columns:repeat(5,1fr)}}
+  .ep{padding:10px 4px;border-radius:8px;background:var(--card2);border:1px solid var(--line);
+    text-align:center;font-size:13px;color:var(--txt);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ep:active{background:var(--accent);color:#fff}
+  /* 正在播放的这一集：主题色实底 + 白字 + 加粗，一眼能看到看到哪了 */
+  .ep.on{background:var(--accent);color:#fff;font-weight:700;border-color:var(--accent)}
   /* 源管理抽屉 */
   .srcDrawer{position:fixed;inset:0;z-index:50;display:none}
   .srcDrawer.show{display:block}
@@ -139,22 +142,43 @@
   .srcTab.active .tc{color:var(--accent2)}
   .srcTab.active::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
   #srcResults{flex:1;min-width:0;overflow-y:auto;padding:10px 10px 24px}
-  #srcResults .grid{grid-template-columns:repeat(3,1fr);padding:0}
-  @media(min-width:560px){#srcResults .grid{grid-template-columns:repeat(4,1fr)}}
+  /* 搜索结果网格：手机上 2 列，标题能显示全；宽屏逐步加列 */
+  #srcResults .grid{grid-template-columns:repeat(2,1fr);padding:0;gap:10px}
+  @media(min-width:560px){#srcResults .grid{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:760px){#srcResults .grid{grid-template-columns:repeat(4,1fr)}}
   .src-empty{color:var(--sub);font-size:13px;text-align:center;padding:60px 20px;line-height:1.9}
+  /* ========== 搜索历史下拉：点顶部搜索输入框弹出最近 10 条 ========== */
+  #histPanel{position:fixed;left:0;right:0;z-index:58;background:var(--card);
+    border-bottom:1px solid var(--line);box-shadow:0 14px 28px rgba(0,0,0,.5);
+    display:none;flex-direction:column;max-height:72%;overflow-y:auto}
+  #histPanel.show{display:flex}
+  .hist-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px 8px;font-size:11px;color:var(--sub)}
+  .hist-clear{color:var(--bad);font-size:12px;cursor:pointer;padding:2px 6px}
+  .hist-item{display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:14px;
+    color:var(--txt);cursor:pointer;border-top:1px solid var(--line)}
+  .hist-item:active{background:var(--card2)}
+  .hist-item .hi-ic{flex:none;color:var(--sub);font-size:13px}
+  .hist-item .hi-w{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hist-item .hi-del{flex:none;color:var(--sub);font-size:14px;padding:2px 6px;cursor:pointer}
+  .hist-item .hi-del:active{color:var(--bad)}
+  .hist-empty{padding:26px 14px;text-align:center;color:var(--sub);font-size:13px}
 </style>
 </head>
 <body>
   <div class="topbar">
     <div class="musicswitch" onclick="switchToMusic()">🎵<span class="ms-txt"> 音乐</span></div>
     <div class="search">
-      <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()">
+      <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()" onfocus="showHistPanel()" onclick="showHistPanel()" onblur="setTimeout(hideHistPanel,180)">
       <span class="go" onclick="doSearch()">搜索</span>
     </div>
     <span class="scope" id="scopeBtn" onclick="toggleScope()">全网</span>
     <div class="iconbtn" onclick="openHistory()" title="播放历史">🕘</div>
     <div class="iconbtn" onclick="openSrcDrawer()">☰</div>
   </div>
+
+  <!-- 搜索历史下拉：点顶部搜索输入框时弹出（最近 10 条） -->
+  <div id="histPanel"></div>
 
   <div id="chips" class="chips"></div>
   <div id="status" class="status"><span id="stxt"></span><span id="sload" class="load"></span></div>
@@ -227,7 +251,8 @@ var STATE={
   searchScope:'all',         // all=全网聚合 / site=仅当前站
   groups:[],                 // 全网搜索结果分组 [{ri,si,name,items,pg,spider?}]
   // 当前播放列表（原生播放器切集/连播时经 __playSpiderAt 回传）
-  playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:''
+  playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:'',
+  playVodId:''              // 正在播放的片子 vod_id，选集页用它高亮「正在播放」的集
 };
 var CB={}; var CBID=1;
 window.__videoCb=function(id,ok,b64,code){
@@ -321,6 +346,7 @@ function isDirectMedia(u){
 window.__videoBack=function(){
   try{
     if($('sheet')&&$('sheet').classList.contains('show')){ closeSheet(); return true; }
+    if($('histPanel')&&$('histPanel').classList.contains('show')){ hideHistPanel(); return true; }
     if($('searchPage')&&$('searchPage').classList.contains('show')){ closeSearchPage(); return true; }
     if($('srcDrawer')&&$('srcDrawer').classList.contains('show')){ closeSrcDrawer(); return true; }
   }catch(e){}
@@ -574,8 +600,14 @@ function loadMore(){
 function card(v,si){
   var d=document.createElement('div'); d.className='vcard2';
   var pic=v.vod_pic||"";
+  // 信息行：年份 · 地区 · 类型（MacCms 常见字段，有几个显示几个）
+  var facts=[];
+  if(v.vod_year)facts.push(v.vod_year);
+  if(v.vod_area)facts.push(v.vod_area);
+  if(v.vod_type_name||v.vod_class)facts.push(v.vod_type_name||v.vod_class);
   d.innerHTML=(pic?'<img class="pic" src="'+esc(pic)+'" onerror="this.style.display=\'none\'">':'<div class="ph">🎬</div>')+
     '<div class="meta"><div class="nm">'+esc(v.vod_name)+'</div>'+
+    (facts.length?'<div class="yr">'+esc(facts.join(' · '))+'</div>':'')+
     (v.vod_remarks?'<div class="rm">'+esc(v.vod_remarks)+'</div>':'')+'</div>';
   d.onclick=function(){ if(v._spider) openSpiderDetail(v); else openDetail(v.vod_id,si); };
   return d;
@@ -705,6 +737,76 @@ function maybeAutoLoad(){
   if(box.scrollHeight <= box.clientHeight + 60) loadMoreSrc();
 }
 
+/* ============ 搜索历史：点输入框弹出最近 10 条 ============ */
+/* 存储优先走原生 SharedPreferences 桥（和接口源列表同机制，比 file:// 下的
+ * localStorage 稳），桥不可用（如桌面浏览器调试页面）时退回 localStorage。 */
+var HIST_MAX=10;
+var HIST_LS_KEY='gd_video_search_history';
+function histBridge(){ return !!(window.Android&&Android.getSearchHistory&&Android.saveSearchHistory); }
+function loadHist(){
+  try{
+    if(histBridge()){ var a=JSON.parse(Android.getSearchHistory()||'[]'); if(Array.isArray(a))return a; }
+  }catch(e){}
+  try{ var b=JSON.parse(localStorage.getItem(HIST_LS_KEY)||'[]'); if(Array.isArray(b))return b; }catch(e){}
+  return [];
+}
+function persistHist(a){
+  try{
+    if(histBridge()){ Android.saveSearchHistory(JSON.stringify(a)); return; }
+  }catch(e){}
+  try{ localStorage.setItem(HIST_LS_KEY,JSON.stringify(a)); }catch(e){}
+}
+/** 记一条搜索历史：去重、置顶（最新的在最前）、最多 HIST_MAX 条 */
+function saveHist(w){
+  w=(w||'').trim(); if(!w)return;
+  var a=loadHist().filter(function(x){return x!==w;});
+  a.unshift(w); a=a.slice(0,HIST_MAX);
+  persistHist(a);
+}
+function delHist(w){
+  persistHist(loadHist().filter(function(x){return x!==w;}));
+  renderHistPanel();
+}
+function clearHist(){
+  persistHist([]);
+  renderHistPanel();
+  toast('已清空搜索记录');
+}
+function renderHistPanel(){
+  var hp=$('histPanel'); if(!hp)return;
+  var a=loadHist();
+  if(!a.length){ hp.innerHTML='<div class="hist-empty">暂无搜索记录</div>'; return; }
+  var h='<div class="hist-hd"><span>搜索记录</span><span class="hist-clear" onclick="clearHist()">清空</span></div>';
+  a.forEach(function(w){
+    h+='<div class="hist-item" data-w="'+esc(w)+'">'+
+       '<span class="hi-ic">🕘</span><span class="hi-w">'+esc(w)+'</span>'+
+       '<span class="hi-del">✕</span></div>';
+  });
+  hp.innerHTML=h;
+  // 行点击 = 回填输入框并搜索；行尾 ✕ = 删这一条（stopPropagation 防止顺带触发搜索）
+  Array.prototype.forEach.call(hp.querySelectorAll('.hist-item'),function(row){
+    row.addEventListener('click',function(ev){
+      if(ev.target&&ev.target.classList.contains('hi-del')){
+        ev.stopPropagation();
+        delHist(row.getAttribute('data-w'));
+        return;
+      }
+      $('kw').value=row.getAttribute('data-w')||'';
+      hideHistPanel();
+      doSearch();
+    });
+  });
+}
+function showHistPanel(){
+  var hp=$('histPanel'); if(!hp)return;
+  renderHistPanel();
+  // 面板贴顶栏下沿：顶栏高度随窄屏媒体查询变化，动态量而不是写死
+  var bar=$('kw')&&$('kw').closest?$('kw').closest('.topbar'):null;
+  hp.style.top=((bar||document.body).getBoundingClientRect().bottom)+'px';
+  hp.classList.add('show');
+}
+function hideHistPanel(){ var hp=$('histPanel'); if(hp)hp.classList.remove('show'); }
+
 /* ============ 搜索：全网聚合 / 单站 ============ */
 function toggleScope(){
   STATE.searchScope = STATE.searchScope==='all' ? 'site' : 'all';
@@ -825,6 +927,8 @@ function doSearch(){
     }
     STATE.wd="";closeSearchPage();reloadList();return;
   }
+  saveHist(w);          // 记一条搜索历史（去重、置顶、最多 10 条）
+  hideHistPanel();
   if(STATE.searchScope==='all'){SRC_TAB_IDX=-1;searchAll(w);}
   else { closeSearchPage(); STATE.wd=w;STATE.pg=1;STATE.groups=[];$('grid').innerHTML='';renderClassChips();loadList(); }
 }
@@ -900,14 +1004,22 @@ function renderEps(v){
   var box=$('dEps'); box.innerHTML='';
   var groups=parsePlay(v);
   if(!groups.length){box.innerHTML='<div style="color:var(--sub);padding:12px">该资源没有可播放的集数（可能是需解析的站点）</div>';return;}
+  // 正在播放的集：同一部片子（vod_id 相同）+ 同线路 + 同下标才高亮，避免串台
+  function isPlaying(from,ei){
+    return STATE.playVodId && STATE.playVodId===(v.vod_id||'') &&
+           STATE.playFrom===from && STATE.playIdx===ei;
+  }
+  function mkEp(g,e,ei){
+    var b=document.createElement('div'); b.className='ep'+(isPlaying(g.from,ei)?' on':'');
+    b.textContent=e.name;
+    b.title=e.name;
+    b.onclick=function(){playEp(g.from,g.eps,ei);};
+    return b;
+  }
   // 单线路：直接显示该线路的选集
   if(groups.length===1){
     var g0=groups[0]; var ep0=document.createElement('div'); ep0.className='eps';
-    g0.eps.forEach(function(e,ei){
-      var b=document.createElement('div'); b.className='ep'; b.textContent=e.name;
-      b.onclick=function(){playEp(g0.from,g0.eps,ei);};
-      ep0.appendChild(b);
-    });
+    g0.eps.forEach(function(e,ei){ ep0.appendChild(mkEp(g0,e,ei)); });
     box.appendChild(ep0); return;
   }
   // 多线路：用 Tab 分隔（横向滚动），点击切换线路，下方只展示当前线路的选集。
@@ -917,11 +1029,7 @@ function renderEps(v){
   function select(gi){
     tabs.querySelectorAll('.srcTab').forEach(function(t,i){t.classList.toggle('on',i===gi);});
     var g=groups[gi]; grid.innerHTML='';
-    g.eps.forEach(function(e,ei){
-      var b=document.createElement('div'); b.className='ep'; b.textContent=e.name;
-      b.onclick=function(){playEp(g.from,g.eps,ei);};
-      grid.appendChild(b);
-    });
+    g.eps.forEach(function(e,ei){ grid.appendChild(mkEp(g,e,ei)); });
   }
   groups.forEach(function(g,gi){
     var t=document.createElement('div'); t.className='srcTab'+(gi===0?' on':'');
@@ -942,6 +1050,8 @@ function playEp(from,eps,idx){
   // 这样播放中按返回关掉播放器后，能回到「播放前那个视频的详情/选集页」，而不是列表或主页。
   var spiderT=STATE.detailSpider;
   STATE.playFrom=from; STATE.playEps=eps; STATE.playIdx=idx;
+  STATE.playVodId=(STATE.detail&&STATE.detail.vod_id)||''; // 记下正在播的片子，供选集高亮
+  if(STATE.detail) renderEps(STATE.detail); // 重画选集，把「正在播放」高亮移到新点的集
   var epsJson=JSON.stringify(eps.map(function(x){
     return {name:x.name,url:x.url,spider:!!spiderT};
   }));

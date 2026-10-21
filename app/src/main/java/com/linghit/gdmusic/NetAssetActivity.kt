@@ -367,9 +367,19 @@ class NetAssetActivity : AppCompatActivity() {
     private fun showBrowser(url: String) {
         runOnUiThread {
             browserPanel.visibility = View.VISIBLE
+            applyBrowserChrome(true)
             if (tabs.isEmpty()) createTab(url)
             else currentTab?.webView?.loadUrl(url)
         }
+    }
+
+    /** 浏览器开合时同步系统栏：开着=深色 app bar + 浅色图标，
+     *  关掉=还回记账页的浅色系统栏。不然状态栏那条白边会留在网页顶部 */
+    private fun applyBrowserChrome(dark: Boolean) {
+        val c = ContextCompat.getColor(this, if (dark) R.color.browser_bar else R.color.surface)
+        window.statusBarColor = c
+        window.navigationBarColor = c
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !dark
     }
 
     /**
@@ -403,6 +413,10 @@ class NetAssetActivity : AppCompatActivity() {
             return currentTab!!
         }
         val wv = WebView(this)
+        // 深色底 + 关掉下拉回弹的白色拉弧：浅色主题下 WebView 默认白底，
+        // 加载瞬间和 overscroll 都会在页面顶部糊出一条白边，很突兀
+        wv.setBackgroundColor(ContextCompat.getColor(this, R.color.browser_bar))
+        wv.overScrollMode = View.OVER_SCROLL_NEVER
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -497,6 +511,7 @@ class NetAssetActivity : AppCompatActivity() {
         if (tabs.isEmpty()) {
             currentTab = null
             browserPanel.visibility = View.GONE
+            applyBrowserChrome(false)
             updateTabStrip()
             return
         }
@@ -516,6 +531,7 @@ class NetAssetActivity : AppCompatActivity() {
         tabs.clear()
         currentTab = null
         browserPanel.visibility = View.GONE
+        applyBrowserChrome(false)
         updateTabStrip()
     }
 
@@ -538,7 +554,7 @@ class NetAssetActivity : AppCompatActivity() {
                         setColor(ContextCompat.getColor(this@NetAssetActivity, R.color.primary))
                     } else {
                         setColor(Color.TRANSPARENT)
-                        setStroke(1, ContextCompat.getColor(this@NetAssetActivity, R.color.outline))
+                        setStroke(1, ContextCompat.getColor(this@NetAssetActivity, R.color.browser_bar_line))
                     }
                 }
                 setOnClickListener { switchTab(tab) }
@@ -550,7 +566,7 @@ class NetAssetActivity : AppCompatActivity() {
                 setTextColor(
                     ContextCompat.getColor(
                         this@NetAssetActivity,
-                        if (isCur) R.color.on_primary else R.color.on_surface_variant
+                        if (isCur) R.color.on_primary else R.color.browser_bar_sub
                     )
                 )
             }
@@ -561,7 +577,7 @@ class NetAssetActivity : AppCompatActivity() {
                 setTextColor(
                     ContextCompat.getColor(
                         this@NetAssetActivity,
-                        if (isCur) R.color.on_primary else R.color.on_surface_variant
+                        if (isCur) R.color.on_primary else R.color.browser_bar_sub
                     )
                 )
                 setOnClickListener { closeTab(tab) }

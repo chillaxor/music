@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:background="?attr/colorSurface"
+            android:background="@color/browser_bar"
             android:visibility="gone">
 
             <LinearLayout
@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:background="?attr/colorSurfaceVariant"
+                android:background="@color/browser_bar"
                 android:padding="6dp">
 
                 <Button
@@ -38,7 +38,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="‹"
-                    android:textSize="18sp"
+                    android:textSize="20sp"
+                    android:textColor="@color/browser_bar_text"
                     android:minWidth="44dp"
                     android:background="@android:color/transparent" />
 
@@ -50,7 +51,7 @@
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:textSize="12sp"
-                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textColor="@color/browser_bar_sub"
                     android:paddingStart="4dp"
                     android:paddingEnd="4dp"
                     android:text="" />
@@ -61,6 +62,7 @@
                     android:layout_height="wrap_content"
                     android:text="✕"
                     android:textSize="16sp"
+                    android:textColor="@color/browser_bar_text"
                     android:minWidth="44dp"
                     android:background="@android:color/transparent" />
             </LinearLayout>
@@ -71,7 +73,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:scrollbars="none"
-                android:background="?attr/colorSurfaceVariant"
+                android:background="@color/browser_bar"
                 android:visibility="gone">
 
                 <LinearLayout

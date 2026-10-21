@@ -13,4 +13,10 @@
     <color name="star_off">#C9BFB6</color>
     <color name="download_done">#2E9E5B</color>
     <color name="download_err">#E5484D</color>
+    <!-- 内嵌浏览器工具栏：深色 app bar。主题是浅色暖白，直接拿 colorSurface
+         会让「状态栏+工具栏」在网页顶部糊成一条白通栏，很突兀 -->
+    <color name="browser_bar">#1E2128</color>
+    <color name="browser_bar_text">#EDEFF3</color>
+    <color name="browser_bar_sub">#A6ADB8</color>
+    <color name="browser_bar_line">#383D47</color>
 </resources>
