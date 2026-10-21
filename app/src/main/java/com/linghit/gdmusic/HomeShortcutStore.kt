@@ -17,9 +17,9 @@ object HomeShortcutStore {
     class Item(
         val type: String,
         val target: String,
-        val label: String,
+        var label: String,
         val emoji: String,
-        val url: String = ""
+        var url: String = ""
     ) {
         fun id() = "$type|$target"
         fun toJson() = JSONObject().apply {
@@ -68,6 +68,29 @@ object HomeShortcutStore {
         val l = list(ctx)
         l.removeAll { it.id() == id }
         save(ctx, l)
+    }
+
+    /**
+     * 链接页改了某条链接（标题/网址）后，同步首页对应的快捷位。
+     * 匹配规则：type=link 且 target=链接 id（📌 钉上来和首页添加的都是这个约定）。
+     * @return 更新了几条（0=首页没钉这条，无需同步）
+     */
+    fun updateLink(ctx: Context, linkId: String, label: String, url: String): Int {
+        val l = list(ctx)
+        var n = 0
+        l.forEach { if (it.type == "link" && it.target == linkId) { it.label = label; it.url = url; n++ } }
+        if (n > 0) save(ctx, l)
+        return n
+    }
+
+    /** 链接页删了某条链接：首页对应的快捷位一并删掉（点进去也是空）。@return 删了几条 */
+    fun removeLink(ctx: Context, linkId: String): Int {
+        val l = list(ctx)
+        val before = l.size
+        l.removeAll { it.type == "link" && it.target == linkId }
+        val removed = before - l.size
+        if (removed > 0) save(ctx, l)
+        return removed
     }
 
     /** 整体替换（拖动排序后按新顺序写回） */

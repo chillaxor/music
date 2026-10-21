@@ -899,6 +899,34 @@ function save(){
   document.getElementById("meta").textContent=
     "数据仅保存在本机浏览器，不上传 · 最后更新："+new Date().toLocaleString("zh-CN")+backupHint();
 }
+// 原生侧改了数据（首页「＋→自定义链接」往 payload.links 加链接）后，
+// NetAssetActivity.onResume 会调这个钩子重新拉取。
+// 不刷的话 warm activity 里 WebView 拿着旧 data，之后任何保存都把新链接覆盖回去。
+window.__reloadFromNative=function(){
+  try{
+    if(!(window.Android&&typeof window.Android.loadData==="function"))return;
+    const n=window.Android.loadData();
+    if(!n||n.length<=2)return;
+    const obj=JSON.parse(n);
+    if(!obj||typeof obj!=="object")return;
+    data=obj;
+    if(!Array.isArray(data.assets))data.assets=[];
+    if(!Array.isArray(data.liabs))data.liabs=[];
+    if(!Array.isArray(data.flows))data.flows=[];
+    if(!Array.isArray(data.events))data.events=[];
+    if(!Array.isArray(data.links))data.links=[];
+    if(!data.flowDefault||typeof data.flowDefault!=="object")data.flowDefault={};
+    localStorage.setItem(KEY,JSON.stringify(data));
+    // 只重渲当前视图：链接页看链接，其他页重算汇总
+    const VIEWS=["snapshot","add","flow","calendar","journal","links"];
+    const viewId=v=>v==="calendar"?"viewCal":"view"+v.charAt(0).toUpperCase()+v.slice(1);
+    const cur=VIEWS.filter(v=>{const el=document.getElementById(viewId(v));return el&&el.classList.contains("active");})[0]||"snapshot";
+    if(cur==="links")renderLinks();
+    else if(cur==="journal")refreshJournal();
+    else if(cur==="calendar")renderCal();
+    else render();
+  }catch(e){}
+};
 // App 端提示备份文件位置；桌面版返回空串
 function backupHint(){
   try{
@@ -1746,12 +1774,25 @@ function saveLink(){
   if(!url){if(ui)ui.focus();return;}
   if(lkEditing){
     data.links.forEach(function(l){if(l&&l.id===lkEditing){l.title=title;l.url=url;l.cat=cat;l.note=note;}});
+    // 首页可能钉了这条：同步过去（原生侧按链接 id 匹配快捷位，没有就不动）
+    try{
+      if(window.Android&&typeof window.Android.syncHomeShortcut==="function"){
+        window.Android.syncHomeShortcut(JSON.stringify({id:lkEditing,title:title,url:url}));
+      }
+    }catch(e){}
   }else{
     data.links.unshift({id:lkId(),title:title,url:url,cat:cat,note:note});
   }
   save();renderLinks();closeLinkModal();
 }
-function delLink(id){data.links=data.links.filter(function(l){return !(l&&l.id===id);});save();renderLinks();}
+function delLink(id){data.links=data.links.filter(function(l){return !(l&&l.id===id);});save();renderLinks();
+  // 首页钉了这条的话一并删掉，免得留个点不开的 chip
+  try{
+    if(window.Android&&typeof window.Android.removeHomeShortcut==="function"){
+      window.Android.removeHomeShortcut(id);
+    }
+  }catch(e){}
+}
 function handleLinkClick(e){
   const op=e.target.closest("[data-openlink]");
   if(op){const l=data.links.filter(function(x){return x&&x.id===op.dataset.openlink;})[0];if(l)openLink(l.url);return;}

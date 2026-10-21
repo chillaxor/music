@@ -306,6 +306,36 @@ class NetAssetActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            // 链接页编辑了某条链接（标题/网址）：同步首页钉了这条的快捷位。
+            // 只更新已存在的，不会因为编辑而往首页塞新 chip。
+            @JavascriptInterface
+            fun syncHomeShortcut(json: String) {
+                runOnUiThread {
+                    try {
+                        val o = JSONObject(json)
+                        val n = HomeShortcutStore.updateLink(
+                            this@NetAssetActivity,
+                            o.optString("id"),
+                            o.optString("title").ifBlank { "链接" },
+                            o.optString("url")
+                        )
+                        if (n > 0) {
+                            Toast.makeText(this@NetAssetActivity, "首页快捷位已同步", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+            }
+
+            // 链接页删了某条链接：首页对应的快捷位一并删除（留着也点不开）
+            @JavascriptInterface
+            fun removeHomeShortcut(id: String) {
+                runOnUiThread {
+                    try {
+                        HomeShortcutStore.removeLink(this@NetAssetActivity, id)
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+            }
         }, "Android")
         webView.webChromeClient = object : WebChromeClient() {
             // JS console.log 打到 logcat（tag: NetJS），便于在设备上排查页面逻辑
@@ -676,6 +706,16 @@ class NetAssetActivity : AppCompatActivity() {
         super.onPause()
         try {
             webView.evaluateJavascript("window.__flushSave&&window.__flushSave()", null)
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    // 回到前台时从原生存储重新拉一次数据：首页「自定义链接」可能在后台
+    // 往 payload.links 加了链接，warm activity 里 WebView 的旧 data 不刷新的话，
+    // 之后任何保存都会把新链接整份覆盖回去。
+    override fun onResume() {
+        super.onResume()
+        try {
+            webView.evaluateJavascript("window.__reloadFromNative&&window.__reloadFromNative()", null)
         } catch (e: Exception) { e.printStackTrace() }
     }
 

@@ -814,7 +814,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             .show()
     }
 
-    /** 添加自定义链接快捷位：名称 + 网址。id 用规范化后的 url，同网址自动去重 */
+    /** 添加自定义链接快捷位：名称 + 网址。同步写入链接页（LinksStore），
+     *  target 用链接页的链接 id——链接页后续改标题/网址按这个 id 反同步首页 */
     private fun showAddLinkDialog() {
         val nameInput = EditText(this).apply {
             hint = "名称，如：摸鱼日报"
@@ -846,7 +847,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 val url = LinkRouter.normalize(raw).let { n ->
                     if (n.contains("://")) n else "https://$n"
                 }
-                val item = HomeShortcutStore.Item("link", url, label, "🔗", url)
+                // 双写：① 链接页数据（同网址已存在则复用其 id，不重复加）
+                //      ② 首页快捷位（target=链接 id，供链接页编辑时反同步）
+                val linkId = LinksStore.addOrGet(this, label, url)
+                val item = HomeShortcutStore.Item("link", linkId, label, "🔗", url)
                 if (HomeShortcutStore.add(this, item)) {
                     renderShortcuts()
                     Toast.makeText(this, "已添加「$label」，长按可拖动排序", Toast.LENGTH_SHORT).show()
