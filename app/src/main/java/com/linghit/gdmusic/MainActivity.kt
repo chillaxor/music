@@ -778,7 +778,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     /** 点自定义资源位：link=直接开链接，page=进对应功能/记账子页（与悬浮按钮共用 ShortcutRouter） */
     private fun openShortcut(item: HomeShortcutStore.Item) = ShortcutRouter.open(this, item)
 
-    /** 「＋」添加面板：只列 App 内功能（资产页的链接在记账页卡片上 📌 钉入） */
+    /**
+     * 「＋」添加面板：App 内功能 + 自定义链接（名称+网址，走 LinkRouter.normalize，
+     * 小红书分享链/深链/网页/app:// 伪协议都能自动识别，点击时由 ShortcutRouter 分发）
+     */
     private fun showShortcutPicker() {
         val catalog = listOf(
             HomeShortcutStore.Item("page", "add", "记一笔", "✏️"),
@@ -806,7 +809,53 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     Toast.makeText(this, "已经在首页了", Toast.LENGTH_SHORT).show()
                 }
             }
+            .setNeutralButton("🔗 自定义链接") { _, _ -> showAddLinkDialog() }
             .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 添加自定义链接快捷位：名称 + 网址。id 用规范化后的 url，同网址自动去重 */
+    private fun showAddLinkDialog() {
+        val nameInput = EditText(this).apply {
+            hint = "名称，如：摸鱼日报"
+            setSingleLine()
+        }
+        val urlInput = EditText(this).apply {
+            hint = "网址，如 https://…（小红书/深链/app:// 均可）"
+            setSingleLine()
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            val p = (24 * resources.displayMetrics.density).toInt()
+            setPadding(p, p / 2, p, 0)
+            addView(nameInput)
+            addView(urlInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("自定义链接")
+            .setView(box)
+            .setPositiveButton("保存") { _, _ ->
+                val label = nameInput.text.toString().trim().ifBlank { "链接" }
+                val raw = urlInput.text.toString().trim()
+                if (raw.isBlank()) {
+                    Toast.makeText(this, "网址不能为空", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                // normalize 只做全角转半角；用户常直接粘裸域名（baidu.com），
+                // 没协议头存进去 WebView 加载会失败，这里补 https://
+                val url = LinkRouter.normalize(raw).let { n ->
+                    if (n.contains("://")) n else "https://$n"
+                }
+                val item = HomeShortcutStore.Item("link", url, label, "🔗", url)
+                if (HomeShortcutStore.add(this, item)) {
+                    renderShortcuts()
+                    Toast.makeText(this, "已添加「$label」，长按可拖动排序", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "这个链接已经在首页了", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("返回") { _, _ -> showShortcutPicker() }
+            .setOnCancelListener { showShortcutPicker() }
             .show()
     }
 
