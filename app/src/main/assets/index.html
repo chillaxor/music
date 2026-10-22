@@ -213,6 +213,7 @@
     font-variant-numeric:tabular-nums}
   .break-row .bk{font-weight:700;font-size:14px}
   .break-row .bk small{display:block;font-weight:400;font-size:11px;color:var(--sub)}
+  .break-row .bk-short{display:none} /* 短日期（10-22）只在手机端露出来，桌面端看完整日期 */
   .break-row .bspend{color:var(--loss);font-weight:700;text-align:right}
   .break-row .bincome{color:var(--profit);font-weight:700;text-align:right}
   .break-row .bnet{font-weight:700;text-align:right}
@@ -259,9 +260,12 @@
     .flow-form{grid-template-columns:1fr}
     .flow-item{font-size:13px}
     .fdate{flex:0 0 72px}
-    .break-row{grid-template-columns:1fr 1fr;gap:6px 10px}
-    .break-row .bk{grid-column:1/-1}
-    .break-row .bspend,.break-row .bincome,.break-row .bnet{text-align:left}
+    /* 每日统计：一天就一行（短日期+支出+收入+净额），不拆成日期/数值多行 */
+    .break-row{grid-template-columns:auto 1fr 1fr 1fr;gap:4px 8px;padding:8px 10px;font-size:12px}
+    .break-row .bk{font-size:12px;white-space:nowrap}
+    .break-row .bk-full,.break-row .bk small{display:none}
+    .break-row .bk-short{display:inline}
+    .break-row .bspend,.break-row .bincome,.break-row .bnet{text-align:right;font-size:12px}
     .range-pick{flex-direction:column;align-items:stretch;gap:6px}
     .range-pick input,.range-pick select{width:100%;padding:11px 10px;font-size:16px}
     .home-pick{flex-direction:column;align-items:flex-start;gap:2px}
@@ -1185,6 +1189,7 @@ function renderFlowList(){
     list.innerHTML='<div class="empty">还没有流水，记一笔试试</div>';
     if(tip)tip.textContent="";
     renderFlowSummary();
+    renderFlowBreak();
     return;
   }
   const rows=[];
@@ -1195,8 +1200,9 @@ function renderFlowList(){
     const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
     tip.innerHTML=on?("筛选出 <b>"+rows.length+"</b> / "+data.flows.length+" 条"):"共 <b>"+data.flows.length+"</b> 条流水";
   }
-  // 顶部收支卡片同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary）
+  // 顶部收支卡片 + 底部按日汇总同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary/renderFlowBreak）
   renderFlowSummary();
+  renderFlowBreak();
   if(!rows.length){list.innerHTML='<div class="empty">没有符合条件的流水</div>';return;}
   list.innerHTML=rows.map(([f,i])=>{
     const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
@@ -1281,11 +1287,15 @@ function renderFlowBreak(){
   const title=document.getElementById("breakTitle");
   if(!box)return;
   const rv=getRangeValue();
+  // 与顶部收支卡片同一规则：有搜索/筛选时，底部汇总也跟着只统计筛选结果（搜什么就汇总什么）；
+  // 没有任何筛选时，维持原来的日/月/年周期汇总
+  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.min!==""||flowFilter.max!=="");
   if(flowRange==="day"){
-    if(title)title.textContent=rv+" 当日明细";
-    const list=data.flows.filter(f=>f.date&&f.date.startsWith(rv))
-      .sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-    if(!list.length){box.innerHTML='<div class="liab-note">这一天没有流水</div>';return;}
+    if(title)title.textContent=filtering?"筛选结果明细":rv+" 当日明细";
+    let list=filtering?data.flows.slice():data.flows.filter(f=>f.date&&f.date.startsWith(rv));
+    if(filtering)list=list.filter(flowPass);
+    list=list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    if(!list.length){box.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的流水":"这一天没有流水")+'</div>';return;}
     box.innerHTML=list.map(f=>{
       const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
       const sign=f.type==="收入"?"+":(f.type==="转账"?"⇄":"−");
@@ -1301,10 +1311,11 @@ function renderFlowBreak(){
     }).join("");
     return;
   }
-  if(title)title.textContent=flowRange==="year"?(rv+" 按月汇总"):(rv+" 按日汇总");
+  if(title)title.textContent=filtering?("筛选结果按"+(flowRange==="year"?"月":"日")+"汇总"):(flowRange==="year"?(rv+" 按月汇总"):(rv+" 按日汇总"));
   const map={};
   data.flows.forEach(f=>{
-    if(!f.date||!f.date.startsWith(rv))return;
+    if(filtering){ if(!flowPass(f))return; }
+    else if(!f.date||!f.date.startsWith(rv))return;
     const k=flowRange==="year"?f.date.slice(0,7):f.date.slice(0,10);
     if(!map[k])map[k]={spend:0,income:0};
     const amt=pnum(f.amount);
@@ -1312,12 +1323,13 @@ function renderFlowBreak(){
     else if(f.type==="收入")map[k].income+=amt;
   });
   const keys=Object.keys(map).sort((a,b)=>b.localeCompare(a));
-  if(!keys.length){box.innerHTML='<div class="liab-note">'+(flowRange==="year"?"这一年":"这个月")+'还没有流水</div>';return;}
+  if(!keys.length){box.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的流水":(flowRange==="year"?"这一年":"这个月")+"还没有流水")+'</div>';return;}
   box.innerHTML=keys.map(k=>{
     const s=map[k].spend,i=map[k].income,n=i-s;
     let sub=flowRange==="year"?k.slice(5)+" 月":k.slice(8)+" 日";
+    const shortK=flowRange==="year"?k.slice(5)+"月":k.slice(5);
     return `<div class="break-row">
-      <div class="bk">${k}<small>${sub}</small></div>
+      <div class="bk"><span class="bk-full">${k}</span><span class="bk-short">${shortK}</span><small>${sub}</small></div>
       <div class="bspend">${fmt(s)}</div>
       <div class="bincome">${fmt(i)}</div>
       <div class="bnet ${n>=0?'pos':'neg'}">${n>=0?'+':''}${fmt(n)}</div>
