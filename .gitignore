@@ -29,3 +29,13 @@ icon_preview.png
 
 # 图标制作工作区（源图/去水印中间产物，不进仓库）
 tools/icon_work/
+
+# Gradle 用户主目录副本（本机构建缓存搬家用，非工程文件）
+.gradle-home/
+
+# 沙箱/构建探针调试文件（一次性验证产物）
+tools/W*.java
+tools/W*.class
+tools/child_rw_test.lock
+tools/java_write_test.txt
+ws_eval.py
