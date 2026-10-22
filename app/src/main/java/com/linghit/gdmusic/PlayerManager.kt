@@ -219,8 +219,10 @@ object PlayerManager {
             runCatching {
                 player.setMediaItem(MediaItem.fromUri(local)); player.prepare(); player.play()
             }.onFailure {
-                // 明确起播失败：停掉上一首，别让用户以为「还是固定那一首在响」
+                // 明确起播失败：停掉上一首并清掉它的媒体项，别让用户以为「还是固定那一首在响」，
+                // 也避免之后点播放/暂停时 resume 到旧歌（清空后 togglePlayPause 会重试当前歌）
                 runCatching { player.pause() }
+                runCatching { player.clearMediaItems() }
                 uiListener?.onStatus("播放失败：${it.message}")
             }
             return
@@ -244,16 +246,26 @@ object PlayerManager {
                 ensureForegroundStarted()
                 cacheDownload(song, apiBase)
             } catch (e: Exception) {
-                // 同上：起播失败要停掉正在响的上一首，并把错误暴露出来
+                // 同上：起播失败要停掉正在响的上一首并清掉它的媒体项，
+                // 之后点播放/暂停会重试当前歌（见 togglePlayPause）
                 runCatching { player.pause() }
+                runCatching { player.clearMediaItems() }
                 uiListener?.onStatus("播放失败：${e.message}")
             }
         }
     }
 
-    fun togglePlayPause() = runCatching {
-        if (player.isPlaying) player.pause()
-        else { if (player.duration > 0 && player.currentPosition >= player.duration) player.seekTo(0); player.play() }
+    fun togglePlayPause() {
+        if (player.isPlaying) { player.pause(); return }
+        // 播放器里还没有媒体项（冷启动恢复的 current / 上次起播失败）时，直接 play() 是空操作——
+        // 用户点了播放毫无反应，只能切下一首才响。有当前歌就重新走起播流程把它加载进去。
+        val cur = current
+        if (cur != null && (player.playbackState == Player.STATE_IDLE || player.mediaItemCount == 0)) {
+            startPlayback(cur)
+            return
+        }
+        if (player.duration > 0 && player.currentPosition >= player.duration) player.seekTo(0)
+        player.play()
     }
     fun seekTo(ms: Long) = runCatching { player.seekTo(ms) }
 
