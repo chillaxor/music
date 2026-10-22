@@ -49,6 +49,7 @@ object ShortcutRouter {
                 "video" -> go(Intent(ctx, VideoActivity::class.java))
                 "netasset" -> go(Intent(ctx, NetAssetActivity::class.java))
                 "rail" -> go(Intent(ctx, RailActivity::class.java))
+                "reminder" -> go(Intent(ctx, ReminderActivity::class.java))
                 "downloads" -> go(Intent(ctx, DownloadedActivity::class.java))
                 "favorites" -> go(Intent(ctx, FavoritesActivity::class.java))
                 "settings" -> go(Intent(ctx, SettingsActivity::class.java))

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/primary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="14dp">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/backBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="‹ 返回"
+                android:textSize="16sp"
+                android:textColor="@color/on_primary"
+                android:paddingEnd="12dp"/>
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="⏰ 提醒"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"/>
+            <TextView
+                android:id="@+id/addFestivalBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎂 节日"
+                android:textSize="14sp"
+                android:textColor="@color/on_primary"
+                android:padding="8dp"/>
+            <TextView
+                android:id="@+id/addTrainBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚄 车票"
+                android:textSize="14sp"
+                android:textColor="@color/on_primary"
+                android:padding="8dp"/>
+            <TextView
+                android:id="@+id/addBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="＋ 新建"
+                android:textSize="14sp"
+                android:textColor="@color/on_primary"
+                android:padding="8dp"/>
+        </LinearLayout>
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingTop="10dp">
+            <LinearLayout
+                android:id="@+id/reminderTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"/>
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/reminderList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"
+        android:clipToPadding="false"/>
+
+    <TextView
+        android:id="@+id/emptyText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="还没有提醒\n点右上角「＋ 新建」添加生日，或用「🎂 节日」一键添加"
+        android:textSize="15sp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone"/>
+</LinearLayout>

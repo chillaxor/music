@@ -48,6 +48,10 @@ class SplashActivity : AppCompatActivity() {
         super.onCreate(b)
         setContentView(R.layout.activity_splash)
 
+        // 每次冷启动兜底重排提醒闹钟（开机广播之外的保险：数据可能在本进程外被改过）
+        ReminderNotif.ensureChannel(this)
+        ReminderScheduler.rescheduleAll(this)
+
         val bg = findViewById<ImageView>(R.id.splashBg)
         val center = findViewById<LinearLayout>(R.id.splashCenter)
         val caption = findViewById<TextView>(R.id.splashCaption)
