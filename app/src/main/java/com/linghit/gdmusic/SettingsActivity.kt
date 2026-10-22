@@ -76,6 +76,9 @@ class SettingsActivity : AppCompatActivity() {
         // ---- 启动背景图 ----
         setupSplashBg()
 
+        // ---- 每日一图（首页全屏沉浸背景） ----
+        setupDailyImage()
+
         // 版本与构建时间：装没装上新包，来这里看一眼就知道（崩溃日志头部也会带同样的信息）
         findViewById<TextView>(R.id.versionInfo).text =
             "GD音乐 版本 ${BuildConfig.VERSION_NAME} · 构建 ${BuildConfig.BUILD_TIME}"
@@ -142,6 +145,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onResume()
         floatBtnRefresh?.invoke()
         splashRefresh?.invoke()
+        dailyRefresh?.invoke()
     }
 
     private var floatBtnRefresh: (() -> Unit)? = null
@@ -251,6 +255,56 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private var splashRefresh: (() -> Unit)? = null
+
+    /**
+     * 每日一图：SAF 选图片文件夹并持久化授权。首页按「年内第几天 % 图数」自动轮换，
+     * 点首页问候行可手动换一张。文件夹里没图/授权失效时首页回落主题底色。
+     */
+    private fun setupDailyImage() {
+        val pickBtn = findViewById<MaterialButton>(R.id.dailyPick)
+        val resetBtn = findViewById<MaterialButton>(R.id.dailyReset)
+        val statusText = findViewById<TextView>(R.id.dailyStatus)
+
+        fun refresh() {
+            val uri = DailyImageStore.treeUri(this)
+            val n = DailyImageStore.imageCount(this)
+            pickBtn.text = if (uri != null) "更换每日一图文件夹…" else "选择每日一图文件夹…"
+            resetBtn.isVisible = uri != null
+            statusText.text = when {
+                uri == null -> "未设置：首页显示主题渐变底色。选一个文件夹即可开启每日一图。"
+                n == 0 -> "已选文件夹「${DailyImageStore.folderName(this)}」，但里面还没有图片\n支持的格式：jpg / jpeg / png / webp / bmp，往文件夹里扔图即生效"
+                else -> "已选文件夹「${DailyImageStore.folderName(this)}」，共 $n 张图\n每天 0 点自动换一张，放 $n 张就 $n 天一个循环；点首页问候行可手动换"
+            }
+        }
+
+        pickBtn.setOnClickListener { dailyFolderLauncher.launch(null) }
+        resetBtn.setOnClickListener {
+            DailyImageStore.setTreeUri(this, null)
+            Toast.makeText(this, "已停用每日一图", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+        dailyRefresh = { runCatching { refresh() } }
+        refresh()
+    }
+
+    private var dailyRefresh: (() -> Unit)? = null
+
+    /** 每日一图文件夹选择回调：持久化授权 + 落盘记录 */
+    private val dailyFolderLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+            if (uri == null) return@registerForActivityResult
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            DailyImageStore.setTreeUri(this, uri)
+            val n = DailyImageStore.imageCount(this)
+            Toast.makeText(
+                this,
+                if (n > 0) "已选好，共 $n 张图，回首页生效" else "这个文件夹里还没有图片",
+                Toast.LENGTH_SHORT
+            ).show()
+            dailyRefresh?.invoke()
+        }
 
     /** 相册选图回调：GetContent 无运行时权限；受限解码后落盘并自动开启 */
     private val splashPicker =

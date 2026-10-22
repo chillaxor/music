@@ -109,7 +109,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var goldBar: View
     private lateinit var railBar: View
     private lateinit var railHome: TextView
-    private lateinit var header: View
+    /** 兜底底色：无每日一图时露出的主题渐变（原头部渐变改为全屏通幅） */
+    private lateinit var fallbackBg: View
+    /** 每日一图（全屏沉浸背景）：用户文件夹按日轮换，点问候行手动换 */
+    private lateinit var dailyImage: ImageView
+    private lateinit var greetingRow: View
+    private lateinit var greetingText: TextView
+    private lateinit var dateText: TextView
     // —— 首页自定义入口拖动排序状态（长按抓起 → 移动=实时换序，按住不动=删除） ——
     private var dragChip: TextView? = null
     private var dragIndex = -1
@@ -193,6 +199,22 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         } catch (e: Exception) { /* 少数机型不授予持久权限，本次仍可用 */ }
         prefs.edit().putString("lastTreeUri", uri.toString()).apply()
         scope.launch(Dispatchers.IO) { downloadToTree(song, uri) }
+    }
+
+    /** 每日一图文件夹选择器：SAF 选一次并持久化授权，之后往文件夹扔图即自动轮换 */
+    private val dailyFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        DailyImageStore.setTreeUri(this, uri)
+        loadDailyImage()
+        val n = DailyImageStore.imageCount(this)
+        Toast.makeText(
+            this,
+            if (n > 0) "已选好，共 $n 张图，每天自动轮换" else "这个文件夹里还没有图片",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     override fun onCreate(b:Bundle?) {
@@ -297,8 +319,33 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         goldBar = findViewById(R.id.goldBar)
         railBar = findViewById(R.id.railBar)
         railHome = findViewById(R.id.railHome)
-        header = findViewById(R.id.header)
-        applyThemeColors() // 按当前主题重画头部渐变与播放按钮圆圈（drawable 无法用 ?attr 上色）
+        fallbackBg = findViewById(R.id.themeFallbackBg)
+        dailyImage = findViewById(R.id.dailyImage)
+        greetingRow = findViewById(R.id.greetingRow)
+        greetingText = findViewById(R.id.greetingText)
+        dateText = findViewById(R.id.dateText)
+        applyThemeColors() // 按当前主题重画兜底底色与播放按钮圆圈（drawable 无法用 ?attr 上色）
+        // 每日一图：载入今天该显示的那张；点问候行=手动换一张，长按=更换图片文件夹
+        loadDailyImage()
+        greetingRow.setOnClickListener {
+            if (DailyImageStore.imageCount(this) == 0) {
+                dailyFolderLauncher.launch(null)
+                return@setOnClickListener
+            }
+            if (DailyImageStore.nextManual(this) != null) {
+                loadDailyImage()
+                Toast.makeText(this, "已换一张，0 点后恢复自动轮换", Toast.LENGTH_SHORT).show()
+            }
+        }
+        greetingRow.setOnLongClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("每日一图")
+                .setMessage("图片放在你选的文件夹里，每天 0 点自动轮换；点首页问候行可手动换一张。")
+                .setPositiveButton("更换文件夹") { _, _ -> dailyFolderLauncher.launch(null) }
+                .setNegativeButton("取消", null)
+                .show()
+            true
+        }
         // 主题切换：弹出选色面板（12 套色板，含渐变），选中即应用并重建页面
         findViewById<View>(R.id.themeBtn).setOnClickListener { showThemePicker() }
         // 等宽 chip 需要实测行宽：onCreate 时 shortcutRow.width 还是 0，
@@ -383,6 +430,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::goldIntl.isInitialized) loadGoldPrice()
         // 高铁往返状态条：从高铁页保存后回到首页，同步「距上次离家 N 天」
         if (::railBar.isInitialized) loadRailHomeStat()
+        // 每日一图：跨天自动轮换（在后台过 0 点回来时刷新），文件夹换过也在这里生效
+        if (::dailyImage.isInitialized) loadDailyImage()
     }
 
     /** 渲染首页自定义资源位（不限量；点=进入，长按抓起可拖动排序，按住不动=删除） */
@@ -427,22 +476,17 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /**
-     * 按当前主题重画头部背景与播放按钮圆圈（这两个是 drawable，无法用 ?attr 上色，故代码生成）。
-     * 渐变套：header 与播放圈走 primary → primaryEnd 的斜向渐变；纯色套：primary → primaryDark。
-     * 注意：头部底部 24dp 圆弧原本由 bg_header_gradient.xml 提供，代码换背景后会丢，
-     * 所以这里用 cornerRadii 只圆底部两角，把圆弧补回来。
+     * 按当前主题重画兜底底色与播放按钮圆圈（这两个是 drawable，无法用 ?attr 上色，故代码生成）。
+     * 渐变套：兜底底色与播放圈走 primary → primaryEnd 的斜向渐变；纯色套：primary → primaryDark。
+     * 全屏沉浸版式下兜底底色是通幅的（不再有头部底部圆弧，圆弧只属于旧版式）。
      */
     private fun applyThemeColors() {
         val pack = ThemePrefs.currentPack(this)
         val end = pack.primaryEnd
-        val corner = 24 * resources.displayMetrics.density
-        header.background = GradientDrawable(
+        fallbackBg.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             if (end != null) intArrayOf(pack.primary, end) else intArrayOf(pack.primary, pack.primaryDark)
-        ).apply {
-            // 只圆底部两角，保住头部原来的圆弧
-            cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, corner, corner, corner, corner)
-        }
+        )
         playPauseBtn.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             if (end != null) {
@@ -617,6 +661,55 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (sb.isEmpty()) { railBar.visibility = View.GONE; return }
         railHome.text = sb.toString()
         railBar.visibility = View.VISIBLE
+    }
+
+    // ==================== 每日一图（全屏沉浸背景） ====================
+
+    /**
+     * 载入今天该显示的每日一图：
+     *  - 文件夹没配/没图/图坏了 → 隐藏 dailyImage，露出主题渐变兜底底色
+     *  - 有图 → 采样解码（长边 1600，防 OOM）铺满全屏，并刷新问候语与日期
+     * 手动切过图时 DailyImageStore 会记住当天的手动序号，跨天自动失效。
+     */
+    private fun loadDailyImage() {
+        if (!::dailyImage.isInitialized) return
+        greetingText.text = greetingByTime()
+        val imgs = DailyImageStore.listImages(this)
+        if (imgs.isEmpty()) {
+            dailyImage.setImageDrawable(null)
+            dailyImage.visibility = View.GONE
+            dateText.text = "未设置每日一图 · 点这里选图片文件夹"
+            return
+        }
+        val idx = DailyImageStore.todayIndex(this).coerceAtLeast(0)
+        val uri = imgs[idx]
+        val cal = java.util.Calendar.getInstance()
+        val week = listOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+            .getOrElse(cal.get(java.util.Calendar.DAY_OF_WEEK) - 1) { "" }
+        dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week · 每日一图"
+        scope.launch {
+            val bmp = withContext(Dispatchers.IO) { ImagePrep.decodeSampled(this@MainActivity, uri, 1600) }
+            if (bmp != null) {
+                dailyImage.setImageBitmap(bmp)
+                dailyImage.visibility = View.VISIBLE
+            } else {
+                // 单张图解码失败：退兜底底色，别留一张黑的
+                dailyImage.setImageDrawable(null)
+                dailyImage.visibility = View.GONE
+            }
+        }
+    }
+
+    /** 时段问候：早上好 / 中午好 / 下午好 / 晚上好 / 夜深了 */
+    private fun greetingByTime(): String {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when (h) {
+            in 5..10 -> "早上好"
+            in 11..13 -> "中午好"
+            in 14..17 -> "下午好"
+            in 18..23 -> "晚上好"
+            else -> "夜深了"
+        }
     }
 
     // ==================== 首页自定义入口：拖动排序 ====================
@@ -1285,7 +1378,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 否则自动切歌/点歌后高亮停在旧歌，出现「显示在播 A、实际响 B」
         refreshQueue()
     }
-    // 播放条已去掉封面图（单行布局），封面回调不再使用
+    // 正在播放卡封面统一用默认音符图，不接在线封面回调
     override fun onCover(bitmap: Bitmap?) {}
     override fun onLyrics(text: String) { DesktopLyric.setLyrics(text) }
     override fun onStatus(text: String) { status.text = text }
@@ -1383,9 +1476,9 @@ class QueueAdapter(
             val cur=PlayerManager.current
             val isCur=!PlayerManager.tempPlaying && cur!=null && (cur===x || cur.key()==x.key())
             idx.text=(position+1).toString()
-            idx.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_surface_variant))
+            idx.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_dark_dim))
             n.text=x.name
-            n.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_surface))
+            n.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_dark))
             a.text=if(x.artist.isBlank()) x.album else "${x.artist} · ${x.album}"
             playing.visibility=if(isCur) View.VISIBLE else View.GONE
             root.setOnClickListener{ onPlay(position, x) }

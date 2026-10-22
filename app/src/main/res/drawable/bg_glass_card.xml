@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- 玻璃卡：半透明深底 + 细白描边，浮在每日一图上用 -->
+    <solid android:color="#991C1A18"/>
+    <corners android:radius="16dp"/>
+    <stroke android:width="0.5dp" android:color="#33FFFFFF"/>
+</shape>

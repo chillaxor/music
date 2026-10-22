@@ -428,6 +428,61 @@
                         android:layout_marginTop="6dp"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+            <!-- 每日一图：首页全屏沉浸背景，图片文件夹按日轮换 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                xmlns:app="http://schemas.android.com/apk/res-auto"
+                android:layout_marginTop="14dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="每日一图"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="选一个装图片的文件夹（如相册里自建的「从前慢」相册/文件夹）。首页会把图铺满全屏当背景，每天 0 点自动换一张；之后往文件夹里加图删图即可，不用再进 App。"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/dailyPick"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="12dp"
+                        android:text="选择每日一图文件夹…"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/dailyReset"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone"
+                        android:text="停用每日一图（恢复主题底色）"/>
+
+                    <TextView
+                        android:id="@+id/dailyStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
             <!-- 版本信息：手机上直接确认装的是哪一版，排查"改了没生效/装的是旧包" -->
             <TextView
                 android:id="@+id/versionInfo"
