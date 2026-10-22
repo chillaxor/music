@@ -34,6 +34,8 @@ body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-syste
 .badge{background:var(--soft); color:var(--accent); border-radius:8px; padding:1px 7px; font-size:11px; font-weight:600;}
 .gap{color:var(--muted);}
 .del{margin-left:auto; color:#C0492F; font-size:12px; font-weight:600; background:none; border:none;}
+.edit{color:var(--accent); font-size:12px; font-weight:600; background:none; border:none;}
+.edit+.del{margin-left:0;}
 .chart{display:flex; align-items:flex-end; gap:12px; height:130px; padding:0 4px; border-bottom:1px solid var(--line);}
 .bar{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;}
 .bar i{display:block; width:60%; background:var(--accent); border-radius:5px 5px 0 0;}
@@ -230,32 +232,65 @@ body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-syste
     if(x.cost) meta += '<span>¥'+Number(x.cost).toLocaleString()+'</span>';
     return '<div class="item'+(planned?' planned':'')+'"><span class="dot"></span>'+
       '<div class="row1">'+range+'</div>'+
-      '<div class="row2">'+meta+'<button class="del" data-id="'+x.id+'">删除</button></div></div>';
+      '<div class="row2">'+meta+'<button class="edit" data-id="'+x.id+'">编辑</button><button class="del" data-id="'+x.id+'">删除</button></div></div>';
   }
 
   // 事件
+  var editingId = null; // 非空 = 正在编辑这条行程
+  function resetFormMode(){
+    editingId = null;
+    $('#saveBtn').textContent = '保存';
+  }
+  function startEdit(id){
+    var t = null;
+    for(var i=0;i<data.trips.length;i++){ if(String(data.trips[i].id)===String(id)){ t=data.trips[i]; break; } }
+    if(!t) return;
+    editingId = t.id;
+    $('#f_out').value = t.out||'';
+    $('#f_back').value = t.back||'';
+    $('#f_note').value = t.note||'';
+    $('#f_train').value = t.train||'';
+    $('#f_cost').value = t.cost||'';
+    $('#saveBtn').textContent = '保存修改';
+    $('#form').classList.add('show');
+    window.scrollTo(0, document.body.scrollHeight);
+  }
   $('#addBtn').onclick = function(){
+    resetFormMode();
     $('#form').classList.add('show');
     $('#f_out').value=''; $('#f_back').value=''; $('#f_note').value=''; $('#f_train').value=''; $('#f_cost').value='';
     window.scrollTo(0, document.body.scrollHeight);
   };
-  $('#cancelBtn').onclick = function(){ $('#form').classList.remove('show'); };
+  $('#cancelBtn').onclick = function(){ resetFormMode(); $('#form').classList.remove('show'); };
   $('#saveBtn').onclick = function(){
     var out = $('#f_out').value;
     if(!out){ alert('请填出发日'); return; }
-    data.trips.push({
-      id: Date.now(),
+    var rec = {
       out: out,
       back: $('#f_back').value||'',
       note: $('#f_note').value.trim(),
       train: $('#f_train').value.trim(),
       cost: $('#f_cost').value||''
-    });
+    };
+    if(editingId!=null){
+      // 编辑：原地替换，保留 id
+      for(var i=0;i<data.trips.length;i++){
+        if(String(data.trips[i].id)===String(editingId)){
+          data.trips[i] = Object.assign({}, data.trips[i], rec);
+          break;
+        }
+      }
+    } else {
+      rec.id = Date.now();
+      data.trips.push(rec);
+    }
     data.trips.sort(function(a,b){ return pdate(a.out)-pdate(b.out); });
-    save(); render(); $('#form').classList.remove('show');
+    save(); render(); resetFormMode(); $('#form').classList.remove('show');
   };
   $('#tl').onclick = function(e){
-    var b = e.target.closest('.del'); if(!b) return;
+    var b = e.target.closest('.edit');
+    if(b){ startEdit(b.getAttribute('data-id')); return; }
+    b = e.target.closest('.del'); if(!b) return;
     var id = b.getAttribute('data-id');
     data.trips = data.trips.filter(function(x){ return String(x.id)!==id; });
     save(); render();
