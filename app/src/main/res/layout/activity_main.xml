@@ -146,7 +146,7 @@
                 android:includeFontPadding="false"/>
         </LinearLayout>
 
-        <!-- 高铁往返状态条：距上次回家 N 天（有记录才显示，融入头部渐变） -->
+        <!-- 高铁往返状态条：距上次离家 N 天（有记录才显示，融入头部渐变） -->
         <LinearLayout
             android:id="@+id/railBar"
             android:layout_width="match_parent"

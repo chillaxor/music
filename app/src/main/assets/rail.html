@@ -147,17 +147,27 @@ body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-syste
     var trips = data.trips.slice();
     var past = trips.filter(function(x){ return x.out && pdate(x.out)<=t; }).sort(function(a,b){ return pdate(b.out)-pdate(a.out); });
     var planned = trips.filter(function(x){ return x.out && pdate(x.out)>t; }).sort(function(a,b){ return pdate(a.out)-pdate(b.out); });
-    var last = past[0];
+    // 最近一次已出发的行程还没回来（back 为空或返程日还没到）→ 人还在家
+    var onTrip = past[0] && (!past[0].back || pdate(past[0].back)>t);
+    // 已结束的行程（有返程日且返程日<=今天），按返程日取最近一次
+    var done = trips.filter(function(x){ return x.back && pdate(x.back)<=t; }).sort(function(a,b){ return pdate(b.back)-pdate(a.back); });
 
-    // hero：距上次回家
+    // hero：距上次离家（按返程日 back 算；人还在家则显示正在家）
     var hero = '';
-    if(last){
-      var ds = ddays(t, pdate(last.out));
-      var sinceTxt = ds<=0 ? '今天刚回 🎉' : ds+' 天';
-      var f = festival(last.out);
-      hero += '<div class="lbl">距上次回家</div>';
+    if(onTrip){
+      var hp = ddays(t, pdate(past[0].out));
+      hero += '<div class="lbl">正在家 🏠</div>';
+      hero += '<div class="big">第 '+(hp+1)+' 天</div>';
+      hero += '<div class="sub">上次：'+past[0].out+' 出发'+(past[0].back?'　·　计划 '+past[0].back+' 返程':'')+'</div>';
+    } else if(done[0]){
+      var lastD = done[0];
+      var ds = ddays(t, pdate(lastD.back));
+      var sinceTxt = ds<=0 ? '今天刚走' : ds+' 天';
+      var f = festival(lastD.back);
+      var homeDays = ddays(pdate(lastD.back), pdate(lastD.out));
+      hero += '<div class="lbl">距上次离家</div>';
       hero += '<div class="big">'+sinceTxt+'</div>';
-      hero += '<div class="sub">上次：'+last.out+(f?'（'+f+'）':'')+'　·　距今 '+Math.floor(ds/7)+' 周 '+(ds%7)+' 天</div>';
+      hero += '<div class="sub">上次离家：'+lastD.back+(f?'（'+f+'）':'')+'　·　在家 '+(homeDays>0?homeDays+' 天':'不到 1 天')+'　·　距今 '+Math.floor(ds/7)+' 周 '+(ds%7)+' 天</div>';
     } else {
       hero += '<div class="lbl">还没记录过回家</div>';
       hero += '<div class="big">👋</div>';

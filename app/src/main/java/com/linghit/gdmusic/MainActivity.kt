@@ -215,10 +215,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         lyricFloatBtn=findViewById(R.id.lyricFloatBtn)
         playerBar=findViewById(R.id.playerBar)
         playerBar.visibility=View.GONE // 首页/搜索时若无正在播放的歌，先隐藏播放条
-        playPauseBtn.setOnClickListener{
-            if(player.isPlaying){ player.pause() }
-            else { if(player.duration>0 && player.currentPosition>=player.duration) player.seekTo(0); player.play() }
-        }
+        // 播放/暂停统一走 PlayerManager.togglePlayPause：冷启动恢复的「当前歌」可能还没加载进
+        // 播放器（媒体项为空），直接 player.play() 是空操作、点了没反应，里面会兜底重新起播
+        playPauseBtn.setOnClickListener{ PlayerManager.togglePlayPause() }
         // 播放条切歌：上一首/下一首（与歌词页、桌面歌词共用 PlayerManager 队列）
         prevBtn.setOnClickListener { PlayerManager.skipPrev() }
         nextBtn.setOnClickListener { PlayerManager.skipNext() }
@@ -306,7 +305,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 先按估算渲染一版，布局完成后再用真实宽度精确渲染一次
         renderShortcuts()
         shortcutRow.post { renderShortcuts() }
-        // 高铁往返状态条：首页头部「距上次回家 N 天」（有记录才显示）
+        // 高铁往返状态条：首页头部「距上次离家 N 天」（有记录才显示）
         loadRailHomeStat()
         findViewById<View>(R.id.addShortcutBtn).setOnClickListener { showShortcutPicker() }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
@@ -382,7 +381,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::shortcutRow.isInitialized) renderShortcuts()
         // 切回前台自动刷新顶部金价（首次进 App 也走这里；接口失败则保持隐藏）
         if (::goldIntl.isInitialized) loadGoldPrice()
-        // 高铁往返状态条：从高铁页保存后回到首页，同步「距上次回家 N 天」
+        // 高铁往返状态条：从高铁页保存后回到首页，同步「距上次离家 N 天」
         if (::railBar.isInitialized) loadRailHomeStat()
     }
 
@@ -565,7 +564,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /**
-     * 首页头部高铁状态条：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次回家 N 天」，
+     * 首页头部高铁状态条：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次离家 N 天」（按返程日 back 算），
      * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录则整条隐藏。
      */
     private fun loadRailHomeStat() {
@@ -579,24 +578,36 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
         }
         val today = cal.time
-        val outs = try {
+        // 每条行程的 (出发日, 返程日)；返程日可能为空（单程/正在家/计划）
+        val pairs = try {
             val arr = org.json.JSONArray(
                 org.json.JSONObject(raw).optJSONArray("trips").toString()
             )
             (0 until arr.length()).mapNotNull { i ->
-                arr.getJSONObject(i).optString("out", "").takeIf { it.isNotBlank() }
+                val o = arr.getJSONObject(i)
+                val outS = o.optString("out", "").takeIf { it.isNotBlank() }
+                    ?.let { runCatching { sdf.parse(it) }.getOrNull() } ?: return@mapNotNull null
+                val backS = o.optString("back", "").takeIf { it.isNotBlank() }
                     ?.let { runCatching { sdf.parse(it) }.getOrNull() }
+                outS to backS
             }
-        } catch (e: Exception) { emptyList<java.util.Date>() }
-        if (outs.isEmpty()) { railBar.visibility = View.GONE; return }
-        val past = outs.filter { !it.after(today) }
-        val next = outs.filter { it.after(today) }.minOrNull()
+        } catch (e: Exception) { emptyList<Pair<java.util.Date, java.util.Date?>>() }
+        if (pairs.isEmpty()) { railBar.visibility = View.GONE; return }
+        // 最近一次已出发的行程还没回来（back 为空或返程日还没到）→ 人还在家
+        val latestPast = pairs.filter { (out, _) -> !out.after(today) }.maxByOrNull { it.first }
+        val latestBack = latestPast?.second
+        val onTrip = latestPast != null && (latestBack == null || latestBack.after(today))
+        // 已结束行程（有返程日且<=今天）里取最近一次返程日 = 距上次离家
+        val lastBack = pairs.mapNotNull { (out, back) -> back?.takeIf { !out.after(today) && !it.after(today) } }
+            .maxOrNull()
+        val next = pairs.map { it.first }.filter { it.after(today) }.minOrNull()
         val sb = StringBuilder()
-        if (past.isNotEmpty()) {
-            val last = past.maxOrNull()!!
-            val daysSince = ((today.time - last.time) / 86400000L).toInt()
-            sb.append("🚄 距上次回家 ")
-                .append(if (daysSince <= 0) "今天刚回 🎉" else "$daysSince 天")
+        if (onTrip) {
+            sb.append("🚄 正在家 🏠")
+        } else if (lastBack != null) {
+            val daysSince = ((today.time - lastBack.time) / 86400000L).toInt()
+            sb.append("🚄 距上次离家 ")
+                .append(if (daysSince <= 0) "今天刚走" else "$daysSince 天")
         }
         if (next != null) {
             if (sb.isNotEmpty()) sb.append("　·　")
@@ -843,6 +854,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
             HomeShortcutStore.Item("page", "netasset", "记账本", "📒"),
             HomeShortcutStore.Item("page", "rail", "高铁往返", "🚄"),
+            HomeShortcutStore.Item("page", "reminder", "提醒", "⏰"),
             HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
             HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
             HomeShortcutStore.Item("page", "settings", "设置", "⚙")
@@ -930,8 +942,29 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             queueAdapter.submit(q)
             queueEmpty.visibility=if(q.isEmpty()) View.VISIBLE else View.GONE
             queueList.visibility=if(q.isEmpty()) View.GONE else View.VISIBLE
+            scrollQueueToCurrent(q)
         }
         if(Looper.myLooper()==Looper.getMainLooper()) block() else uiHandler.post(block)
+    }
+
+    /**
+     * 播放列表自动定位到正在播放的那首：起播/切歌/切回列表页时不用用户自己翻。
+     * 临时播放期间列表原样没动、外面那首不在队列里，不滚。
+     *
+     * ⚠️ 必须用 scrollToPositionWithOffset(pos, 0)，不能用 scrollToPosition：
+     * 后者在目标项「已可见」时只保证完全可见、不滚动（LinearLayoutManager
+     * updateAnchorFromPendingData 的可见分支），而 notifyDataSetChanged 后 RV 往往
+     * 刚从 0 号位布完局、目标项恰在可见区 → 定位静默失效。
+     * 带 offset=0 才会无条件把该项锚定到列表顶部。
+     * 也不 post：同步调用可赶上 submit 触发的同一次布局。
+     */
+    private fun scrollQueueToCurrent(q:List<Song>){
+        if(PlayerManager.tempPlaying) return
+        val cur=PlayerManager.current ?: return
+        val pos=q.indexOfFirst{ it===cur || it.key()==cur.key() }
+        if(pos<0) return
+        val lm=queueList.layoutManager as? LinearLayoutManager ?: return
+        runCatching{ lm.scrollToPositionWithOffset(pos, 0) }
     }
 
     private fun applyPlayMode() {
