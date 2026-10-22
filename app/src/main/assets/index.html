@@ -1589,7 +1589,9 @@ document.getElementById("importFile").onchange=e=>{
       liabs:Array.isArray(obj.liabs)?obj.liabs:[],
       flows:Array.isArray(obj.flows)?obj.flows:[],
       events:Array.isArray(obj.events)?obj.events:[],
-      links:Array.isArray(obj.links)?obj.links:[]
+      links:Array.isArray(obj.links)?obj.links:[],
+      // 高铁往返数据与记账共用一份 payload：备份文件里有就恢复，没有（旧备份）就保留当前的高铁数据，别冲掉
+      rail:(obj.rail&&typeof obj.rail==="object")?obj.rail:(data.rail||{home:"",away:"",trips:[]})
     };
     save();render();
     alert("导入成功："+data.assets.length+" 项资产、"+data.liabs.length+" 项负债"+(data.flows.length?"、"+data.flows.length+" 条流水":""));

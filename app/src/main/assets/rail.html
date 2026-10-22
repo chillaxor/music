@@ -253,7 +253,8 @@ body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-syste
   $('#home').onchange = function(){ data.home=$('#home').value.trim(); save(); };
   $('#away').onchange = function(){ data.away=$('#away').value.trim(); save(); };
   $('#exportBtn').onclick = function(){
-    if(window.Android && window.Android.exportData){ try{ window.Android.exportData(JSON.stringify(data)); }catch(e){} }
+    // 全量备份（含记账数据）：文件可在记账页「导入备份」恢复；无参，原生侧导出整份 payload
+    if(window.Android && window.Android.exportData){ try{ window.Android.exportData(); }catch(e){} }
   };
 
   load(); render();

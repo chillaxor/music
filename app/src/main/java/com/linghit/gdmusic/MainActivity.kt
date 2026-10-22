@@ -565,12 +565,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /**
-     * 首页头部高铁状态条：读 rail_store（高铁页落盘的数据），算「距上次回家 N 天」，
+     * 首页头部高铁状态条：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次回家 N 天」，
      * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录则整条隐藏。
      */
     private fun loadRailHomeStat() {
         if (!::railBar.isInitialized) return
-        val raw = getSharedPreferences("rail_store", Context.MODE_PRIVATE).getString("payload", "") ?: ""
+        // 高铁数据与记账共用 networth_store（payload.rail 键），见 RailStore
+        val raw = RailStore.readRail(this).toString()
         if (raw.isBlank()) { railBar.visibility = View.GONE; return }
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         val cal = java.util.Calendar.getInstance().apply {
