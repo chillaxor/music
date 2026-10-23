@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- WifiLock 必需：缺此权限时 wifiLock.acquire() 会抛 SecurityException 直接崩进程 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 悬浮按钮长按展开气泡时的震动反馈（普通权限，安装即授予） -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <!-- 桌面歌词悬浮窗：在其他 App 之上显示歌词，需用户在设置里授权 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
@@ -71,7 +73,7 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="floating_button"/>
         </service>
-        <!-- 悬浮按钮配置页：透明底弹选择框，长按小球进入 -->
+        <!-- 悬浮按钮配置页：透明底弹配置框，从设置页「配置悬浮按钮」进入（管理点击动作 + 长按气泡 + 图标） -->
         <activity
             android:name=".FloatConfigActivity"
             android:label="悬浮按钮动作"

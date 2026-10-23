@@ -47,6 +47,11 @@ object ShortcutRouter {
             }
             else -> when (item.target) {
                 "video" -> go(Intent(ctx, VideoActivity::class.java))
+                // 首页：CLEAR_TOP 复用已有实例，不叠新页面（从 Service/悬浮球启动时尤其重要）
+                "home" -> go(
+                    Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                )
                 "netasset" -> go(Intent(ctx, NetAssetActivity::class.java))
                 "rail" -> go(Intent(ctx, RailActivity::class.java))
                 "reminder" -> go(Intent(ctx, ReminderActivity::class.java))

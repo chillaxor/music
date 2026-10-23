@@ -162,7 +162,11 @@ class SettingsActivity : AppCompatActivity() {
             val a = FloatButtonStore.action(this)
             val linkPart = if (a.type == "link" && a.url.isNotBlank()) "（${a.url}）" else ""
             val iconPart = if (FloatButtonStore.iconPath(this).isNotBlank()) " · 自定义图标" else ""
-            statusText.text = "$perm\n当前动作：${a.emoji} ${a.label}$linkPart$iconPart"
+            val bs = FloatButtonStore.bubbles(this)
+            val bubblePart = if (bs.isEmpty()) "无（长按不展开）"
+                else bs.joinToString(" ") { "${it.emoji}${it.label}" }
+            statusText.text =
+                "$perm\n当前动作：${a.emoji} ${a.label}$linkPart$iconPart\n长按气泡：$bubblePart"
         }
         floatBtnRefresh = { runCatching { refresh() } }
 
@@ -175,7 +179,7 @@ class SettingsActivity : AppCompatActivity() {
                 if (!DesktopLyric.hasPermission()) { DesktopLyric.requestPermission(); return@setOnClickListener }
                 FloatButtonStore.setEnabled(this, true)
                 FloatButtonService.start(this)
-                Toast.makeText(this, "已开启，长按小球可改动作", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已开启，长按小球展开气泡，改配置去本页", Toast.LENGTH_SHORT).show()
             }
             refresh()
         }

@@ -346,7 +346,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:layout_marginTop="8dp"
-                        android:text="配置跳转动作"/>
+                        android:text="配置悬浮按钮"/>
 
                     <TextView
                         android:id="@+id/floatBtnStatus"
