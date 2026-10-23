@@ -449,13 +449,15 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         shortcutRow.removeAllViews()
         val d = resources.displayMetrics.density
         val badgeSize = (48 * d).toInt()
-        val marginH = (4 * d).toInt()
+        val marginH = (5 * d).toInt()
         val marginV = (4 * d).toInt()
         // ⚠️ 必须减 6 不是 5：一行 6 个 cell 每个都带右 margin，FlowLayout
         // 换行判断 x+cw>行宽 时第 6 个 cell 的右 margin 同样占宽度；少减一份
         // 会让 6 个 cell 总宽超行宽几个 px，第 6 个被挤到第二行。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
-        // marginH 4dp + 徽章 48dp：徽章间视觉间距 = (chipW-48)/2×2 + 4 ≈ 8dp（微松版）
+        // marginH 5dp + 徽章 48dp：徽章间视觉间距 = (chipW-48)/2×2 + marginH ≈ 8dp。
+        // ⚠️ 改 marginH 视觉间距几乎不变：格宽 chipW 跟着同步变小，互相抵消；
+        // 想明显松紧优先动 badgeSize。
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
         else resources.displayMetrics.widthPixels - (24 * d).toInt()
         val chipW = ((rowW - marginH * 6) / 6).coerceAtLeast((40 * d).toInt())
