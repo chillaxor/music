@@ -187,10 +187,10 @@
 
                     <!-- 黄金金价卡：国内外双价，接口失败显示空值；点击手动刷新 -->
                     <com.google.android.material.card.MaterialCardView
-                        android:id="@+id/goldCard"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
+                    android:id="@+id/goldCard"
+                    android:layout_width="0dp"
+                    android:layout_height="92dp"
+                    android:layout_weight="1"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
                         app:cardBackgroundColor="#B31C1A18"
@@ -200,8 +200,9 @@
                         <LinearLayout
                             android:id="@+id/goldCardRow"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
+                            android:gravity="center_vertical"
                             android:foreground="?attr/selectableItemBackground"
                             android:clickable="true"
                             android:focusable="true"
@@ -247,11 +248,11 @@
 
                     <!-- 高铁日程卡：距上次离家 N 天 / 正在家 / 下次计划；点击进高铁往返页 -->
                     <com.google.android.material.card.MaterialCardView
-                        android:id="@+id/railCard"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
+                    android:id="@+id/railCard"
+                    android:layout_width="0dp"
+                    android:layout_height="92dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
                         app:cardBackgroundColor="#B31C1A18"
@@ -261,8 +262,9 @@
                         <LinearLayout
                             android:id="@+id/railCardRow"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
+                            android:gravity="center_vertical"
                             android:foreground="?attr/selectableItemBackground"
                             android:clickable="true"
                             android:focusable="true"
@@ -286,11 +288,24 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="暂无行程"
-                                android:textSize="14sp"
+                                android:textSize="13sp"
                                 android:textStyle="bold"
                                 android:textColor="#FFFFFF"
                                 android:paddingTop="3dp"
-                                android:maxLines="3"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"/>
+
+                            <!-- 副标题：下次计划行程（11-01 · 还有 9 天），无计划则 GONE -->
+                            <TextView
+                                android:id="@+id/railCardSub"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="11sp"
+                                android:textColor="#B8FFFFFF"
+                                android:paddingTop="2dp"
+                                android:maxLines="2"
                                 android:ellipsize="end"
                                 android:includeFontPadding="false"/>
                         </LinearLayout>
@@ -445,7 +460,7 @@
                         android:clipToPadding="false"/>
                 </LinearLayout>
 
-                <!-- 播放卡已整体移除：完整队列入口改到底部播放条的「🎵 N」pill
+                <!-- 播放卡已整体移除：完整队列入口改到底部播放条的「🎵」纯图标 pill
                      （见 playerBar 内 queuePill）——自定义资源位再多也挤不到播放区 -->
 
                 <!-- 弹性占位：把底部播放条继续钉在屏幕底。
@@ -541,19 +556,18 @@
                                 android:ellipsize="end"/>
                         </LinearLayout>
 
-                        <!-- 队列 pill：「🎵 N」= 当前播放列表歌曲数（MainActivity.refreshQueueEntry 维护），
-                             点击进 QueueActivity 看完整队列/切歌/移除 -->
+                        <!-- 队列 pill：纯 🎵 图标（不再显示歌曲数），点击进 QueueActivity 看完整队列/切歌/移除 -->
                         <TextView
                             android:id="@+id/queuePill"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🎵 0"
-                            android:textSize="12sp"
+                            android:text="🎵"
+                            android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="#FFFFFF"
                             android:background="@drawable/bg_pill_glass"
-                            android:paddingStart="10dp"
-                            android:paddingEnd="10dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
                             android:paddingTop="5dp"
                             android:paddingBottom="5dp"
                             android:clickable="true"

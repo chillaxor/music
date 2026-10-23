@@ -107,6 +107,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var goldIntlVal: TextView
     private lateinit var railCard: View
     private lateinit var railCardVal: TextView
+    private lateinit var railCardSub: TextView
     private lateinit var spendCard: View
     private lateinit var spendVal: TextView
     private lateinit var spendCnt: TextView
@@ -307,6 +308,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         goldIntlVal = findViewById(R.id.goldIntlVal)
         railCard = findViewById(R.id.railCardRow)
         railCardVal = findViewById(R.id.railCardVal)
+        railCardSub = findViewById(R.id.railCardSub)
         spendCard = findViewById(R.id.spendCardRow)
         spendVal = findViewById(R.id.spendVal)
         spendCnt = findViewById(R.id.spendCnt)
@@ -748,16 +750,23 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         else String.format("%.1f", v)
 
     /**
-     * 首页高铁日程卡：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次离家 N 天」（按返程日 back 算），
-     * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录显示「暂无行程」。
+     * 首页高铁日程卡：读 networth_store 的 payload.rail（高铁页落盘的数据）。
+     * 主行（railCardVal，13sp 单行）= 状态（正在家 / 距上次离家 N 天 / 暂无行程）；
+     * 副行（railCardSub，11sp）= 下次计划（MM-dd · 还有 M 天），无计划则隐藏。
+     * 拆两行是因为半宽卡放不下整句，主副结构也跟黄金卡的「主数值+副说明」对齐，双列视觉齐平。
      * 卡片常驻（与黄金卡对成双列），不整卡隐藏。
      */
     private fun loadRailHomeStat() {
         if (!::railCard.isInitialized) return
+        fun noTrip() {
+            railCardVal.text = "暂无行程"
+            railCardSub.visibility = View.GONE
+        }
         // 高铁数据与记账共用 networth_store（payload.rail 键），见 RailStore
         val raw = RailStore.readRail(this).toString()
-        if (raw.isBlank()) { railCardVal.text = "暂无行程"; return }
+        if (raw.isBlank()) { noTrip(); return }
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        val md = java.text.SimpleDateFormat("MM-dd", java.util.Locale.US)
         val cal = java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
             set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
@@ -777,7 +786,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 outS to backS
             }
         } catch (e: Exception) { emptyList<Pair<java.util.Date, java.util.Date?>>() }
-        if (pairs.isEmpty()) { railCardVal.text = "暂无行程"; return }
+        if (pairs.isEmpty()) { noTrip(); return }
         // 最近一次已出发的行程还没回来（back 为空或返程日还没到）→ 人还在家
         val latestPast = pairs.filter { (out, _) -> !out.after(today) }.maxByOrNull { it.first }
         val latestBack = latestPast?.second
@@ -786,21 +795,23 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val lastBack = pairs.mapNotNull { (out, back) -> back?.takeIf { !out.after(today) && !it.after(today) } }
             .maxOrNull()
         val next = pairs.map { it.first }.filter { it.after(today) }.minOrNull()
-        val sb = StringBuilder()
-        if (onTrip) {
-            sb.append("正在家")
-        } else if (lastBack != null) {
-            val daysSince = ((today.time - lastBack.time) / 86400000L).toInt()
-            sb.append("距上次离家 ")
-                .append(if (daysSince <= 0) "今天刚走" else "$daysSince 天")
+        // 主行：状态一句话（单行放得下）
+        railCardVal.text = when {
+            onTrip -> "正在家 🏠"
+            lastBack != null -> {
+                val daysSince = ((today.time - lastBack.time) / 86400000L).toInt()
+                if (daysSince <= 0) "今天刚走" else "距上次离家 $daysSince 天"
+            }
+            else -> "暂无行程"
         }
+        // 副行：下次计划行程，无则隐藏
         if (next != null) {
-            if (sb.isNotEmpty()) sb.append("　·　")
             val d2 = ((next.time - today.time) / 86400000L).toInt()
-            sb.append("下次 ${sdf.format(next)}(还有${d2}天)")
+            railCardSub.text = "下次 ${md.format(next)} · 还有 ${d2} 天"
+            railCardSub.visibility = View.VISIBLE
+        } else {
+            railCardSub.visibility = View.GONE
         }
-        if (sb.isEmpty()) { railCardVal.text = "暂无行程"; return }
-        railCardVal.text = sb.toString()
     }
 
     // ==================== 每日一图（全屏沉浸背景） ====================
@@ -1167,18 +1178,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /**
-     * 刷新首页「正在播放列表」入口卡的计数文本。
-     * 完整队列的渲染/高亮/定位已移到 QueueActivity.refreshQueue()，这里只维护卡片计数。
-     * 线程免疫（onSongStart 可能来自播放器回调线程）。
+     * 已废弃：队列 pill 改为纯 🎵 图标（用户要求不显示歌曲数），无动态内容可刷新。
+     * 保留函数与全部调用点不动，避免逐处删调用漏改；pill 点击进 QueueActivity 看完整队列。
      */
-    /** 刷新底部播放条的队列 pill：「🎵 N」= 队列歌曲数。线程免疫（onSongStart 可能来自播放器回调线程） */
     private fun refreshQueueEntry(){
-        if (!::queuePill.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
-        val block={
-            val q=PlayerManager.queueSnapshot()
-            queuePill.text = "🎵 ${q.size}"
-        }
-        if(Looper.myLooper()==Looper.getMainLooper()) block() else uiHandler.post(block)
+        // no-op：pill 文本固定为 🎵
     }
 
     private fun applyPlayMode() {
