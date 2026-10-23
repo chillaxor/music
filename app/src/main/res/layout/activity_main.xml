@@ -29,12 +29,12 @@
         android:visibility="gone"
         android:contentDescription="每日一图"/>
 
-    <!-- 深色蒙层：任何图上都保证白字可读 -->
+    <!-- 蒙层：两端渐变压暗保证白字可读，中部完全透明让图通透（不再是整屏 65% 黑） -->
     <View
         android:id="@+id/dimOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#A6000000"/>
+        android:background="@drawable/bg_dim_gradient"/>
 
     <LinearLayout
         android:layout_width="match_parent"

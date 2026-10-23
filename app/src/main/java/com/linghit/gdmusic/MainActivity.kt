@@ -668,7 +668,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     /**
      * 载入今天该显示的每日一图：
      *  - 文件夹没配/没图/图坏了 → 隐藏 dailyImage，露出主题渐变兜底底色
-     *  - 有图 → 采样解码（长边 1600，防 OOM）铺满全屏，并刷新问候语与日期
+     *  - 有图 → 按屏幕分辨率动态采样（屏幕最长边×2，封顶4000）铺满全屏，1:1 清晰不爆内存；蒙层改为两端渐变压暗、中部通透
      * 手动切过图时 DailyImageStore 会记住当天的手动序号，跨天自动失效。
      */
     private fun loadDailyImage() {
@@ -688,7 +688,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             .getOrElse(cal.get(java.util.Calendar.DAY_OF_WEEK) - 1) { "" }
         dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week · 每日一图"
         scope.launch {
-            val bmp = withContext(Dispatchers.IO) { ImagePrep.decodeSampled(this@MainActivity, uri, 1600) }
+            // 之前锁死 1600 + 2 的幂跳变，常只解到 ~1000 宽，全屏放大必糊。
+            // 改为按屏幕实际分辨率：最长边×2 封顶 4000，解码尺寸贴着屏幕跑 → 基本 1:1 清晰，
+            // 又不至于超大图（8000×6000）OOM。全屏 ImageView 按 1 bitmap px = 1 screen px 绘制，无需乘 density。
+            val dm = resources.displayMetrics
+            val screenLong = Math.max(dm.widthPixels, dm.heightPixels)
+            val target = Math.min(screenLong * 2, 4000)
+            val bmp = withContext(Dispatchers.IO) { ImagePrep.decodeSampled(this@MainActivity, uri, target) }
             if (bmp != null) {
                 dailyImage.setImageBitmap(bmp)
                 dailyImage.visibility = View.VISIBLE

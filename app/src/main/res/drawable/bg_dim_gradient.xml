@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 蒙层：linear 渐变，顶部/底部各约 36% 黑（保证白字可读），中间 50% 完全透明（图最通透）。
+     angle=270 从上到下：start(顶)暗 → center(中)透明 → end(底)暗。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#5C000000"
+        android:centerColor="#00000000"
+        android:endColor="#5C000000"
+        android:centerY="0.5"
+        android:type="linear" />
+</shape>
