@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局导入进度浮层：由 ImportOverlay 动态挂到每个 Activity 内容区的顶部，
+  不改动各页面自己的布局。导入期间不管切到哪个页面都能看到，导入结束自动隐藏。
+  注意：整体不设 clickable/focusable，触摸会穿透到下面的页面，不挡操作。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:elevation="6dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
+    android:clickable="false"
+    android:focusable="false">
+
+    <ProgressBar
+        android:id="@+id/ovProgressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:indeterminate="true"
+        android:clickable="false"
+        android:focusable="false"
+        android:progressTint="@color/primary"/>
+
+    <TextView
+        android:id="@+id/ovStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="正在导入本地音乐…"
+        android:textSize="12sp"
+        android:textColor="@color/on_surface"
+        android:paddingTop="6dp"
+        android:clickable="false"
+        android:focusable="false"/>
+</LinearLayout>

@@ -3,12 +3,16 @@
   首页 = 全屏沉浸图版式（信息卡版）：
   底层：主题渐变兜底 → 每日一图（用户文件夹按日轮换）→ 深色蒙层（保证白字可读）
   上层：精简顶行 + 玻璃页签 + 主面板（问候行/双列信息卡/工具卡/底部播放条）
-  信息卡两排（左右双列，图标统一 🎵）：
+  信息卡两排（左右双列，每卡图标各不同：💰 金价 / 🚄 高铁 / 💳 消费 / 🔥 热榜）：
   - 第一排：黄金金价（左，国内外双价）+ 高铁日程（右，点进高铁往返页）
   - 第二排：今日消费（左，点进记账页）+ 新闻热榜（右，点进 NewsActivity）
+  标题行统一 20dp 高，且四卡内容一律顶部对齐（不再 center_vertical），
+  否则各行文本行数不同会让标题在不同卡里高低错开。
   说明：
-  - 信息卡底色用不透明白 #1C1A18：原 #B31C1A18 半透玻璃在浅色兜底色/亮图上会透出
-    灰底，黄金/高铁又是 92dp 定高内容居中，底部空带把灰暴露得最明显，已弃用半透明
+  - 信息卡底色与下方自定义玻璃卡统一为 #991C1A18（bg_glass_card 同款：半透明深底
+    + 0.5dp 白描边 + 无投影）：用户要求前排信息卡与自定义行视觉一致。
+    （曾因半透明白在浅色兜底/亮图上透出灰底改过不透明白 #1C1A18，已按需求回退；
+     若日后又嫌透灰底，把 4 张卡改回 #1C1A18 + 1dp 描边 + 2dp 投影即可）
   - 新闻卡主行 = 热榜第 1 条标题，超出卡宽 marquee 滚动；每次回前台 onResume 重拉最新
   - 没有配每日一图时 dailyImage 隐藏，露出主题渐变兜底底色，页面照常可用
   - 所有浮在图上的文字统一用白/透白色，不再吃主题的 colorOnSurface（深色字会在图上糊）
@@ -74,6 +78,18 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"/>
 
+            <!-- 切背景图（每日一图）：没配文件夹时直接弹选择器让你选图片文件夹，
+                 已配好则手动换下一张（0 点后自动恢复按日轮换）。与点问候行同一套逻辑 -->
+            <ImageButton
+                android:id="@+id/switchBgBtn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_wallpaper"
+                android:tint="#FFFFFF"
+                android:scaleType="centerInside"
+                android:contentDescription="切换背景图"/>
+
             <ImageButton
                 android:id="@+id/themeBtn"
                 android:layout_width="40dp"
@@ -131,7 +147,10 @@
                 android:textColor="#FFFFFF"/>
         </LinearLayout>
 
-        <FrameLayout
+        <!-- 页签内容区：左右滑动切页签（见 SwipeFrameLayout：只拦横向，竖向/子视图放行；
+             shortcutRow 已登记为排除区，格子拖动排序不受影响） -->
+        <com.linghit.gdmusic.SwipeFrameLayout
+            android:id="@+id/tabContent"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
@@ -181,7 +200,7 @@
                         android:includeFontPadding="false"/>
                 </LinearLayout>
 
-                <!-- ========== 第一排信息卡：黄金金价 + 高铁日程（左右双列，图标统一 🎵） ========== -->
+                <!-- ========== 第一排信息卡：黄金金价 💰 + 高铁日程 🚄（左右双列） ========== -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -194,19 +213,18 @@
                     android:layout_width="0dp"
                     android:layout_height="92dp"
                     android:layout_weight="1"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="2dp"
-                        app:cardBackgroundColor="#1C1A18"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@android:color/transparent"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:id="@+id/goldCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:orientation="vertical"
-                            android:gravity="center_vertical"
-                            android:foreground="?attr/selectableItemBackground"
+                            android:background="@drawable/bg_liquid_glass"
+                            android:foreground="@drawable/ripple_liquid_glass"
                             android:clickable="true"
                             android:focusable="true"
                             android:paddingStart="12dp"
@@ -216,8 +234,9 @@
 
                             <TextView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🎵 黄金金价"
+                                android:layout_height="20dp"
+                                android:gravity="center_vertical"
+                                android:text="💰 黄金金价"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="#B8FFFFFF"
@@ -256,19 +275,18 @@
                     android:layout_height="92dp"
                     android:layout_weight="1"
                     android:layout_marginStart="8dp"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="2dp"
-                        app:cardBackgroundColor="#1C1A18"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@android:color/transparent"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:id="@+id/railCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:orientation="vertical"
-                            android:gravity="center_vertical"
-                            android:foreground="?attr/selectableItemBackground"
+                            android:background="@drawable/bg_liquid_glass"
+                            android:foreground="@drawable/ripple_liquid_glass"
                             android:clickable="true"
                             android:focusable="true"
                             android:paddingStart="12dp"
@@ -278,8 +296,9 @@
 
                             <TextView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🎵 高铁日程"
+                                android:layout_height="20dp"
+                                android:gravity="center_vertical"
+                                android:text="🚄 高铁日程"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="#B8FFFFFF"
@@ -315,7 +334,7 @@
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
-                <!-- ========== 第二排信息卡：今日消费 + 新闻热榜（左右双列，图标统一 🎵） ========== -->
+                <!-- ========== 第二排信息卡：今日消费 💳 + 新闻热榜 🔥（左右双列） ========== -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -326,20 +345,20 @@
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/spendCard"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="92dp"
                         android:layout_weight="1"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="2dp"
-                        app:cardBackgroundColor="#1C1A18"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@android:color/transparent"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:id="@+id/spendCardRow"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
-                            android:foreground="?attr/selectableItemBackground"
+                            android:background="@drawable/bg_liquid_glass"
+                            android:foreground="@drawable/ripple_liquid_glass"
                             android:clickable="true"
                             android:focusable="true"
                             android:paddingStart="12dp"
@@ -349,8 +368,9 @@
 
                             <TextView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🎵 今日消费"
+                                android:layout_height="20dp"
+                                android:gravity="center_vertical"
+                                android:text="💳 今日消费"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="#B8FFFFFF"
@@ -386,21 +406,21 @@
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/newsCard"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="92dp"
                         android:layout_weight="1"
                         android:layout_marginStart="8dp"
-                        app:cardCornerRadius="16dp"
-                        app:cardElevation="2dp"
-                        app:cardBackgroundColor="#1C1A18"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@android:color/transparent"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:id="@+id/newsCardRow"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
-                            android:foreground="?attr/selectableItemBackground"
+                            android:background="@drawable/bg_liquid_glass"
+                            android:foreground="@drawable/ripple_liquid_glass"
                             android:clickable="true"
                             android:focusable="true"
                             android:paddingStart="12dp"
@@ -410,16 +430,17 @@
 
                             <TextView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🎵 新闻热榜"
+                                android:layout_height="20dp"
+                                android:gravity="center_vertical"
+                                android:text="🔥 新闻热榜"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="#B8FFFFFF"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
-                            <!-- 主行：热榜第 1 条标题（最新），超出卡宽自动 marquee 滚动；
-                                 isSelected 由 MainActivity 在代码里置 true（marquee 开关） -->
+                            <!-- 主行：热榜第 1 条标题（最新），最多 2 行，超出第 2 行截省略号；
+                                 不再用 marquee（marquee 仅单行，与「2 行显示」互斥） -->
                             <TextView
                                 android:id="@+id/newsTitle"
                                 android:layout_width="match_parent"
@@ -429,12 +450,12 @@
                                 android:textStyle="bold"
                                 android:textColor="#FFFFFF"
                                 android:paddingTop="3dp"
-                                android:maxLines="1"
-                                android:ellipsize="marquee"
-                                android:marqueeRepeatLimit="marquee_forever"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:includeFontPadding="false"/>
 
-                            <!-- 副行：第 1 条热度（>1w 换算万）；加载失败显示重试提示 -->
+                            <!-- 副行：入口提示（点卡片进 NewsActivity 看完整可滚动热榜）；
+                                 热度已按需求去掉，仅保留轻量引导文案；加载失败显示重试提示 -->
                             <TextView
                                 android:id="@+id/newsSub"
                                 android:layout_width="match_parent"
@@ -454,7 +475,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="@drawable/bg_glass_card"
+                    android:background="@drawable/bg_liquid_glass"
                     android:paddingTop="12dp"
                     android:paddingBottom="12dp"
                     android:paddingStart="4dp"
@@ -470,8 +491,8 @@
                         android:clipToPadding="false"/>
                 </LinearLayout>
 
-                <!-- 播放卡已整体移除：完整队列入口改到底部播放条的「🎵」纯图标 pill
-                     （见 playerBar 内 queuePill）——自定义资源位再多也挤不到播放区 -->
+                <!-- 播放卡已整体移除：完整队列入口 = 底部播放条整条点击进 QueueActivity
+                     ——自定义资源位再多也挤不到播放区 -->
 
                 <!-- 弹性占位：把底部播放条继续钉在屏幕底。
                      原「播放列表卡」靠 layout_weight=1 占满剩余高度顺带实现了这个效果，
@@ -481,25 +502,25 @@
                     android:layout_height="0dp"
                     android:layout_weight="1"/>
 
-                <!-- 正在播放玻璃卡：常驻页面底部，有歌才显示（代码控制显隐）；
+                <!-- 正在播放玻璃卡：按需求常驻页面底部（没有正在播放的歌也显示，只显示「未播放」占位），
+                     只有切到搜索页签时才跟着 playlistPanel 一起隐藏；
                      封面用默认音符图，不接在线封面回调 -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/playerBar"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="18dp"
                     app:cardElevation="2dp"
-                    app:cardBackgroundColor="#B31C1A18"
-                    app:strokeColor="#33FFFFFF"
-                    app:strokeWidth="1dp"
-                    android:layout_marginBottom="12dp"
-                    android:visibility="gone">
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:strokeWidth="0dp"
+                    android:layout_marginBottom="12dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
+                        android:background="@drawable/bg_liquid_glass"
                         android:padding="10dp">
 
                         <!-- 最左：上一首 / 播放暂停 / 下一首 -->
@@ -558,52 +579,13 @@
                                 android:id="@+id/nowArtist"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text=""
+                                android:text="还没有在播放的歌"
                                 android:textSize="11sp"
                                 android:paddingTop="1dp"
                                 android:textColor="#B8FFFFFF"
                                 android:maxLines="1"
                                 android:ellipsize="end"/>
                         </LinearLayout>
-
-                        <!-- 队列 pill：纯 🎵 图标（不再显示歌曲数），点击进 QueueActivity 看完整队列/切歌/移除 -->
-                        <TextView
-                            android:id="@+id/queuePill"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🎵"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:background="@drawable/bg_pill_glass"
-                            android:paddingStart="8dp"
-                            android:paddingEnd="8dp"
-                            android:paddingTop="5dp"
-                            android:paddingBottom="5dp"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:includeFontPadding="false"/>
-
-                        <ImageButton
-                            android:id="@+id/lyricFloatBtn"
-                            android:layout_width="34dp"
-                            android:layout_height="34dp"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:src="@drawable/ic_lyric_float"
-                            android:tint="#FFFFFF"
-                            android:scaleType="centerInside"
-                            android:contentDescription="桌面歌词"/>
-
-                        <ImageButton
-                            android:id="@+id/lyricPageBtn"
-                            android:layout_width="34dp"
-                            android:layout_height="34dp"
-                            android:layout_marginStart="2dp"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:src="@drawable/ic_lyric_page"
-                            android:tint="#FFFFFF"
-                            android:scaleType="centerInside"
-                            android:contentDescription="歌词页"/>
 
                         <ImageButton
                             android:id="@+id/modeBtn"
@@ -633,17 +615,17 @@
                     android:id="@+id/searchCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="18dp"
                     app:cardElevation="2dp"
-                    app:cardBackgroundColor="#B31C1A18"
-                    app:strokeColor="#33FFFFFF"
-                    app:strokeWidth="1dp"
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:strokeWidth="0dp"
                     android:layout_marginBottom="12dp">
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
+                        android:background="@drawable/bg_liquid_glass"
                         android:padding="10dp">
                         <com.google.android.material.textfield.TextInputLayout
                             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -688,6 +670,6 @@
                     android:paddingBottom="8dp"
                     android:clipToPadding="false"/>
             </LinearLayout>
-        </FrameLayout>
+        </com.linghit.gdmusic.SwipeFrameLayout>
     </LinearLayout>
 </FrameLayout>

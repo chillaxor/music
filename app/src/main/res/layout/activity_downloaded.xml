@@ -5,6 +5,9 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- 导入进度条已改为「全局浮层」：由 ImportOverlay 挂到每个 Activity 内容区顶部，
+         导入期间切到任何页面都看得见，结束自动隐藏。本页不再内嵌进度条（避免两条并存）。 -->
+
     <!-- 顶部标题栏 -->
     <LinearLayout
         android:layout_width="match_parent"

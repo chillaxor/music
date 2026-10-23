@@ -90,15 +90,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var prevBtn:ImageButton
     private lateinit var nextBtn:ImageButton
     private lateinit var modeBtn:ImageButton
-    private lateinit var lyricFloatBtn:ImageButton
     private lateinit var playerBar:View
     // 分段切换：播放列表（默认）/ 搜索
     private lateinit var tabPlaylist:TextView
     private lateinit var tabSearch:TextView
     private lateinit var playlistPanel:View
     private lateinit var searchPanel:View
-    /** 底部播放条里的队列 pill：「🎵 N」= 队列歌曲数，点击进 QueueActivity 看完整队列 */
-    private lateinit var queuePill: TextView
+    /** 页签内容区：左右滑动切页签（SwipeFrameLayout，只拦横向手势） */
+    private lateinit var tabContent: SwipeFrameLayout
     /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加；点=进入，长按抓起可拖动排序，按住不动=删除） */
     private lateinit var shortcutRow: FlowLayout
     // —— 首页双列信息卡（第一排：黄金金价 + 高铁日程；第二排：今日消费 + 新闻热榜）——
@@ -239,9 +238,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         prevBtn=findViewById(R.id.prevBtn)
         nextBtn=findViewById(R.id.nextBtn)
         modeBtn=findViewById(R.id.modeBtn)
-        lyricFloatBtn=findViewById(R.id.lyricFloatBtn)
         playerBar=findViewById(R.id.playerBar)
-        playerBar.visibility=View.GONE // 首页/搜索时若无正在播放的歌，先隐藏播放条
+        // 播放条按需求常驻（没歌也显示占位），不再按「有无正在播放」隐藏
+        playerBar.visibility=View.VISIBLE
+        // 整条播放条（除 prev/playpause/next/mode 四个控制按钮外）点击进队列页看完整列表/切歌/移除。
+        // 四个控制按钮各自消费了 click，点它们不会触发这里；点歌名/空白区会冒泡到 playerBar。
+        playerBar.setOnClickListener {
+            if (PlayerManager.current != null) startActivity(Intent(this, QueueActivity::class.java))
+        }
         // 播放/暂停统一走 PlayerManager.togglePlayPause：冷启动恢复的「当前歌」可能还没加载进
         // 播放器（媒体项为空），直接 player.play() 是空操作、点了没反应，里面会兜底重新起播
         playPauseBtn.setOnClickListener{ PlayerManager.togglePlayPause() }
@@ -255,17 +259,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             status.text = tip
             Toast.makeText(this, tip, Toast.LENGTH_SHORT).show()
         }
-        lyricFloatBtn.setOnClickListener { toggleDesktopLyric() }
-        // 全屏歌词页：从播放条进入看大字号歌词（下载的歌靠一并落盘的 .lrc 离线可看）
-        findViewById<View>(R.id.lyricPageBtn).setOnClickListener {
-            if (PlayerManager.current == null) {
-                Toast.makeText(this, "先播放一首歌", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            startActivity(Intent(this, LyricActivity::class.java))
-        }
         applyPlayMode()
-        refreshLyricBtn()
         // 上次开着桌面歌词的话，重启后自动恢复（进程被杀窗口也会没，需重建）
         if (DesktopLyric.enabled && DesktopLyric.hasPermission()) DesktopLyric.show()
         // 常驻悬浮按钮：默认开启（真正显示还需「显示在其他应用上层」权限，服务里兜底判断）；
@@ -317,8 +311,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         newsCard = findViewById(R.id.newsCardRow)
         newsTitle = findViewById(R.id.newsTitle)
         newsSub = findViewById(R.id.newsSub)
-        // marquee 常驻开关：标题超出卡宽才滚，不长则静止（不 setSelected  marquee 不启动）
-        newsTitle.isSelected = true
         // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
         // ⚠️ 必须挂内部行（xxCardRow）而非外层 MaterialCardView：内部 LinearLayout 是
         // clickable 且铺满卡片，点击被它消费，挂外层监听永远收不到（同 queueEntryRow 教训）
@@ -332,18 +324,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         greetingText = findViewById(R.id.greetingText)
         dateText = findViewById(R.id.dateText)
         applyThemeColors() // 按当前主题重画兜底底色与播放按钮圆圈（drawable 无法用 ?attr 上色）
-        // 每日一图：载入今天该显示的那张；点问候行=手动换一张，长按=更换图片文件夹
+        // 每日一图：载入今天该显示的那张；顶栏「切背景图」按钮 / 点问候行 = 手动换一张，长按=更换图片文件夹
         loadDailyImage()
-        greetingRow.setOnClickListener {
-            if (DailyImageStore.imageCount(this) == 0) {
-                dailyFolderLauncher.launch(null)
-                return@setOnClickListener
-            }
-            if (DailyImageStore.nextManual(this) != null) {
-                loadDailyImage()
-                Toast.makeText(this, "已换一张，0 点后恢复自动轮换", Toast.LENGTH_SHORT).show()
-            }
-        }
+        greetingRow.setOnClickListener { switchDailyImage() }
+        findViewById<View>(R.id.switchBgBtn).setOnClickListener { switchDailyImage() }
         greetingRow.setOnLongClickListener {
             AlertDialog.Builder(this)
                 .setTitle("每日一图")
@@ -370,17 +354,18 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // ===== 主面板（进 App 默认落点）：首页 / 搜索两个页签 =====
         tabPlaylist=findViewById(R.id.tabPlaylist); tabSearch=findViewById(R.id.tabSearch)
         playlistPanel=findViewById(R.id.playlistPanel); searchPanel=findViewById(R.id.searchPanel)
-        // 播放卡已移除，队列入口 = 底部播放条的「🎵 N」pill（点击进 QueueActivity）
-        queuePill = findViewById(R.id.queuePill)
-        queuePill.setOnClickListener { startActivity(Intent(this, QueueActivity::class.java)) }
+        // 队列入口 = 底部播放条整条点击进 QueueActivity（在播放条初始化处已设 onClick）
         tabPlaylist.setOnClickListener { switchTab(false) }
         tabSearch.setOnClickListener { switchTab(true) }
         switchTab(false) // 默认进入首页
 
-        // 外部播放意图（下载页/收藏页的播放全部）必须放到所有视图初始化之后：
-        // 它会走 refreshQueueEntry()，而 queuePill 是 lateinit，
-        // 早于 findViewById 调用会抛 UninitializedPropertyAccessException 直接崩
-        // （冷启动直接进下载页再点播放全部就会触发）
+        // ===== 左右滑动切页签（与点 pill 等效）：左滑=搜索，右滑=回首页 =====
+        tabContent = findViewById(R.id.tabContent)
+        // 快捷方式格子区排除：那里靠横向拖动排序，不能被滑动手势抢（否则拖动被 CANCEL）
+        tabContent.addExcludedView(shortcutRow)
+        tabContent.onSwipe = { dir -> switchTab(dir == 0) }
+
+        // 外部播放意图（下载页/收藏页的播放全部）必须放到所有视图初始化之后再处理
         handlePlayIntent()
         // QueueActivity 空列表的「去搜索」跳回来时带 open_tab=search，直接切到搜索页签
         if(intent.getStringExtra("open_tab")=="search") switchTab(true)
@@ -393,9 +378,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         PlayerManager.onUiAttached()
     }
 
-    /** 播放条显隐：搜索页签下隐藏（给搜索结果腾地方），播放列表页签且有正在播放的歌才显示 */
+    /** 播放条显隐：按需求常驻——只在搜索页签下隐藏（给搜索结果腾地方），
+     *  不再要求有正在播放的歌；没歌时显示「未播放 / 还没有在播放的歌」占位 */
     private fun syncPlayerBar(){
-        playerBar.visibility = if(!showSearch && PlayerManager.current != null) View.VISIBLE else View.GONE
+        playerBar.visibility = if(showSearch) View.GONE else View.VISIBLE
     }
 
     /** 分段切换：showSearch=false 首页 / true 搜索 */
@@ -761,9 +747,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
 
     /**
      * 首页新闻卡：拉今日头条热榜第 1 条（最新）展示，只取第一条。
-     * 主行 newsTitle = 标题，超出半宽卡宽时靠 XML marquee 滚动（isSelected 常驻）；
-     * 副行 newsSub = 热度（HotValue >1w 换算「x.x 万热度」）。
-     * 接口失败两行显示兜底文案，卡片仍在（点了仍能进 NewsActivity 看重试）。
+     * 主行 newsTitle = 标题，XML 限制最多 2 行（超 2 行截省略号）；
+     * 副行 newsSub 已按需求去掉（热度、入口提示「今日热榜 ›」均不展示），
+     * 成功时整行 GONE 让标题占满卡；仅加载失败时显示「点这里重试 ›」引导。
+     * 卡片常态点击仍进 NewsActivity。
      * 与 NewsActivity 同一接口，但这里只解析第 1 条，开销最小。
      */
     private fun loadNewsHot() {
@@ -780,16 +767,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             if (first == null) {
                 newsTitle.text = "热榜加载失败"
                 newsSub.text = "点这里重试 ›"
+                newsSub.visibility = View.VISIBLE
             } else {
                 newsTitle.text = first.optString("Title", "")
-                val hot = first.optString("HotValue", "").trim().toLongOrNull()
-                newsSub.text = when {
-                    hot == null -> "今日热榜 ›"
-                    hot >= 10000 -> String.format("%.1f 万热度 ›", hot / 10000.0)
-                    else -> "$hot 热度 ›"
-                }
+                // 热度与「今日热榜 ›」入口提示均按需求去掉，副行隐藏让标题占满卡
+                newsSub.text = ""
+                newsSub.visibility = View.GONE
             }
-            newsTitle.isSelected = true // 换文本后 marquee 重启
         }
     }
 
@@ -859,6 +843,22 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     // ==================== 每日一图（全屏沉浸背景） ====================
+
+    /**
+     * 手动换一张背景图（每日一图）：顶栏「切背景图」按钮与点问候行共用同一套逻辑。
+     *  - 还没配图片文件夹 → 直接弹系统选择器让用户选图片文件夹（不然点了没反应）
+     *  - 已配好 → 切下一张并提示；0 点后自动恢复按日轮换（nextManual 只影响当天显示）
+     */
+    private fun switchDailyImage() {
+        if (DailyImageStore.imageCount(this) == 0) {
+            dailyFolderLauncher.launch(null)
+            return
+        }
+        if (DailyImageStore.nextManual(this) != null) {
+            loadDailyImage()
+            Toast.makeText(this, "已换一张，0 点后恢复自动轮换", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     /**
      * 载入今天该显示的每日一图：
@@ -1233,35 +1233,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val m = PlayerManager.playMode
         modeBtn.setImageResource(when (m) { 1 -> R.drawable.ic_repeat; 2 -> R.drawable.ic_shuffle; else -> R.drawable.ic_sequence })
         modeBtn.contentDescription = when (m) { 1 -> "列表循环"; 2 -> "随机播放"; else -> "顺序播放" }
-    }
-
-    /** 桌面歌词开关：无悬浮窗权限时先引导授权 */
-    private fun toggleDesktopLyric() {
-        if (DesktopLyric.enabled) {
-            DesktopLyric.enabled = false
-            refreshLyricBtn()
-            status.text = "桌面歌词已关闭"
-            return
-        }
-        if (!DesktopLyric.hasPermission()) {
-            AlertDialog.Builder(this)
-                .setTitle("需要悬浮窗权限")
-                .setMessage("桌面歌词要浮在其他应用上方显示，请在系统设置里允许「显示在其他应用上层」。")
-                .setPositiveButton("去授权") { _, _ -> DesktopLyric.requestPermission() }
-                .setNegativeButton("取消", null)
-                .show()
-            return
-        }
-        DesktopLyric.enabled = true // setter 内部会尝试 show
-        val ok = DesktopLyric.isShowing()
-        refreshLyricBtn()
-        status.text = if (ok) "桌面歌词已开启" else "桌面歌词开启失败（可到设置里调位置/字号）"
-    }
-
-    private fun refreshLyricBtn() {
-        val on = DesktopLyric.enabled
-        lyricFloatBtn.setColorFilter(
-            ContextCompat.getColor(this, if (on) R.color.primary else R.color.star_off))
     }
 
     /** 去重键必须带 source：否则不同音源的"同名歌"会被合并，只留先查到的 netease */
@@ -1641,6 +1612,10 @@ class QueueAdapter(
         private val a=root.findViewById<TextView>(R.id.qArtist)
         private val playing=root.findViewById<TextView>(R.id.qPlaying)
         private val rm=root.findViewById<TextView>(R.id.qRemove)
+        // ⚠️ 行点击必须挂内部 itemRoot，不能挂外层 root（MaterialCardView）：
+        // itemRoot 是 clickable 且铺满卡片，挂外层监听永远收不到点击（同 16f8037 信息卡的坑），
+        // 症状就是「队列里点歌没反应、以为不能播放」
+        private val row=root.findViewById<View>(R.id.itemRoot)
         // 主题属性取色：高亮=当前主题主色（12 套主题都正确），常规=浅色中性字色。
         // ⚠️ 不能用 R.color.primary（静态橙，非默认主题下高亮跑色）；
         // ⚠️ 也不能再用 on_dark/on_dark_dim（首页深色玻璃卡的白字系，白卡上等于隐形）
@@ -1662,7 +1637,7 @@ class QueueAdapter(
             a.setTextColor(cDim)
             rm.setTextColor(cDim)
             playing.visibility=if(isCur) View.VISIBLE else View.GONE
-            root.setOnClickListener{ onPlay(position, x) }
+            row.setOnClickListener{ onPlay(position, x) }
             rm.setOnClickListener{ onRemove(position, x) }
         }
     }

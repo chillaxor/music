@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  液体玻璃（Liquid Glass）质感面板 —— 首页卡片 / 工具卡 / 播放条 / 搜索卡统一用。
+  三层叠出玻璃观感：
+   ① 折射亮边：整块填「顶缘最亮 → 底部收敛」的竖向渐变，靠 ② 的 1.2dp inset 露出边，
+      模拟玻璃边缘的高光折射（这是液体玻璃最标志性的特征，纯色描边出不来这效果）；
+   ② 磨砂玻璃本体：半透明深底，能透出背后的每日一图（半透明才有玻璃感，不透就是塑料板）；
+   ③ 顶部高光：一层向下收敛的白，模拟玻璃上缘的镜面反光。
+  说明：没用 RenderEffect 做真模糊——它要 API31+ 且只能模糊 View 自身内容，
+  模糊不到背后的壁纸；Android 没有系统级背景模糊，只能靠「半透明 + 渐变高光」逼近。
+  ② 的 alpha 同时决定「玻璃透光度」和「白字可读性」——透一度就更像玻璃，但也更费字的可读性。
+  要调通透就改 ② 的 alpha 前两位（#5A ≈ 35%）：往 #4x 走更透，往 #7x/#8x 走更实。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ① 折射亮边（顶亮 → 底淡） -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="18dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#A8FFFFFF"
+                android:centerColor="#33FFFFFF"
+                android:centerY="0.5"
+                android:endColor="#08FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- ② 磨砂玻璃本体（inset 露出 ① 的亮边）。
+         这是玻璃「透不透」的总闸门：alpha 越高越实（越遮背后壁纸），越低越透（越像玻璃）。
+         当前 #5A = 不透明度 35%（原 #8A = 54% → #70 = 44% → #5A = 35%，每次约 -9 个百分点）。
+         ⚠️ alpha 别再往下调太多：卡上文字是 #FFFFFF，玻璃一透，白字就压在壁纸上发虚。 -->
+    <item
+        android:left="1.2dp"
+        android:top="1.2dp"
+        android:right="1.2dp"
+        android:bottom="1.2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="16.8dp"/>
+            <solid android:color="#5A1C1A18"/>
+        </shape>
+    </item>
+
+    <!-- ③ 顶部镜面高光（向下收敛到透明）。只负责上缘反光，不参与整体透光度调节 -->
+    <item
+        android:left="1.2dp"
+        android:top="1.2dp"
+        android:right="1.2dp"
+        android:bottom="1.2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="16.8dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#2BFFFFFF"
+                android:centerColor="#0AFFFFFF"
+                android:centerY="0.45"
+                android:endColor="#00FFFFFF"/>
+        </shape>
+    </item>
+</layer-list>

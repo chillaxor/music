@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 液体玻璃面板的按压反馈：用 mask 把水波纹裁成圆角，
+     否则默认矩形水波纹会在圆角玻璃的四角溢出、露出方角 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#26FFFFFF">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <corners android:radius="16.8dp"/>
+            <solid android:color="#FFFFFF"/>
+        </shape>
+    </item>
+</ripple>
