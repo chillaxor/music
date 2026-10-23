@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   热榜行（浅色白卡，与 item_queue_song / item_downloaded 同范式）：
-  序号（前三名主题色粗体）+ 标题（两行截断）+ 热度 + 标签徽章（热/新/辟谣/现场）
+  行首 🎵 图标（前三名主题色粗体）+ 标题（两行截断）+ 热度 + 标签徽章（热/新/辟谣/现场）
 -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -26,14 +26,14 @@
         android:paddingTop="10dp"
         android:paddingBottom="10dp">
 
-        <!-- 排名 -->
+        <!-- 行首图标：统一 🎵（原排名序号，前三名仍用主题主色加权重） -->
         <TextView
             android:id="@+id/nIndex"
-            android:layout_width="26dp"
+            android:layout_width="30dp"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:text="1"
-            android:textSize="17sp"
+            android:text="🎵"
+            android:textSize="15sp"
             android:textStyle="bold"
             android:textColor="?attr/colorPrimary"
             android:includeFontPadding="false"/>

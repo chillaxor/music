@@ -130,13 +130,13 @@ class NewsActivity : AppCompatActivity() {
 
             fun bind(x: NewsItem, position: Int) {
                 val ctx = root.context
-                // 前三名用主题主色加权重，其余用中性弱化色
+                // 前三名用主题主色加权重，其余用中性弱化色（行首图标统一 🎵）
                 val top = position < 3
                 idx.setTextColor(
                     if (top) ThemePrefs.currentPack(ctx).primary
                     else ContextCompat.getColor(ctx, R.color.on_surface_variant)
                 )
-                idx.text = (position + 1).toString()
+                idx.text = "🎵"
                 title.text = x.title
                 hot.text = hotText(x.hot)
                 val l = labelText(x.label)

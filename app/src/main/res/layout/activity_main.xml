@@ -7,6 +7,9 @@
   - 第一排：黄金金价（左，国内外双价）+ 高铁日程（右，点进高铁往返页）
   - 第二排：今日消费（左，点进记账页）+ 新闻热榜（右，点进 NewsActivity）
   说明：
+  - 信息卡底色用不透明白 #1C1A18：原 #B31C1A18 半透玻璃在浅色兜底色/亮图上会透出
+    灰底，黄金/高铁又是 92dp 定高内容居中，底部空带把灰暴露得最明显，已弃用半透明
+  - 新闻卡主行 = 热榜第 1 条标题，超出卡宽 marquee 滚动；每次回前台 onResume 重拉最新
   - 没有配每日一图时 dailyImage 隐藏，露出主题渐变兜底底色，页面照常可用
   - 所有浮在图上的文字统一用白/透白色，不再吃主题的 colorOnSurface（深色字会在图上糊）
   - 完整播放队列已拆到独立页 QueueActivity：首页无播放卡，只在底部播放条放
@@ -193,7 +196,7 @@
                     android:layout_weight="1"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
-                        app:cardBackgroundColor="#B31C1A18"
+                        app:cardBackgroundColor="#1C1A18"
                         app:strokeColor="#33FFFFFF"
                         app:strokeWidth="1dp">
 
@@ -255,7 +258,7 @@
                     android:layout_marginStart="8dp"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
-                        app:cardBackgroundColor="#B31C1A18"
+                        app:cardBackgroundColor="#1C1A18"
                         app:strokeColor="#33FFFFFF"
                         app:strokeWidth="1dp">
 
@@ -327,7 +330,7 @@
                         android:layout_weight="1"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
-                        app:cardBackgroundColor="#B31C1A18"
+                        app:cardBackgroundColor="#1C1A18"
                         app:strokeColor="#33FFFFFF"
                         app:strokeWidth="1dp">
 
@@ -388,7 +391,7 @@
                         android:layout_marginStart="8dp"
                         app:cardCornerRadius="16dp"
                         app:cardElevation="2dp"
-                        app:cardBackgroundColor="#B31C1A18"
+                        app:cardBackgroundColor="#1C1A18"
                         app:strokeColor="#33FFFFFF"
                         app:strokeWidth="1dp">
 
@@ -415,21 +418,28 @@
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
+                            <!-- 主行：热榜第 1 条标题（最新），超出卡宽自动 marquee 滚动；
+                                 isSelected 由 MainActivity 在代码里置 true（marquee 开关） -->
                             <TextView
+                                android:id="@+id/newsTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="今日热点 ›"
-                                android:textSize="16sp"
+                                android:text="加载中…"
+                                android:textSize="13sp"
                                 android:textStyle="bold"
                                 android:textColor="#FFFFFF"
                                 android:paddingTop="3dp"
                                 android:maxLines="1"
+                                android:ellipsize="marquee"
+                                android:marqueeRepeatLimit="marquee_forever"
                                 android:includeFontPadding="false"/>
 
+                            <!-- 副行：第 1 条热度（>1w 换算万）；加载失败显示重试提示 -->
                             <TextView
+                                android:id="@+id/newsSub"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="头条热榜实时更新"
+                                android:text="今日热榜 ›"
                                 android:textSize="11sp"
                                 android:textColor="#B8FFFFFF"
                                 android:paddingTop="2dp"

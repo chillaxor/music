@@ -112,6 +112,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var spendVal: TextView
     private lateinit var spendCnt: TextView
     private lateinit var newsCard: View
+    private lateinit var newsTitle: TextView
+    private lateinit var newsSub: TextView
     /** 兜底底色：无每日一图时露出的主题渐变（原头部渐变改为全屏通幅） */
     private lateinit var fallbackBg: View
     /** 每日一图（全屏沉浸背景）：用户文件夹按日轮换，点问候行手动换 */
@@ -313,6 +315,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         spendVal = findViewById(R.id.spendVal)
         spendCnt = findViewById(R.id.spendCnt)
         newsCard = findViewById(R.id.newsCardRow)
+        newsTitle = findViewById(R.id.newsTitle)
+        newsSub = findViewById(R.id.newsSub)
+        // marquee 常驻开关：标题超出卡宽才滚，不长则静止（不 setSelected  marquee 不启动）
+        newsTitle.isSelected = true
         // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
         // ⚠️ 必须挂内部行（xxCardRow）而非外层 MaterialCardView：内部 LinearLayout 是
         // clickable 且铺满卡片，点击被它消费，挂外层监听永远收不到（同 queueEntryRow 教训）
@@ -357,6 +363,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         loadRailHomeStat()
         // 今日消费卡：读记账页 flows（type=支出）按今天日期求和
         loadTodaySpend()
+        // 新闻卡：拉热榜第 1 条（最新）展示，进首页就刷一次
+        loadNewsHot()
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 主面板（进 App 默认落点）：首页 / 搜索两个页签 =====
@@ -413,6 +421,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::railCard.isInitialized) loadRailHomeStat()
         // 今日消费卡：从记账页记完账回来，同步今日支出合计
         if (::spendVal.isInitialized) loadTodaySpend()
+        // 新闻卡：每次回前台都刷新成当前热榜第 1 条
+        if (::newsTitle.isInitialized) loadNewsHot()
         // 每日一图：跨天自动轮换（在后台过 0 点回来时刷新），文件夹换过也在这里生效
         if (::dailyImage.isInitialized) loadDailyImage()
         // 从 QueueActivity 等子页面回来：重新抢回播放 UI 回调（uiListener 是单槽，
@@ -748,6 +758,40 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun money(v: Double): String =
         if (v == v.toLong().toDouble()) v.toLong().toString()
         else String.format("%.1f", v)
+
+    /**
+     * 首页新闻卡：拉今日头条热榜第 1 条（最新）展示，只取第一条。
+     * 主行 newsTitle = 标题，超出半宽卡宽时靠 XML marquee 滚动（isSelected 常驻）；
+     * 副行 newsSub = 热度（HotValue >1w 换算「x.x 万热度」）。
+     * 接口失败两行显示兜底文案，卡片仍在（点了仍能进 NewsActivity 看重试）。
+     * 与 NewsActivity 同一接口，但这里只解析第 1 条，开销最小。
+     */
+    private fun loadNewsHot() {
+        if (!::newsTitle.isInitialized) return
+        scope.launch {
+            val first = try {
+                withContext(Dispatchers.IO) {
+                    val arr = JSONObject(
+                        get("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc")
+                    ).optJSONArray("data") ?: JSONArray()
+                    if (arr.length() > 0) arr.getJSONObject(0) else null
+                }
+            } catch (e: Exception) { null }
+            if (first == null) {
+                newsTitle.text = "热榜加载失败"
+                newsSub.text = "点这里重试 ›"
+            } else {
+                newsTitle.text = first.optString("Title", "")
+                val hot = first.optString("HotValue", "").trim().toLongOrNull()
+                newsSub.text = when {
+                    hot == null -> "今日热榜 ›"
+                    hot >= 10000 -> String.format("%.1f 万热度 ›", hot / 10000.0)
+                    else -> "$hot 热度 ›"
+                }
+            }
+            newsTitle.isSelected = true // 换文本后 marquee 重启
+        }
+    }
 
     /**
      * 首页高铁日程卡：读 networth_store 的 payload.rail（高铁页落盘的数据）。
