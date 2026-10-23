@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var greetingText: TextView
     private lateinit var dateText: TextView
     // —— 首页自定义入口拖动排序状态（长按抓起 → 移动=实时换序，按住不动=删除） ——
-    private var dragChip: TextView? = null
+    private var dragChip: View? = null
     private var dragIndex = -1
     private var dragOrder: MutableList<HomeShortcutStore.Item> = mutableListOf()
     private var grabReady = false
@@ -435,35 +435,79 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /** 渲染首页自定义资源位（不限量；点=进入，长按抓起可拖动排序，按住不动=删除） */
+    /** 无边界涟漪（按压反馈）：网格版 chip 没有 pill 底色，靠这个给触摸反馈 */
+    private fun borderlessRipple(): android.graphics.drawable.Drawable? {
+        val ta = obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackgroundBorderless))
+        val d = ta.getDrawable(0)
+        ta.recycle()
+        return d
+    }
+
+    /**
+     * 首页自定义资源位（A+C 网格版）：徽章在上、名称在下，一行 4 个等宽 cell。
+     *  - page 类徽章 = 自带 emoji，软底用主题色 33% 透明
+     *  - link 类徽章 = 站点字典 emoji 或「首字+哈希配色」字母徽章（见 [ShortcutBadge]）
+     *  - 名称 11.5sp 居中、最多两行、超出省略——横向宽度全部给文字，根治截断
+     *  - 根 view 挂 tag=item，拖动排序/长按删除仍按 id() 找 view，不依赖子视图类型
+     *  - 一行 4 个等宽的公式（含 -4 份右间距的坑）沿用旧版，FlowLayout 换行行为不变
+     */
     private fun renderShortcuts() {
         shortcutRow.removeAllViews()
         val items = HomeShortcutStore.list(this)
-        val padH = (12 * resources.displayMetrics.density).toInt()
-        val padV = (7 * resources.displayMetrics.density).toInt()
-        val marginH = (6 * resources.displayMetrics.density).toInt()
-        val marginV = (4 * resources.displayMetrics.density).toInt()
-        // 一行固定 4 个等宽：chip 宽 = (行宽 - 4 份右间距) / 4。
+        val d = resources.displayMetrics.density
+        val badgeSize = (38 * d).toInt()
+        val marginH = (6 * d).toInt()
+        val marginV = (4 * d).toInt()
         // ⚠️ 必须减 4 不是 3：第一行 4 个 chip 每个都带右 margin，FlowLayout
         // 换行判断 x+cw>行宽 时第 4 个 chip 的右 margin 同样占宽度；少减一份
         // 会让 4 个 chip 总宽超行宽几个 px，第 4 个被挤到第二行（5 个变 3+2）。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
-        else resources.displayMetrics.widthPixels - (24 * resources.displayMetrics.density).toInt()
-        val chipW = ((rowW - marginH * 4) / 4).coerceAtLeast((48 * resources.displayMetrics.density).toInt())
+        else resources.displayMetrics.widthPixels - (24 * d).toInt()
+        val chipW = ((rowW - marginH * 4) / 4).coerceAtLeast((48 * d).toInt())
+        val primary = ThemePrefs.currentPack(this).primary
+        val softPrimary = (primary and 0x00FFFFFF) or 0x55000000.toInt()
         items.forEach { item ->
-            val tv = TextView(this)
-            tv.text = "${item.emoji} ${item.label}"
-            tv.textSize = 13f
-            tv.setTextColor(ContextCompat.getColor(this, R.color.primary))
-            tv.setBackgroundResource(R.drawable.bg_pill_soft)
-            tv.setPadding(padH, padV, padH, padV)
-            // 等宽 + 单行 + 超出省略：字数超了显示 …，不撑宽不换行
-            tv.maxLines = 1
-            tv.ellipsize = android.text.TextUtils.TruncateAt.END
-            tv.gravity = android.view.Gravity.CENTER
-            tv.setOnClickListener { openShortcut(item) }
-            tv.tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
-            tv.setOnTouchListener { _, ev -> onChipTouch(tv, item, ev) }
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                background = borderlessRipple()
+                tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
+                setOnClickListener { openShortcut(item) }
+                setOnTouchListener { _, ev -> onChipTouch(this, item, ev) }
+            }
+            val badge = ShortcutBadge.of(item)
+            val badgeTv = TextView(this).apply {
+                text = badge.text
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(if (badge.emoji) softPrimary else badge.color)
+                }
+                if (badge.emoji) {
+                    textSize = 20f
+                } else {
+                    textSize = 17f
+                    setTextColor(0xFFFFFFFF.toInt())
+                    paint.isFakeBoldText = true
+                }
+            }
+            cell.addView(badgeTv, LinearLayout.LayoutParams(badgeSize, badgeSize))
+            val label = TextView(this).apply {
+                text = item.label
+                textSize = 11.5f
+                setTextColor(0xFFFFFFFF.toInt())
+                gravity = Gravity.CENTER
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                includeFontPadding = false
+                setPadding(0, (5 * d).toInt(), 0, 0)
+            }
+            cell.addView(
+                label,
+                LinearLayout.LayoutParams(chipW, LinearLayout.LayoutParams.WRAP_CONTENT)
+            )
             val lp = android.view.ViewGroup.MarginLayoutParams(
                 chipW,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -471,7 +515,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气
                 setMargins(0, 0, marginH, marginV)
             }
-            shortcutRow.addView(tv, lp)
+            shortcutRow.addView(cell, lp)
         }
     }
 
@@ -735,7 +779,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * ② 视图操作与 swap(dragOrder) 语义不同，拖几次后视图序≠数据序，松手重建当场跳变；
      * ③ 第二次交换时 other 恰是被拖 chip 自己，remove 它直接触发 ACTION_CANCEL 手势断裂。
      */
-    private fun onChipTouch(chip: TextView, item: HomeShortcutStore.Item, ev: MotionEvent): Boolean {
+    private fun onChipTouch(chip: View, item: HomeShortcutStore.Item, ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (dragChip != null) return true // 防御：同屏只拖一个
