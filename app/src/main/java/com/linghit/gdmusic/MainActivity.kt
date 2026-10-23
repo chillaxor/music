@@ -97,17 +97,20 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var tabSearch:TextView
     private lateinit var playlistPanel:View
     private lateinit var searchPanel:View
-    /** 「正在播放列表」入口卡（点进 QueueActivity 看完整队列）与卡内计数文本 */
-    private lateinit var queueEntry:View
-    private lateinit var queueCountText:TextView
+    /** 底部播放条里的队列 pill：「🎵 N」= 队列歌曲数，点击进 QueueActivity 看完整队列 */
+    private lateinit var queuePill: TextView
     /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加；点=进入，长按抓起可拖动排序，按住不动=删除） */
     private lateinit var shortcutRow: FlowLayout
-    // —— 顶部金价：国际 / 国内（接口拉取，失败则不显示）——
-    private lateinit var goldIntl: TextView
-    private lateinit var goldDom: TextView
-    private lateinit var goldBar: View
-    private lateinit var railBar: View
-    private lateinit var railHome: TextView
+    // —— 首页双列信息卡（第一排：黄金金价 + 高铁日程；第二排：今日消费 + 新闻热榜）——
+    private lateinit var goldCard: View
+    private lateinit var goldDomVal: TextView
+    private lateinit var goldIntlVal: TextView
+    private lateinit var railCard: View
+    private lateinit var railCardVal: TextView
+    private lateinit var spendCard: View
+    private lateinit var spendVal: TextView
+    private lateinit var spendCnt: TextView
+    private lateinit var newsCard: View
     /** 兜底底色：无每日一图时露出的主题渐变（原头部渐变改为全屏通幅） */
     private lateinit var fallbackBg: View
     /** 每日一图（全屏沉浸背景）：用户文件夹按日轮换，点问候行手动换 */
@@ -299,11 +302,20 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
         // 自定义资源位：固定入口 + 自定义快捷方式 + 「＋」统一网格渲染（见 renderShortcuts）
         shortcutRow = findViewById(R.id.shortcutRow)
-        goldIntl = findViewById(R.id.goldIntl)
-        goldDom = findViewById(R.id.goldDom)
-        goldBar = findViewById(R.id.goldBar)
-        railBar = findViewById(R.id.railBar)
-        railHome = findViewById(R.id.railHome)
+        goldCard = findViewById(R.id.goldCard)
+        goldDomVal = findViewById(R.id.goldDomVal)
+        goldIntlVal = findViewById(R.id.goldIntlVal)
+        railCard = findViewById(R.id.railCard)
+        railCardVal = findViewById(R.id.railCardVal)
+        spendCard = findViewById(R.id.spendCard)
+        spendVal = findViewById(R.id.spendVal)
+        spendCnt = findViewById(R.id.spendCnt)
+        newsCard = findViewById(R.id.newsCard)
+        // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
+        goldCard.setOnClickListener { loadGoldPrice() }
+        railCard.setOnClickListener { startActivity(Intent(this, RailActivity::class.java)) }
+        spendCard.setOnClickListener { startActivity(Intent(this, NetAssetActivity::class.java)) }
+        newsCard.setOnClickListener { startActivity(Intent(this, NewsActivity::class.java)) }
         fallbackBg = findViewById(R.id.themeFallbackBg)
         dailyImage = findViewById(R.id.dailyImage)
         greetingRow = findViewById(R.id.greetingRow)
@@ -337,26 +349,24 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 先按估算渲染一版，布局完成后再用真实宽度精确渲染一次
         renderShortcuts()
         shortcutRow.post { renderShortcuts() }
-        // 高铁往返状态条：首页头部「距上次离家 N 天」（有记录才显示）
+        // 高铁日程卡：距上次离家 N 天 / 正在家 / 下次计划（无记录显示「暂无行程」）
         loadRailHomeStat()
+        // 今日消费卡：读记账页 flows（type=支出）按今天日期求和
+        loadTodaySpend()
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 主面板（进 App 默认落点）：首页 / 搜索两个页签 =====
         tabPlaylist=findViewById(R.id.tabPlaylist); tabSearch=findViewById(R.id.tabSearch)
         playlistPanel=findViewById(R.id.playlistPanel); searchPanel=findViewById(R.id.searchPanel)
-        // 首页只留「正在播放列表」入口卡：完整队列收进独立页 QueueActivity，
-        // 自定义资源位再多也挤不到播放区；底部播放条（playerBar）原样保留。
-        // 监听挂内部行（queueEntryRow）而不是卡片：涟漪背景在内部行上，
-        // 挂父 View 的话按压态不会传播给子 View，点击没反馈
-        queueEntry=findViewById(R.id.queueEntryRow)
-        queueCountText=findViewById(R.id.queueCountText)
-        queueEntry.setOnClickListener { startActivity(Intent(this, QueueActivity::class.java)) }
+        // 播放卡已移除，队列入口 = 底部播放条的「🎵 N」pill（点击进 QueueActivity）
+        queuePill = findViewById(R.id.queuePill)
+        queuePill.setOnClickListener { startActivity(Intent(this, QueueActivity::class.java)) }
         tabPlaylist.setOnClickListener { switchTab(false) }
         tabSearch.setOnClickListener { switchTab(true) }
         switchTab(false) // 默认进入首页
 
         // 外部播放意图（下载页/收藏页的播放全部）必须放到所有视图初始化之后：
-        // 它会走 refreshQueueEntry()，而 queueCountText 是 lateinit，
+        // 它会走 refreshQueueEntry()，而 queuePill 是 lateinit，
         // 早于 findViewById 调用会抛 UninitializedPropertyAccessException 直接崩
         // （冷启动直接进下载页再点播放全部就会触发）
         handlePlayIntent()
@@ -393,10 +403,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         super.onResume()
         // 记账页可能钉了新的链接资源位回来，刷新一行
         if (::shortcutRow.isInitialized) renderShortcuts()
-        // 切回前台自动刷新顶部金价（首次进 App 也走这里；接口失败则保持隐藏）
-        if (::goldIntl.isInitialized) loadGoldPrice()
-        // 高铁往返状态条：从高铁页保存后回到首页，同步「距上次离家 N 天」
-        if (::railBar.isInitialized) loadRailHomeStat()
+        // 切回前台自动刷新顶部金价（首次进 App 也走这里；接口失败则显示「--」）
+        if (::goldDomVal.isInitialized) loadGoldPrice()
+        // 高铁日程卡：从高铁页保存后回到首页，同步「距上次离家 N 天」
+        if (::railCard.isInitialized) loadRailHomeStat()
+        // 今日消费卡：从记账页记完账回来，同步今日支出合计
+        if (::spendVal.isInitialized) loadTodaySpend()
         // 每日一图：跨天自动轮换（在后台过 0 点回来时刷新），文件夹换过也在这里生效
         if (::dailyImage.isInitialized) loadDailyImage()
         // 从 QueueActivity 等子页面回来：重新抢回播放 UI 回调（uiListener 是单槽，
@@ -670,9 +682,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     /**
-     * 顶部金价：国际价直接取 gold-api 的 XAU price（整数显示）；
+     * 首页黄金金价卡：国际价直接取 gold-api 的 XAU price（整数显示）；
      * 国内价 = 国际价 × er-api 的 USD→CNY 汇率 ÷ 31.1035（克/盎司换算，整数显示）。
-     * 两个接口任一失败则整行保持隐藏（不显示）。
+     * 卡片常驻显示：接口失败时国内/国际显示「--」，不整卡隐藏
+     * （双列布局下一个卡隐藏会导致另一边落空，视觉断裂）。
      */
     private fun loadGoldPrice() {
         scope.launch {
@@ -687,24 +700,61 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 }
                 val intl = Math.round(intlPrice).toInt()
                 val dom = Math.round(intlPrice * cnyRate / 31.1035).toInt()
-                goldIntl.text = "国际 $intl"
-                goldDom.text = "国内 $dom"
-                goldBar.visibility = View.VISIBLE
+                goldIntlVal.text = "国际 $intl"
+                goldDomVal.text = "国内 ¥$dom"
             } catch (e: Exception) {
-                // API 挂了：保持隐藏，不显示
+                // API 挂了：卡片保留，数值显示「--」
+                goldIntlVal.text = "国际 --"
+                goldDomVal.text = "国内 --"
             }
         }
     }
 
     /**
-     * 首页头部高铁状态条：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次离家 N 天」（按返程日 back 算），
-     * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录则整条隐藏。
+     * 首页今日消费卡：读 networth_store 的 payload.flows（记账页 index.html 的 data.flows），
+     * 按今天日期 + type=="支出" 求和 + 计笔数。结构：{date:"YYYY-MM-DD...", amount:Number, type:"支出"/"收入"}。
+     * 线程免疫（可能来自播放器回调线程）：不切线程，本地 SharedPreferences 读取足够快。
+     */
+    private fun loadTodaySpend() {
+        if (!::spendVal.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val raw = getSharedPreferences("networth_store", MODE_PRIVATE).getString("payload", "") ?: ""
+        var total = 0.0
+        var cnt = 0
+        try {
+            val flows = org.json.JSONObject(raw).optJSONArray("flows") ?: org.json.JSONArray()
+            for (i in 0 until flows.length()) {
+                val f = flows.optJSONObject(i) ?: continue
+                if (f.optString("type") != "支出") continue
+                val d = f.optString("date", "")
+                if (d.isEmpty() || !d.startsWith(today)) continue
+                total += f.optDouble("amount", 0.0)
+                cnt++
+            }
+        } catch (e: Exception) { /* JSON 坏了当没记过 */ }
+        spendVal.text = if (cnt == 0) "¥0" else "¥" + money(total)
+        spendCnt.text = when (cnt) {
+            0 -> "今天还没记账"
+            1 -> "1 笔支出"
+            else -> "$cnt 笔支出"
+        }
+    }
+
+    /** 金额显示：整数不带小数点，小数保留 1 位（去掉 .0 尾巴） */
+    private fun money(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString()
+        else String.format("%.1f", v)
+
+    /**
+     * 首页高铁日程卡：读 networth_store 的 payload.rail（高铁页落盘的数据），算「距上次离家 N 天」（按返程日 back 算），
+     * 若有未来计划行程则附「下次计划 X（还有 M 天）」。无任何记录显示「暂无行程」。
+     * 卡片常驻（与黄金卡对成双列），不整卡隐藏。
      */
     private fun loadRailHomeStat() {
-        if (!::railBar.isInitialized) return
+        if (!::railCard.isInitialized) return
         // 高铁数据与记账共用 networth_store（payload.rail 键），见 RailStore
         val raw = RailStore.readRail(this).toString()
-        if (raw.isBlank()) { railBar.visibility = View.GONE; return }
+        if (raw.isBlank()) { railCardVal.text = "暂无行程"; return }
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         val cal = java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
@@ -725,7 +775,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 outS to backS
             }
         } catch (e: Exception) { emptyList<Pair<java.util.Date, java.util.Date?>>() }
-        if (pairs.isEmpty()) { railBar.visibility = View.GONE; return }
+        if (pairs.isEmpty()) { railCardVal.text = "暂无行程"; return }
         // 最近一次已出发的行程还没回来（back 为空或返程日还没到）→ 人还在家
         val latestPast = pairs.filter { (out, _) -> !out.after(today) }.maxByOrNull { it.first }
         val latestBack = latestPast?.second
@@ -736,20 +786,19 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val next = pairs.map { it.first }.filter { it.after(today) }.minOrNull()
         val sb = StringBuilder()
         if (onTrip) {
-            sb.append("🚄 正在家 🏠")
+            sb.append("正在家")
         } else if (lastBack != null) {
             val daysSince = ((today.time - lastBack.time) / 86400000L).toInt()
-            sb.append("🚄 距上次离家 ")
+            sb.append("距上次离家 ")
                 .append(if (daysSince <= 0) "今天刚走" else "$daysSince 天")
         }
         if (next != null) {
             if (sb.isNotEmpty()) sb.append("　·　")
             val d2 = ((next.time - today.time) / 86400000L).toInt()
-            sb.append("下次计划 ${sdf.format(next)}(还有${d2}天)")
+            sb.append("下次 ${sdf.format(next)}(还有${d2}天)")
         }
-        if (sb.isEmpty()) { railBar.visibility = View.GONE; return }
-        railHome.text = sb.toString()
-        railBar.visibility = View.VISIBLE
+        if (sb.isEmpty()) { railCardVal.text = "暂无行程"; return }
+        railCardVal.text = sb.toString()
     }
 
     // ==================== 每日一图（全屏沉浸背景） ====================
@@ -1120,16 +1169,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 完整队列的渲染/高亮/定位已移到 QueueActivity.refreshQueue()，这里只维护卡片计数。
      * 线程免疫（onSongStart 可能来自播放器回调线程）。
      */
+    /** 刷新底部播放条的队列 pill：「🎵 N」= 队列歌曲数。线程免疫（onSongStart 可能来自播放器回调线程） */
     private fun refreshQueueEntry(){
-        if (!::queueCountText.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
+        if (!::queuePill.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
         val block={
             val q=PlayerManager.queueSnapshot()
-            queueCountText.text = when {
-                q.isEmpty() -> "空"
-                // 临时播放中：明确告诉用户列表没被碰，避免以为点首歌列表就乱了
-                PlayerManager.tempPlaying -> "${q.size} 首 · 临时播放中"
-                else -> "${q.size} 首"
-            }
+            queuePill.text = "🎵 ${q.size}"
         }
         if(Looper.myLooper()==Looper.getMainLooper()) block() else uiHandler.post(block)
     }
