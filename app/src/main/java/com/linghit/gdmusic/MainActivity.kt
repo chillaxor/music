@@ -458,10 +458,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // ⚠️ 旧方案「等宽 cell + 每格右 margin」首末永远偏出 half cell + margin 贴不了边；
         // 且 marginH 调多大都被 chipW 同步变小抵消（视觉间距恒 ≈8dp），已废弃。
         // 现在调松紧只剩一个入口：badgeSize（徽章越大间隙越小）。
-        // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
+        // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器横向 padding 兜底。
+        // ⚠️ 兜底值必须和实际 chrome 对齐：playlistPanel 12dp + 玻璃卡 4dp×2 = 20dp。
+        // 曾写成 24dp（旧卡 12dp 时代）→ gapH 算大 → 第一帧 6 格超行宽掉一行，post 重渲染才纠正，肉眼能看到一跳。
         val perRow = 6
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
-        else resources.displayMetrics.widthPixels - (24 * d).toInt()
+        else resources.displayMetrics.widthPixels - (20 * d).toInt()
         val gapH = ((rowW - badgeSize * perRow) / (perRow - 1)).coerceAtLeast(0)
         val labelW = badgeSize + gapH
         val primary = ThemePrefs.currentPack(this).primary
@@ -531,6 +533,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 // 其余格右 margin = 均分 gapH；下 margin 管换行后行与行的间距
                 setMargins(0, 0, if (isRowEnd(index)) 0 else gapH, marginV)
             }
+            // ⚠️⚠️ 必须显式挂 lp：addView(child) 不带 params 时走
+            // ViewGroup.generateDefaultLayoutParams() = MATCH_PARENT×MATCH_PARENT，
+            // 格子会被拉成整行宽（一格一行），gapH / isRowEnd / 行末归零全部失效。
+            // （d7bfc16 就栽在这：lp 造了却没 attach，贴边逻辑整个死掉。）
+            cell.layoutParams = lp
             return cell
         }
 
