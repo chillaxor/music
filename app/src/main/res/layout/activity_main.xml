@@ -485,11 +485,45 @@
                         android:gravity="center_vertical"
                         android:padding="10dp">
 
+                        <!-- 最左：上一首 / 播放暂停 / 下一首 -->
+                        <ImageButton
+                            android:id="@+id/prevBtn"
+                            android:layout_width="38dp"
+                            android:layout_height="38dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:src="@drawable/ic_prev"
+                            android:tint="#FFFFFF"
+                            android:scaleType="centerInside"
+                            android:contentDescription="上一首"/>
+
+                        <ImageButton
+                            android:id="@+id/playPauseBtn"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="2dp"
+                            android:background="@drawable/bg_circle_primary"
+                            android:src="@drawable/ic_play"
+                            android:tint="@color/on_primary"
+                            android:scaleType="centerInside"/>
+
+                        <ImageButton
+                            android:id="@+id/nextBtn"
+                            android:layout_width="38dp"
+                            android:layout_height="38dp"
+                            android:layout_marginStart="2dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:src="@drawable/ic_next"
+                            android:tint="#FFFFFF"
+                            android:scaleType="centerInside"
+                            android:contentDescription="下一首"/>
+
+                        <!-- 按钮之后：歌曲名 + 歌手（weight=1 吃掉中部空间，把右侧按钮顶到边） -->
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:orientation="vertical"
+                            android:paddingStart="8dp"
                             android:paddingEnd="4dp">
 
                             <TextView
@@ -535,38 +569,6 @@
                             android:tint="#FFFFFF"
                             android:scaleType="centerInside"
                             android:contentDescription="歌词页"/>
-
-                        <ImageButton
-                            android:id="@+id/prevBtn"
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:layout_marginStart="2dp"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:src="@drawable/ic_prev"
-                            android:tint="#FFFFFF"
-                            android:scaleType="centerInside"
-                            android:contentDescription="上一首"/>
-
-                        <ImageButton
-                            android:id="@+id/playPauseBtn"
-                            android:layout_width="44dp"
-                            android:layout_height="44dp"
-                            android:layout_marginStart="2dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:src="@drawable/ic_play"
-                            android:tint="@color/on_primary"
-                            android:scaleType="centerInside"/>
-
-                        <ImageButton
-                            android:id="@+id/nextBtn"
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
-                            android:layout_marginStart="2dp"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:src="@drawable/ic_next"
-                            android:tint="#FFFFFF"
-                            android:scaleType="centerInside"
-                            android:contentDescription="下一首"/>
 
                         <ImageButton
                             android:id="@+id/modeBtn"
