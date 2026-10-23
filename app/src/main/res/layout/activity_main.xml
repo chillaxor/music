@@ -239,13 +239,16 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- 工具玻璃卡：固定入口 + 自定义资源位统一网格（一行 5 个，见 renderShortcuts） -->
+                <!-- 工具玻璃卡：固定入口 + 自定义资源位统一网格（一行 6 个，首末贴卡片缘，见 renderShortcuts） -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:background="@drawable/bg_glass_card"
-                    android:padding="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
                     android:layout_marginBottom="10dp">
 
                     <!-- 固定入口（记账/看片/收藏/下载）+ 自定义资源位 + 「＋」，超长自动换行 -->
