@@ -494,8 +494,12 @@ class FloatButtonService : Service() {
         Log.d(TAG, "气泡展开 n=$n center=$center anchor=($anchorX,$anchorY)")
     }
 
-    /** 收起：气泡缩回，窗口缩回球大小，主球回到 ballX/ballY */
-    private fun collapseBubbles(animate: Boolean = true) {
+    /**
+     * 收起：气泡缩回，窗口缩回球大小，主球回到 ballX/ballY。
+     * 默认**不播动画**：点击/长按/划手/自动收起都走瞬时隐藏，
+     * 早期版本的 120ms 缩放回弹被用户反馈「弹一下」很多余，已去掉。
+     */
+    private fun collapseBubbles(animate: Boolean = false) {
         if (!expanded) return
         expanded = false
         mainHandler.removeCallbacks(autoCollapseRunnable)
