@@ -239,7 +239,7 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- 工具玻璃卡：固定入口 + 自定义资源位 -->
+                <!-- 工具玻璃卡：固定入口 + 自定义资源位统一网格（一行 5 个，见 renderShortcuts） -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -248,100 +248,11 @@
                     android:padding="12dp"
                     android:layout_marginBottom="10dp">
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <TextView
-                            android:id="@+id/openNetAsset"
-                            android:layout_width="0dp"
-                            android:layout_height="34dp"
-                            android:layout_weight="1"
-                            android:background="@drawable/bg_glass_pill"
-                            android:text="📒 记账"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:paddingStart="4dp"
-                            android:paddingEnd="4dp"
-                            android:layout_marginEnd="6dp"/>
-
-                        <TextView
-                            android:id="@+id/openVideo"
-                            android:layout_width="0dp"
-                            android:layout_height="34dp"
-                            android:layout_weight="1"
-                            android:background="@drawable/bg_glass_pill"
-                            android:text="🎬 看片"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:paddingStart="4dp"
-                            android:paddingEnd="4dp"
-                            android:layout_marginEnd="6dp"/>
-
-                        <TextView
-                            android:id="@+id/openFavorites"
-                            android:layout_width="0dp"
-                            android:layout_height="34dp"
-                            android:layout_weight="1"
-                            android:background="@drawable/bg_glass_pill"
-                            android:text="❤ 收藏"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:paddingStart="4dp"
-                            android:paddingEnd="4dp"
-                            android:layout_marginEnd="6dp"/>
-
-                        <TextView
-                            android:id="@+id/openDownloads"
-                            android:layout_width="0dp"
-                            android:layout_height="34dp"
-                            android:layout_weight="1"
-                            android:background="@drawable/bg_glass_pill"
-                            android:text="⬇ 下载"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:gravity="center"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:paddingStart="4dp"
-                            android:paddingEnd="4dp"
-                            android:layout_marginEnd="6dp"/>
-
-                        <TextView
-                            android:id="@+id/addShortcutBtn"
-                            android:layout_width="wrap_content"
-                            android:layout_height="34dp"
-                            android:background="@drawable/bg_glass_pill"
-                            android:text="＋"
-                            android:textSize="15sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:gravity="center"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"/>
-                    </LinearLayout>
-
-                    <!-- 自定义资源位，超长自动换行 -->
+                    <!-- 固定入口（记账/看片/收藏/下载）+ 自定义资源位 + 「＋」，超长自动换行 -->
                     <com.linghit.gdmusic.FlowLayout
                         android:id="@+id/shortcutRow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
                         android:clipChildren="false"
                         android:clipToPadding="false"/>
                 </LinearLayout>

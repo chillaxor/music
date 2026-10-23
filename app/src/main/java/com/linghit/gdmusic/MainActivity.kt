@@ -295,24 +295,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             else false
         }
 
-        findViewById<View>(R.id.openDownloads).setOnClickListener {
-            startActivity(Intent(this, DownloadedActivity::class.java))
-        }
-        findViewById<View>(R.id.openFavorites).setOnClickListener {
-            startActivity(Intent(this, FavoritesActivity::class.java))
-        }
         findViewById<View>(R.id.openSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        // 净资产记账（移植的 WebView 记账页）：播放列表面板顶部的入口卡片
-        findViewById<View>(R.id.openNetAsset).setOnClickListener {
-            startActivity(Intent(this, NetAssetActivity::class.java))
-        }
-        // 影视仓（TVBox / CatVod 风格视频模块）：自研 WebView 客户端 + 原生 ExoPlayer
-        findViewById<View>(R.id.openVideo).setOnClickListener {
-            startActivity(Intent(this, VideoActivity::class.java))
-        }
-        // 自定义资源位：渲染已钉的快捷方式 + 「＋」添加面板（长按胶囊删除）
+        // 自定义资源位：固定入口 + 自定义快捷方式 + 「＋」统一网格渲染（见 renderShortcuts）
         shortcutRow = findViewById(R.id.shortcutRow)
         goldIntl = findViewById(R.id.goldIntl)
         goldDom = findViewById(R.id.goldDom)
@@ -354,7 +340,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         shortcutRow.post { renderShortcuts() }
         // 高铁往返状态条：首页头部「距上次离家 N 天」（有记录才显示）
         loadRailHomeStat()
-        findViewById<View>(R.id.addShortcutBtn).setOnClickListener { showShortcutPicker() }
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
         // ===== 播放列表页（进 App 默认落点）=====
@@ -434,7 +419,6 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::dailyImage.isInitialized) loadDailyImage()
     }
 
-    /** 渲染首页自定义资源位（不限量；点=进入，长按抓起可拖动排序，按住不动=删除） */
     /** 无边界涟漪（按压反馈）：网格版 chip 没有 pill 底色，靠这个给触摸反馈 */
     private fun borderlessRipple(): android.graphics.drawable.Drawable? {
         val ta = obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackgroundBorderless))
@@ -443,38 +427,57 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         return d
     }
 
+    /** 固定入口（原工具行的四个 pill，现收编为统一网格前 4 格，不可拖不可删） */
+    private val fixedShortcuts = listOf(
+        HomeShortcutStore.Item("page", "netasset", "记账", "📒"),
+        HomeShortcutStore.Item("page", "video", "看片", "🎬"),
+        HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
+        HomeShortcutStore.Item("page", "downloads", "下载", "⬇")
+    )
+
     /**
-     * 首页自定义资源位（A+C 网格版）：徽章在上、名称在下，一行 4 个等宽 cell。
+     * 首页资源位统一网格：固定入口 + 自定义资源位 + 「＋」同一样式，一行 5 个等宽 cell。
      *  - page 类徽章 = 自带 emoji，软底用主题色 33% 透明
      *  - link 类徽章 = 站点字典 emoji 或「首字+哈希配色」字母徽章（见 [ShortcutBadge]）
      *  - 名称 11.5sp 居中、最多两行、超出省略——横向宽度全部给文字，根治截断
-     *  - 根 view 挂 tag=item，拖动排序/长按删除仍按 id() 找 view，不依赖子视图类型
-     *  - 一行 4 个等宽的公式（含 -4 份右间距的坑）沿用旧版，FlowLayout 换行行为不变
+     *  - 固定入口 + 自定义 + 「＋」同一网格不区分样式：固定 4 项在前，自定义随后，「＋」收尾
+     *  - 只有自定义 cell 挂 tag=item + 触摸监听（可拖可删）；固定项与「＋」无 tag，
+     *    childIndexAt 对无 tag 的 view 返回 -1，天然不会成为拖动落点
+     *  - 一行 5 个等宽的公式（含 -5 份右间距的坑）见下，FlowLayout 换行行为不变
      */
     private fun renderShortcuts() {
         shortcutRow.removeAllViews()
-        val items = HomeShortcutStore.list(this)
         val d = resources.displayMetrics.density
         val badgeSize = (38 * d).toInt()
         val marginH = (6 * d).toInt()
         val marginV = (4 * d).toInt()
-        // ⚠️ 必须减 4 不是 3：第一行 4 个 chip 每个都带右 margin，FlowLayout
-        // 换行判断 x+cw>行宽 时第 4 个 chip 的右 margin 同样占宽度；少减一份
-        // 会让 4 个 chip 总宽超行宽几个 px，第 4 个被挤到第二行（5 个变 3+2）。
+        // ⚠️ 必须减 5 不是 4：一行 5 个 cell 每个都带右 margin，FlowLayout
+        // 换行判断 x+cw>行宽 时第 5 个 cell 的右 margin 同样占宽度；少减一份
+        // 会让 5 个 cell 总宽超行宽几个 px，第 5 个被挤到第二行。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
         else resources.displayMetrics.widthPixels - (24 * d).toInt()
-        val chipW = ((rowW - marginH * 4) / 4).coerceAtLeast((48 * d).toInt())
+        val chipW = ((rowW - marginH * 5) / 5).coerceAtLeast((44 * d).toInt())
         val primary = ThemePrefs.currentPack(this).primary
         val softPrimary = (primary and 0x00FFFFFF) or 0x55000000.toInt()
-        items.forEach { item ->
+
+        /** 固定入口（原工具行的四个 pill，现收编为网格前 4 格，点击走 ShortcutRouter 同一套路由） */
+        val fixed = fixedShortcuts
+        val fixedIds = fixed.map { it.id() }.toSet()
+        // 自定义项里与固定入口同 id 的（如旧版加过的「影视仓/记账本」）不再重复渲染，避免一格两入口
+        val custom = HomeShortcutStore.list(this).filter { it.id() !in fixedIds }
+
+        // 网格 cell：徽章在上、名称在下。draggable=true 才挂 tag + 触摸监听（可拖可删）
+        fun gridCell(item: HomeShortcutStore.Item, draggable: Boolean): LinearLayout {
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 background = borderlessRipple()
-                tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
                 setOnClickListener { openShortcut(item) }
-                setOnTouchListener { _, ev -> onChipTouch(this, item, ev) }
+                if (draggable) {
+                    tag = item // 拖动排序用 tag 找 view，不依赖 child 下标
+                    setOnTouchListener { _, ev -> onChipTouch(this, item, ev) }
+                }
             }
             val badge = ShortcutBadge.of(item)
             val badgeTv = TextView(this).apply {
@@ -515,8 +518,39 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气
                 setMargins(0, 0, marginH, marginV)
             }
-            shortcutRow.addView(cell, lp)
+            return cell
         }
+
+        fixed.forEach { shortcutRow.addView(gridCell(it, draggable = false)) }
+        custom.forEach { shortcutRow.addView(gridCell(it, draggable = true)) }
+
+        // 「＋」收尾：单独一个图标（徽章样式，无名称），点开添加面板
+        val plusCell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = borderlessRipple()
+            setOnClickListener { showShortcutPicker() }
+        }
+        plusCell.addView(
+            TextView(this).apply {
+                text = "＋"
+                textSize = 20f
+                setTextColor(0xFFFFFFFF.toInt())
+                paint.isFakeBoldText = true
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(softPrimary)
+                }
+            },
+            LinearLayout.LayoutParams(badgeSize, badgeSize)
+        )
+        val plusLp = android.view.ViewGroup.MarginLayoutParams(
+            chipW,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 0, marginH, marginV) }
+        shortcutRow.addView(plusCell, plusLp)
     }
 
     /**
@@ -991,19 +1025,16 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 小红书分享链/深链/网页/app:// 伪协议都能自动识别，点击时由 ShortcutRouter 分发）
      */
     private fun showShortcutPicker() {
+        // 固定入口同 id 的（影视仓/记账本/下载/收藏）不再进面板：网格前 4 格已有，加了也会被渲染过滤掉
         val catalog = listOf(
             HomeShortcutStore.Item("page", "add", "记一笔", "✏️"),
             HomeShortcutStore.Item("page", "flow", "收支查询", "📊"),
             HomeShortcutStore.Item("page", "journal", "日志", "📖"),
             HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
-            HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
-            HomeShortcutStore.Item("page", "netasset", "记账本", "📒"),
             HomeShortcutStore.Item("page", "rail", "高铁往返", "🚄"),
             HomeShortcutStore.Item("page", "reminder", "提醒", "⏰"),
-            HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
-            HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
             HomeShortcutStore.Item("page", "settings", "设置", "⚙")
-        )
+        ).filter { it.id() !in fixedShortcuts.map { f -> f.id() } }
         val have = HomeShortcutStore.list(this).map { it.id() }.toSet()
         val names = catalog.map {
             (if (it.id() in have) "✓ " else "") + it.emoji + " " + it.label
