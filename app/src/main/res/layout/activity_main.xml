@@ -2,11 +2,12 @@
 <!--
   首页 = 全屏沉浸图版式（方案 D）：
   底层：主题渐变兜底 → 每日一图（用户文件夹按日轮换）→ 深色蒙层（保证白字可读）
-  上层：精简顶行 + 玻璃页签 + 播放列表面板（问候行/工具卡/正在播放卡/播放列表卡）
+  上层：精简顶行 + 玻璃页签 + 主面板（问候行/工具卡/正在播放列表入口卡/底部播放条）
   说明：
   - 没有配每日一图时 dailyImage 隐藏，露出主题渐变兜底底色，页面照常可用
   - 所有浮在图上的文字统一用白/透白色，不再吃主题的 colorOnSurface（深色字会在图上糊）
-  - 播放列表/搜索两个面板、队列适配器等 id 全部保持原名，Kotlin 侧绑定不变
+  - 完整播放队列已拆到独立页 QueueActivity，首页只留「正在播放列表」入口卡——
+    自定义资源位再多也挤不到播放区，底部播放条（playerBar）原样保留
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -105,7 +106,7 @@
                 android:layout_height="38dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="播放列表"
+                android:text="首页"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:background="@drawable/bg_pill_white"
@@ -260,12 +261,13 @@
                         android:clipToPadding="false"/>
                 </LinearLayout>
 
-                <!-- 播放列表玻璃卡：标题行 + 列表（占满剩余高度） -->
+                <!-- 正在播放列表入口卡：完整队列已拆到独立页 QueueActivity，
+                     首页只留这一个入口（点进去看全部歌曲/切歌/移除）——
+                     自定义资源位再多也挤不到播放区；底部播放条原样保留 -->
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/queueCard"
+                    android:id="@+id/queueEntryCard"
                     android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="2dp"
                     app:cardBackgroundColor="#B31C1A18"
@@ -274,109 +276,54 @@
                     android:layout_marginBottom="8dp">
 
                     <LinearLayout
+                        android:id="@+id/queueEntryRow"
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:orientation="vertical"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?attr/selectableItemBackground"
                         android:paddingStart="14dp"
-                        android:paddingEnd="8dp"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="6dp">
+                        android:paddingEnd="14dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp">
 
-                        <LinearLayout
-                            android:layout_width="match_parent"
+                        <TextView
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:paddingBottom="4dp">
+                            android:layout_weight="1"
+                            android:text="🎵 正在播放列表"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:maxLines="1"
+                            android:ellipsize="end"/>
 
-                            <TextView
-                                android:id="@+id/queueCount"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="播放列表"
-                                android:textSize="15sp"
-                                android:textStyle="bold"
-                                android:textColor="#FFFFFF"
-                                android:maxLines="1"
-                                android:ellipsize="end"/>
+                        <!-- 计数：由 MainActivity.refreshQueueEntry() 维护（N 首 / 空 / 临时播放中） -->
+                        <TextView
+                            android:id="@+id/queueCountText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="空"
+                            android:textSize="12sp"
+                            android:textColor="#B8FFFFFF"
+                            android:paddingEnd="4dp"/>
 
-                            <TextView
-                                android:id="@+id/playAllQueue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="▶ 播放全部"
-                                android:textSize="13sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorPrimary"
-                                android:paddingStart="12dp"
-                                android:paddingEnd="12dp"
-                                android:paddingTop="6dp"
-                                android:paddingBottom="6dp"/>
-
-                            <TextView
-                                android:id="@+id/clearQueue"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="清空"
-                                android:textSize="13sp"
-                                android:textColor="#B8FFFFFF"
-                                android:paddingStart="10dp"
-                                android:paddingEnd="10dp"
-                                android:paddingTop="6dp"
-                                android:paddingBottom="6dp"/>
-                        </LinearLayout>
-
-                        <FrameLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="0dp"
-                            android:layout_weight="1">
-
-                            <androidx.recyclerview.widget.RecyclerView
-                                android:id="@+id/queueList"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:clipToPadding="false"
-                                android:paddingBottom="8dp"/>
-
-                            <!-- 空列表提示 -->
-                            <LinearLayout
-                                android:id="@+id/queueEmpty"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:orientation="vertical"
-                                android:gravity="center"
-                                android:visibility="gone">
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="🎶"
-                                    android:textSize="48sp"/>
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="播放列表还是空的"
-                                    android:textSize="17sp"
-                                    android:textStyle="bold"
-                                    android:textColor="#FFFFFF"
-                                    android:paddingTop="10dp"/>
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="去搜索喜欢的歌，点一下就播"
-                                    android:textSize="13sp"
-                                    android:textColor="#B8FFFFFF"
-                                    android:paddingTop="6dp"/>
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/gotoSearchBtn"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="18dp"
-                                    android:text="去搜索"/>
-                            </LinearLayout>
-                        </FrameLayout>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="›"
+                            android:textSize="20sp"
+                            android:textColor="#B8FFFFFF"/>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+
+                <!-- 弹性占位：把底部播放条继续钉在屏幕底。
+                     原「播放列表卡」靠 layout_weight=1 占满剩余高度顺带实现了这个效果，
+                     队列拆去 QueueActivity 后这里补一个纯 View，布局语义不变 -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"/>
 
                 <!-- 正在播放玻璃卡：常驻页面底部，有歌才显示（代码控制显隐）；
                      封面用默认音符图，不接在线封面回调 -->

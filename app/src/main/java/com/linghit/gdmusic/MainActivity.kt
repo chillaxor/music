@@ -97,10 +97,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var tabSearch:TextView
     private lateinit var playlistPanel:View
     private lateinit var searchPanel:View
-    private lateinit var queueList:RecyclerView
-    private lateinit var queueEmpty:View
-    private lateinit var queueCount:TextView
-    private lateinit var queueAdapter:QueueAdapter
+    /** 「正在播放列表」入口卡（点进 QueueActivity 看完整队列）与卡内计数文本 */
+    private lateinit var queueEntry:View
+    private lateinit var queueCountText:TextView
     /** 首页自定义资源位容器（不限量，记账页 📌 / 「＋」面板添加；点=进入，长按抓起可拖动排序，按住不动=删除） */
     private lateinit var shortcutRow: FlowLayout
     // —— 顶部金价：国际 / 国内（接口拉取，失败则不显示）——
@@ -342,44 +341,27 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         loadRailHomeStat()
         // 音源胶囊（全部/网易云）与「播放全部结果」已按需求隐藏：本 API 仅网易云可用，搜索即全量结果
 
-        // ===== 播放列表页（进 App 默认落点）=====
+        // ===== 主面板（进 App 默认落点）：首页 / 搜索两个页签 =====
         tabPlaylist=findViewById(R.id.tabPlaylist); tabSearch=findViewById(R.id.tabSearch)
         playlistPanel=findViewById(R.id.playlistPanel); searchPanel=findViewById(R.id.searchPanel)
-        queueList=findViewById(R.id.queueList); queueEmpty=findViewById(R.id.queueEmpty)
-        queueCount=findViewById(R.id.queueCount)
+        // 首页只留「正在播放列表」入口卡：完整队列收进独立页 QueueActivity，
+        // 自定义资源位再多也挤不到播放区；底部播放条（playerBar）原样保留。
+        // 监听挂内部行（queueEntryRow）而不是卡片：涟漪背景在内部行上，
+        // 挂父 View 的话按压态不会传播给子 View，点击没反馈
+        queueEntry=findViewById(R.id.queueEntryRow)
+        queueCountText=findViewById(R.id.queueCountText)
+        queueEntry.setOnClickListener { startActivity(Intent(this, QueueActivity::class.java)) }
         tabPlaylist.setOnClickListener { switchTab(false) }
         tabSearch.setOnClickListener { switchTab(true) }
-        findViewById<View>(R.id.gotoSearchBtn).setOnClickListener { switchTab(true) }
-        findViewById<View>(R.id.playAllQueue).setOnClickListener {
-            val q=PlayerManager.queueSnapshot()
-            if(q.isEmpty()) Toast.makeText(this,"播放列表是空的",Toast.LENGTH_SHORT).show()
-            else PlayerManager.playAllResults(q)
-        }
-        findViewById<View>(R.id.clearQueue).setOnClickListener {
-            if(PlayerManager.queueSnapshot().isEmpty()){ Toast.makeText(this,"播放列表已经是空的",Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            PlayerManager.clearQueue()
-            Toast.makeText(this,"播放列表已清空",Toast.LENGTH_SHORT).show()
-        }
-        queueAdapter=QueueAdapter(
-            onPlay = { idx, _ ->
-                // 界面数据可能比真实队列旧（极端情况），越界直接忽略，别崩
-                val snap=PlayerManager.queueSnapshot()
-                val s=snap.getOrNull(idx) ?: return@QueueAdapter
-                PlayerManager.playInternal(s, snap, idx)
-            },
-            onRemove = { idx, _ -> PlayerManager.removeFromQueue(idx) }
-        )
-        queueList.apply {
-            layoutManager=LinearLayoutManager(this@MainActivity)
-            adapter=queueAdapter
-        }
-        switchTab(false) // 默认进入播放列表
+        switchTab(false) // 默认进入首页
 
         // 外部播放意图（下载页/收藏页的播放全部）必须放到所有视图初始化之后：
-        // 它会走 refreshQueue()，而 queueCount/queueList 是 lateinit，
+        // 它会走 refreshQueueEntry()，而 queueCountText 是 lateinit，
         // 早于 findViewById 调用会抛 UninitializedPropertyAccessException 直接崩
         // （冷启动直接进下载页再点播放全部就会触发）
         handlePlayIntent()
+        // QueueActivity 空列表的「去搜索」跳回来时带 open_tab=search，直接切到搜索页签
+        if(intent.getStringExtra("open_tab")=="search") switchTab(true)
 
         // 注册为播放 UI 监听，并把当前播放状态同步到播放条（用于息屏后重新打开 App）
         PlayerManager.uiListener = this
@@ -394,7 +376,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         playerBar.visibility = if(!showSearch && PlayerManager.current != null) View.VISIBLE else View.GONE
     }
 
-    /** 分段切换：showSearch=false 播放列表 / true 搜索 */
+    /** 分段切换：showSearch=false 首页 / true 搜索 */
     private fun switchTab(search: Boolean){
         showSearch=search
         playlistPanel.visibility=if(search) View.GONE else View.VISIBLE
@@ -404,7 +386,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         tabPlaylist.setTextColor(ContextCompat.getColor(this, if(search) R.color.on_primary else R.color.primary))
         tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_white else R.drawable.bg_pill_glass)
         tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.primary else R.color.on_primary))
-        if(!search) refreshQueue()
+        if(!search) refreshQueueEntry()
     }
 
     override fun onResume() {
@@ -417,6 +399,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::railBar.isInitialized) loadRailHomeStat()
         // 每日一图：跨天自动轮换（在后台过 0 点回来时刷新），文件夹换过也在这里生效
         if (::dailyImage.isInitialized) loadDailyImage()
+        // 从 QueueActivity 等子页面回来：重新抢回播放 UI 回调（uiListener 是单槽，
+        // 子页面 onResume 会抢走；不抢回来息屏切歌后首页播放条就不更新了）
+        PlayerManager.uiListener = this
+        // 队列可能在 QueueActivity 里被改过（移除/清空），同步入口卡计数
+        refreshQueueEntry()
     }
 
     /** 无边界涟漪（按压反馈）：网格版 chip 没有 pill 底色，靠这个给触摸反馈 */
@@ -1128,43 +1115,23 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             .show()
     }
 
-    /** 刷新播放列表页：标题计数 + 空状态显隐。线程免疫（onSongStart 可能来自播放器回调线程） */
-    private fun refreshQueue(){
-        if (!::queueCount.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
+    /**
+     * 刷新首页「正在播放列表」入口卡的计数文本。
+     * 完整队列的渲染/高亮/定位已移到 QueueActivity.refreshQueue()，这里只维护卡片计数。
+     * 线程免疫（onSongStart 可能来自播放器回调线程）。
+     */
+    private fun refreshQueueEntry(){
+        if (!::queueCountText.isInitialized) return // 防御：onCreate 早期被回调时视图还没就绪
         val block={
             val q=PlayerManager.queueSnapshot()
-            queueCount.text = when {
+            queueCountText.text = when {
+                q.isEmpty() -> "空"
                 // 临时播放中：明确告诉用户列表没被碰，避免以为点首歌列表就乱了
-                PlayerManager.tempPlaying -> "播放列表 · ${q.size} 首 · 临时播放中（不动列表）"
-                q.isEmpty() -> "播放列表"
-                else -> "播放列表 · ${q.size} 首"
+                PlayerManager.tempPlaying -> "${q.size} 首 · 临时播放中"
+                else -> "${q.size} 首"
             }
-            queueAdapter.submit(q)
-            queueEmpty.visibility=if(q.isEmpty()) View.VISIBLE else View.GONE
-            queueList.visibility=if(q.isEmpty()) View.GONE else View.VISIBLE
-            scrollQueueToCurrent(q)
         }
         if(Looper.myLooper()==Looper.getMainLooper()) block() else uiHandler.post(block)
-    }
-
-    /**
-     * 播放列表自动定位到正在播放的那首：起播/切歌/切回列表页时不用用户自己翻。
-     * 临时播放期间列表原样没动、外面那首不在队列里，不滚。
-     *
-     * ⚠️ 必须用 scrollToPositionWithOffset(pos, 0)，不能用 scrollToPosition：
-     * 后者在目标项「已可见」时只保证完全可见、不滚动（LinearLayoutManager
-     * updateAnchorFromPendingData 的可见分支），而 notifyDataSetChanged 后 RV 往往
-     * 刚从 0 号位布完局、目标项恰在可见区 → 定位静默失效。
-     * 带 offset=0 才会无条件把该项锚定到列表顶部。
-     * 也不 post：同步调用可赶上 submit 触发的同一次布局。
-     */
-    private fun scrollQueueToCurrent(q:List<Song>){
-        if(PlayerManager.tempPlaying) return
-        val cur=PlayerManager.current ?: return
-        val pos=q.indexOfFirst{ it===cur || it.key()==cur.key() }
-        if(pos<0) return
-        val lm=queueList.layoutManager as? LinearLayoutManager ?: return
-        runCatching{ lm.scrollToPositionWithOffset(pos, 0) }
     }
 
     private fun applyPlayMode() {
@@ -1405,6 +1372,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
         handlePlayIntent()
+        // QueueActivity 空列表的「去搜索」跳回来时带 open_tab=search，直接切到搜索页签
+        if(intent.getStringExtra("open_tab")=="search") switchTab(true)
     }
 
     /**
@@ -1420,8 +1389,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val idx=intent.getIntExtra("play_index",0).coerceIn(0, maxOf(0, list.size-1))
             if(list.isNotEmpty()){
                 PlayerManager.playInternal(list[idx], list, idx)
-                // 显式刷新一次播放列表页：不依赖 onSongStart 回调（起播失败时回调可能不来）
-                refreshQueue()
+                // 显式刷新一次入口卡计数：不依赖 onSongStart 回调（起播失败时回调可能不来）
+                refreshQueueEntry()
             }
             return
         }
@@ -1471,7 +1440,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 不再释放播放器：播放由前台服务保活，息屏/退出首页都不会中断；仅断开 UI 监听
         uiHandler.removeCallbacks(progressRunnable)
         scope.cancel()
-        PlayerManager.uiListener = null
+        // 仅当槽里还是自己才清：本页在后台被回收时，前台可能是 QueueActivity（它持有监听），
+        // 无条件置空会把队列页的刷新也打断
+        if(PlayerManager.uiListener === this) PlayerManager.uiListener = null
         super.onDestroy()
     }
 
@@ -1481,9 +1452,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         nowPlaying.text = song.name
         nowArtist.text = "${song.artist} · ${song.album}"
         status.text = statusText
-        // 关键：播放条换了歌，播放列表的「播放中」标记必须同步刷新，
-        // 否则自动切歌/点歌后高亮停在旧歌，出现「显示在播 A、实际响 B」
-        refreshQueue()
+        // 关键：播放条换了歌，入口卡的「正在播放」计数必须同步刷新，
+        // 否则自动切歌/点歌后计数停在旧值（完整队列的高亮在 QueueActivity 里刷新）
+        refreshQueueEntry()
     }
     // 正在播放卡封面统一用默认音符图，不接在线封面回调
     override fun onCover(bitmap: Bitmap?) {}
@@ -1496,7 +1467,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     override fun onCacheStateChanged(key: String, state: String) {
         dlStates[key] = state; adapter.notifyDataSetChanged()
     }
-    override fun onQueueChanged() { refreshQueue() }
+    override fun onQueueChanged() { refreshQueueEntry() }
 }
 
 /** 歌单/下载页把歌曲列表传给 MainActivity 的公共序列化（同包可见） */

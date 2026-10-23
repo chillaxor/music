@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  正在播放列表页（从首页「🎵 正在播放列表」入口卡进入）：
+  - 顶部主题色标题栏：返回 / 标题 / 播放全部 / 清空 + 计数行
+  - 列表复用首页的 item_queue_song + QueueAdapter：行点击=切到该首播放，
+    右侧 ✕=从队列移除，当前播放项主题色高亮
+  - 空状态：提示去搜索（按钮跳回首页并切到搜索页签，MainActivity 读 open_tab）
+  数据全部来自全局 PlayerManager，与首页播放条/歌词页/桌面歌词同一份队列。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶部标题栏：主题色底（ThemePrefs.applyTheme 生效） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/primary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/backBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="‹ 返回"
+                android:textSize="16sp"
+                android:textColor="@color/on_primary"
+                android:paddingEnd="12dp"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎵 正在播放列表"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:maxLines="1"
+                android:ellipsize="end"/>
+
+            <TextView
+                android:id="@+id/playAllQueue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▶ 播放全部"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_primary"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"/>
+
+            <TextView
+                android:id="@+id/clearQueue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="清空"
+                android:textSize="14sp"
+                android:textColor="@color/on_primary"
+                android:alpha="0.85"
+                android:paddingStart="10dp"
+                android:paddingEnd="4dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"/>
+        </LinearLayout>
+
+        <!-- 计数行：共 N 首 / 临时播放中提示 -->
+        <TextView
+            android:id="@+id/queueCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="12sp"
+            android:textColor="@color/on_primary"
+            android:alpha="0.85"
+            android:paddingTop="4dp"
+            android:includeFontPadding="false"/>
+    </LinearLayout>
+
+    <!-- 列表区：占满剩余高度 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/background">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/queueList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="12dp"/>
+
+        <!-- 空列表提示 -->
+        <LinearLayout
+            android:id="@+id/queueEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎵"
+                android:textSize="48sp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="播放列表还是空的"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface"
+                android:paddingTop="10dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="去搜索喜欢的歌，点一下就播"
+                android:textSize="13sp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:paddingTop="6dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/gotoSearchBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="去搜索"/>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

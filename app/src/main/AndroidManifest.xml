@@ -39,6 +39,8 @@
         <!-- 全屏歌词页：从底部播放条的歌词按钮进入 -->
         <activity android:name=".LyricActivity" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".FavoritesActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 正在播放列表页：从首页「🎵 正在播放列表」入口卡进入，看完整队列/切歌/移除 -->
+        <activity android:name=".QueueActivity" android:label="正在播放列表" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 播放历史（影视仓）：断点续播，竖屏列表页 -->
         <activity android:name=".VideoHistoryActivity" android:label="播放历史" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false"/>
