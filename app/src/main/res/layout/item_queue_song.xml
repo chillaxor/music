@@ -1,66 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  播放队列行（QueueActivity 专用，浅色主题）：
+  白卡 + 主题属性文字色，与收藏页/下载页的 item 同一范式。
+  ⚠️ 本布局原为首页深色玻璃卡设计（on_dark 白字），首页队列卡拆除后
+  仅剩 QueueActivity 使用，已整体改为浅色；高亮色由 QueueAdapter 用
+  ThemePrefs.currentPack().primary 按当前主题设置，12 套主题都正确。
+-->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingStart="14dp"
-    android:paddingEnd="8dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp">
-
-    <TextView
-                android:id="@+id/qIndex"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:gravity="center"
-                android:text="1"
-                android:textSize="13sp"
-                android:textColor="@color/on_dark_dim"/>
+    android:layout_marginBottom="8dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="?attr/colorSurface">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:id="@+id/itemRoot"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingStart="6dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:foreground="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <!-- 序号：正在播放那行用主题色，其余用弱化灰 -->
         <TextView
+            android:id="@+id/qIndex"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="1"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorOnSurfaceVariant"/>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="8dp">
+
+            <TextView
                 android:id="@+id/qName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="歌名"
                 android:textSize="15sp"
                 android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface"
                 android:maxLines="1"
-                android:ellipsize="end"
-                android:textColor="@color/on_dark"/>
-        <TextView
+                android:ellipsize="end"/>
+
+            <TextView
                 android:id="@+id/qArtist"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="歌手 · 专辑"
                 android:textSize="12sp"
                 android:paddingTop="2dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:maxLines="1"
-                android:ellipsize="end"
-                android:textColor="@color/on_dark_dim"/>
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <!-- 正在播标记：主题色小徽章（仅当前行可见，QueueAdapter 控制显隐） -->
+        <TextView
+            android:id="@+id/qPlaying"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="▶ 播放中"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorPrimary"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:visibility="gone"/>
+
+        <TextView
+            android:id="@+id/qRemove"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:text="✕"
+            android:textSize="16sp"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:contentDescription="从队列移除"/>
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/qPlaying"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="播放中"
-        android:textSize="11sp"
-        android:textColor="@color/primary"
-        android:visibility="gone"/>
-
-    <TextView
-        android:id="@+id/qRemove"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:gravity="center"
-        android:text="✕"
-        android:textSize="14sp"
-        android:textColor="@color/star_off"/>
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

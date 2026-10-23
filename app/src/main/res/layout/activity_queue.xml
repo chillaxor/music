@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   正在播放列表页（从首页「🎵 正在播放列表」入口卡进入）：
-  - 顶部主题色标题栏：返回 / 标题 / 播放全部 / 清空 + 计数行
-  - 列表复用首页的 item_queue_song + QueueAdapter：行点击=切到该首播放，
-    右侧 ✕=从队列移除，当前播放项主题色高亮
+  - 顶部主题色标题栏：返回 / 标题 / 播放全部 / 清空 + 计数行（与收藏页/下载页同款头栏）
+  - 列表复用 item_queue_song（白卡行，主题属性文字色）：行点击=切到该首播放，
+    右侧 ✕=从队列移除，当前播放项主题色高亮 + 「▶ 播放中」徽章
   - 空状态：提示去搜索（按钮跳回首页并切到搜索页签，MainActivity 读 open_tab）
   数据全部来自全局 PlayerManager，与首页播放条/歌词页/桌面歌词同一份队列。
 -->
@@ -102,10 +102,10 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="12dp"/>
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="16dp"/>
 
         <!-- 空列表提示 -->
         <LinearLayout

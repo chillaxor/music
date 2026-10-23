@@ -1546,6 +1546,12 @@ class QueueAdapter(
         private val a=root.findViewById<TextView>(R.id.qArtist)
         private val playing=root.findViewById<TextView>(R.id.qPlaying)
         private val rm=root.findViewById<TextView>(R.id.qRemove)
+        // 主题属性取色：高亮=当前主题主色（12 套主题都正确），常规=浅色中性字色。
+        // ⚠️ 不能用 R.color.primary（静态橙，非默认主题下高亮跑色）；
+        // ⚠️ 也不能再用 on_dark/on_dark_dim（首页深色玻璃卡的白字系，白卡上等于隐形）
+        private val cPrimary=ThemePrefs.currentPack(root.context).primary
+        private val cName=ContextCompat.getColor(root.context, R.color.on_surface)
+        private val cDim=ContextCompat.getColor(root.context, R.color.on_surface_variant)
         fun bind(x:Song, position:Int){
             // 高亮「正在播放」：优先对象 identity（队列里就是 current 那个对象），
             // 再退按键匹配。不能只按键——同一首歌在队列里出现两次时按键会撞车，
@@ -1554,10 +1560,12 @@ class QueueAdapter(
             val cur=PlayerManager.current
             val isCur=!PlayerManager.tempPlaying && cur!=null && (cur===x || cur.key()==x.key())
             idx.text=(position+1).toString()
-            idx.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_dark_dim))
+            idx.setTextColor(if(isCur) cPrimary else cDim)
             n.text=x.name
-            n.setTextColor(ContextCompat.getColor(root.context, if(isCur) R.color.primary else R.color.on_dark))
+            n.setTextColor(if(isCur) cPrimary else cName)
             a.text=if(x.artist.isBlank()) x.album else "${x.artist} · ${x.album}"
+            a.setTextColor(cDim)
+            rm.setTextColor(cDim)
             playing.visibility=if(isCur) View.VISIBLE else View.GONE
             root.setOnClickListener{ onPlay(position, x) }
             rm.setOnClickListener{ onRemove(position, x) }
