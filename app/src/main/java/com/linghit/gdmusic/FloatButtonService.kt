@@ -339,10 +339,15 @@ class FloatButtonService : Service() {
         expanded = true
         val dm = resources.displayMetrics
 
-        // 扇区中心角：默认向上（-90°）；球贴屏幕顶部 → 向下；贴左/右缘 → 整体偏 45°
-        var center = if (ballY < dm.heightPixels * 0.32f) 90.0 else -90.0
-        if (ballX < dm.widthPixels * 0.22f) center += 45.0
-        else if (ballX > dm.widthPixels * 0.78f) center -= 45.0
+        // 扇区中心角：默认向上（-90°）。按球心实际剩余空间判向，不按屏幕百分比——
+        // 顶部放不下整个扇形且下方更宽 → 向下；球心离左/右缘太近 → 整体偏 45°。
+        // 方向选对是「球不动」的前提：气泡朝空间大的方向展开，无需再钳制窗口。
+        val cx = ballX + ballSize / 2f
+        val cy = ballY + ballSize / 2f
+        val need = fanRadius + bubbleSize / 2 + dp(6)
+        var center = if (cy < need && dm.heightPixels - cy > cy) 90.0 else -90.0
+        if (cx < need) center += 45.0
+        else if (dm.widthPixels - cx < need) center -= 45.0
         val half = when (n) { 1 -> 0.0; 2 -> 42.0; 3 -> 58.0; 4 -> 68.0; else -> 75.0 }
 
         // 以主球中心为原点算每个气泡偏移，并求内容包围盒 → 主球在 root 里的锚点
@@ -383,15 +388,16 @@ class FloatButtonService : Service() {
         }
         for (i in n until bubbleViews.size) bubbleViews[i].visibility = View.GONE
 
-        // 窗口撑成 rootSize，主球视觉位置不变；整体钳制在屏幕内
+        // 窗口撑成 rootSize，主球视觉位置**不变**：原点 = 球坐标 − 锚点，绝不做屏幕钳制。
+        // ⚠️ 早期版本在这里 coerceIn(0, 屏宽-rootSize)，球贴边缘时负值被钳到 0，
+        // 主球当场被推离原位；收起时又移一次（用户反馈「长按移位、关掉气泡也移位」）。
+        // FLAG_LAYOUT_NO_LIMITS 已允许窗口伸出屏幕，扇区方向又按剩余空间选好，
+        // 气泡在屏内；root 超屏的部分被裁掉即可。ballX/Y 不写回，收起精确回到原位。
         val p = params ?: return
         p.width = rootSize; p.height = rootSize
-        p.x = (ballX - anchorX).coerceIn(0, (dm.widthPixels - rootSize).coerceAtLeast(0))
-        p.y = (ballY - anchorY).coerceIn(0, (dm.heightPixels - rootSize).coerceAtLeast(0))
+        p.x = ballX - anchorX
+        p.y = ballY - anchorY
         runCatching { wm.updateViewLayout(root, p) }
-        // 钳制后主球实际落点写回 ballX/Y，收起时精确回到手指下的位置
-        ballX = p.x + anchorX
-        ballY = p.y + anchorY
 
         mainHandler.postDelayed(autoCollapseRunnable, AUTO_COLLAPSE_MS)
         vibrate()
