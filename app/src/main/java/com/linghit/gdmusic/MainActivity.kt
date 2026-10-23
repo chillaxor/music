@@ -686,7 +686,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         val cal = java.util.Calendar.getInstance()
         val week = listOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
             .getOrElse(cal.get(java.util.Calendar.DAY_OF_WEEK) - 1) { "" }
-        dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week"
+        val lunar = LunarUtil.text(cal)   // 农历九月十四；表外日期（1900前/2099后）为空串
+        val lunarPart = if (lunar.isNotBlank()) " · $lunar" else ""
+        dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week$lunarPart"
         scope.launch {
             // 之前锁死 1600 + 2 的幂跳变，常只解到 ~1000 宽，全屏放大必糊。
             // 改为按屏幕实际分辨率：最长边×2 封顶 4000，解码尺寸贴着屏幕跑 → 基本 1:1 清晰，
