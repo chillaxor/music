@@ -198,6 +198,7 @@
                         app:strokeWidth="1dp">
 
                         <LinearLayout
+                            android:id="@+id/goldCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
@@ -258,6 +259,7 @@
                         app:strokeWidth="1dp">
 
                         <LinearLayout
+                            android:id="@+id/railCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
@@ -314,6 +316,7 @@
                         app:strokeWidth="1dp">
 
                         <LinearLayout
+                            android:id="@+id/spendCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
@@ -374,6 +377,7 @@
                         app:strokeWidth="1dp">
 
                         <LinearLayout
+                            android:id="@+id/newsCardRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"

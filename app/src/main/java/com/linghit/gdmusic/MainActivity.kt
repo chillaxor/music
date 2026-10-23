@@ -302,16 +302,18 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
         // 自定义资源位：固定入口 + 自定义快捷方式 + 「＋」统一网格渲染（见 renderShortcuts）
         shortcutRow = findViewById(R.id.shortcutRow)
-        goldCard = findViewById(R.id.goldCard)
+        goldCard = findViewById(R.id.goldCardRow)
         goldDomVal = findViewById(R.id.goldDomVal)
         goldIntlVal = findViewById(R.id.goldIntlVal)
-        railCard = findViewById(R.id.railCard)
+        railCard = findViewById(R.id.railCardRow)
         railCardVal = findViewById(R.id.railCardVal)
-        spendCard = findViewById(R.id.spendCard)
+        spendCard = findViewById(R.id.spendCardRow)
         spendVal = findViewById(R.id.spendVal)
         spendCnt = findViewById(R.id.spendCnt)
-        newsCard = findViewById(R.id.newsCard)
+        newsCard = findViewById(R.id.newsCardRow)
         // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
+        // ⚠️ 必须挂内部行（xxCardRow）而非外层 MaterialCardView：内部 LinearLayout 是
+        // clickable 且铺满卡片，点击被它消费，挂外层监听永远收不到（同 queueEntryRow 教训）
         goldCard.setOnClickListener { loadGoldPrice() }
         railCard.setOnClickListener { startActivity(Intent(this, RailActivity::class.java)) }
         spendCard.setOnClickListener { startActivity(Intent(this, NetAssetActivity::class.java)) }
