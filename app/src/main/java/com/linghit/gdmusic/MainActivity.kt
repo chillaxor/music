@@ -449,18 +449,21 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         shortcutRow.removeAllViews()
         val d = resources.displayMetrics.density
         val badgeSize = (48 * d).toInt()
-        val marginH = (5 * d).toInt()
         val marginV = (4 * d).toInt()
-        // ⚠️ 必须减 6 不是 5：一行 6 个 cell 每个都带右 margin，FlowLayout
-        // 换行判断 x+cw>行宽 时第 6 个 cell 的右 margin 同样占宽度；少减一份
-        // 会让 6 个 cell 总宽超行宽几个 px，第 6 个被挤到第二行。
+        // 一行 6 格，**首格左缘对齐、末格右缘对齐**：格间空隙不手填，由行宽均分派生——
+        // gapH = (行宽 − 6×徽章直径) / 5；cell 宽 = 徽章直径（徽章即格），
+        // 行末 cell 右 margin 归零 → 6 格总宽 = 6×徽章 + 5×gapH ≤ 行宽。
+        // ⚠️ FlowLayout 换行判断是 x + (子宽+左右margin) > 行宽（严格大于，见 FlowLayout.onMeasure），
+        // 均分后正好相等不掉行；整数除法最多剩几 px 尾差，看不见。
+        // ⚠️ 旧方案「等宽 cell + 每格右 margin」首末永远偏出 half cell + margin 贴不了边；
+        // 且 marginH 调多大都被 chipW 同步变小抵消（视觉间距恒 ≈8dp），已废弃。
+        // 现在调松紧只剩一个入口：badgeSize（徽章越大间隙越小）。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
-        // marginH 5dp + 徽章 48dp：徽章间视觉间距 = (chipW-48)/2×2 + marginH ≈ 8dp。
-        // ⚠️ 改 marginH 视觉间距几乎不变：格宽 chipW 跟着同步变小，互相抵消；
-        // 想明显松紧优先动 badgeSize。
+        val perRow = 6
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
         else resources.displayMetrics.widthPixels - (24 * d).toInt()
-        val chipW = ((rowW - marginH * 6) / 6).coerceAtLeast((40 * d).toInt())
+        val gapH = ((rowW - badgeSize * perRow) / (perRow - 1)).coerceAtLeast(0)
+        val labelW = badgeSize + gapH
         val primary = ThemePrefs.currentPack(this).primary
         val softPrimary = (primary and 0x00FFFFFF) or 0x55000000.toInt()
 
@@ -470,11 +473,17 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 自定义项里与固定入口同 id 的（如旧版加过的「影视仓/记账本」）不再重复渲染，避免一格两入口
         val custom = HomeShortcutStore.list(this).filter { it.id() !in fixedIds }
 
+        val total = fixed.size + custom.size + 1
+        /** 行末格 = 每行第 6 格，或整表最后一项（「＋」恒为最后）；行末格右 margin 归零实现右缘贴边 */
+        fun isRowEnd(i: Int) = i % perRow == perRow - 1 || i == total - 1
+
         // 网格 cell：徽章在上、名称在下。draggable=true 才挂 tag + 触摸监听（可拖可删）
-        fun gridCell(item: HomeShortcutStore.Item, draggable: Boolean): LinearLayout {
+        fun gridCell(item: HomeShortcutStore.Item, draggable: Boolean, index: Int): LinearLayout {
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
+                // label 宽 = 徽章+gap 比 cell 宽，居中后向两侧溢出，不裁切
+                clipChildren = false
                 background = borderlessRipple()
                 setOnClickListener { openShortcut(item) }
                 if (draggable) {
@@ -512,20 +521,22 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             }
             cell.addView(
                 label,
-                LinearLayout.LayoutParams(chipW, LinearLayout.LayoutParams.WRAP_CONTENT)
+                LinearLayout.LayoutParams(labelW, LinearLayout.LayoutParams.WRAP_CONTENT)
             )
             val lp = android.view.ViewGroup.MarginLayoutParams(
-                chipW,
+                badgeSize,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                // 右间距 + 下间距：FlowLayout 换行后行与行之间也透气
-                setMargins(0, 0, marginH, marginV)
+                // 行末格右 margin 归零 → 末格徽章右缘 = 行右缘（贴边）；
+                // 其余格右 margin = 均分 gapH；下 margin 管换行后行与行的间距
+                setMargins(0, 0, if (isRowEnd(index)) 0 else gapH, marginV)
             }
             return cell
         }
 
-        fixed.forEach { shortcutRow.addView(gridCell(it, draggable = false)) }
-        custom.forEach { shortcutRow.addView(gridCell(it, draggable = true)) }
+        var idx = 0
+        fixed.forEach { shortcutRow.addView(gridCell(it, draggable = false, index = idx++)) }
+        custom.forEach { shortcutRow.addView(gridCell(it, draggable = true, index = idx++)) }
 
         // 「＋」收尾：单独一个图标（徽章样式，无名称），点开添加面板
         val plusCell = LinearLayout(this).apply {
@@ -550,9 +561,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             LinearLayout.LayoutParams(badgeSize, badgeSize)
         )
         val plusLp = android.view.ViewGroup.MarginLayoutParams(
-            chipW,
+            badgeSize,
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, marginH, marginV) }
+        ).apply {
+            // 「＋」恒为整表最后一项 → 行末格，右 margin 归零贴右边
+            setMargins(0, 0, 0, marginV)
+        }
         shortcutRow.addView(plusCell, plusLp)
     }
 

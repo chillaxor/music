@@ -20,9 +20,10 @@ class FlowLayout @JvmOverloads constructor(
 
     init {
         // ⚠️ 间距必须为 0：本容器只用于首页自定义资源位，chip 的间距由
-        // MainActivity.renderShortcuts() 给每个 child 设的 margin 控制。
-        // 这里若再加内置间距，换行判断会和 chipW=(行宽-3×marginH)/4 的
-        // 公式对不上——每个 chip 实际多占 hSpacing，4 个塞不下变 3+2。
+        // MainActivity.renderShortcuts() 给每个 child 设的 margin 控制
+        // （均分 gapH = (行宽-6×徽章)/5，行末格右 margin 归零贴边）。
+        // 这里若再加内置间距，换行判断会和均分公式对不上——每个 chip 实际多占
+        // hSpacing，6 个塞不下变 5+1。
         hSpacing = 0
         vSpacing = 0
     }
