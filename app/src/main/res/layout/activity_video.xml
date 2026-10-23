@@ -41,6 +41,30 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
+        <!-- 顶部居中：视频标题（片名 · 线路 · 集名）。
+             显隐逻辑与左上角小窗按钮一致：播放中 + 控制条可见才显示，
+             控制条自动隐藏/暂停/进小窗/进系统PiP 时一并隐藏（见 updatePipButton）。
+             maxWidth 300dp + ellipsize=end：防止长标题顶到左右两侧的按钮/时钟。 -->
+        <TextView
+            android:id="@+id/videoTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="10dp"
+            android:background="#66000000"
+            android:ellipsize="end"
+            android:maxWidth="300dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:singleLine="true"
+            android:text=""
+            android:textSize="13sp"
+            android:textColor="#ffffff"
+            android:visibility="gone"
+            android:contentDescription="视频标题" />
+
         <!-- 右上角：当前时间（替代原集数标题/关闭按钮） -->
         <TextView
             android:id="@+id/videoClock"

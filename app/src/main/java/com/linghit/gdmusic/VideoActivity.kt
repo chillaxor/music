@@ -93,6 +93,8 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var overlay: FrameLayout
     private lateinit var playerView: PlayerView
     private lateinit var videoPip: TextView
+    /** 顶部居中的视频标题（片名 · 线路 · 集名），显隐跟 videoPip 同一套条件 */
+    private lateinit var videoTitle: TextView
     private var controlsVisible = true
     private lateinit var videoClock: TextView
     private lateinit var videoPrev: TextView
@@ -167,6 +169,10 @@ class VideoActivity : AppCompatActivity() {
     /** 当前直链 + 标题（投屏/切集重投都用；爬虫源的集不含直链，投屏中切集受限） */
     private var curCastUrl = ""
     private var curCastTitle = ""
+    /** 播放层顶部居中显示的标题（完整串「片名 · 线路 · 集名」） */
+    private var curVideoTitle = ""
+    /** 标题里去掉集名的那截前缀（「片名 · 线路」）：切集时拼新集名用，空串表示原标题无「 · 」 */
+    private var curTitlePrefix = ""
     /** 电视端轮询出来的播放状态 */
     private var castPosMs = 0L
     private var castDurMs = 0L
@@ -315,6 +321,7 @@ class VideoActivity : AppCompatActivity() {
         overlay = findViewById(R.id.videoOverlay)
         playerView = findViewById(R.id.videoPlayerView)
         videoPip = findViewById(R.id.videoPip)
+        videoTitle = findViewById(R.id.videoTitle)
         videoClock = findViewById(R.id.videoClock)
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
@@ -920,6 +927,10 @@ class VideoActivity : AppCompatActivity() {
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx")
         curCastTitle = title          // 投屏时作为 DIDL-Lite 标题展示在电视端
+        // 播放层标题：JS 传的是「片名 · 线路 · 集名」，切集时只换集名那一截
+        curVideoTitle = title
+        curTitlePrefix = title.substringBeforeLast(" · ", "")
+        videoTitle.text = title
         if (epsJson.isNotBlank()) epsList = parseEps(epsJson)
         if (referer.isNotBlank()) curReferer = referer
         if (idx >= 0) curIdx = idx
@@ -1303,6 +1314,7 @@ class VideoActivity : AppCompatActivity() {
         castLayer.visibility = View.VISIBLE
         playerView.visibility = View.GONE
         videoPip.visibility = View.GONE
+        videoTitle.visibility = View.GONE
         stopSkipTick()                       // 本地轮询停，位置改由 castTick 提供
         player?.pause()
         player?.stop()
@@ -1382,6 +1394,10 @@ class VideoActivity : AppCompatActivity() {
         }
         Log.d("VidPlay", "切集 -> ${ep.name}")
         playMediaUrl(ep.url, curReferer)
+        // 切集换标题：前缀（片名 · 线路）不动，只换集名；前缀为空就只显示集名
+        // （爬虫源切集会经 __playSpiderAt 回传 startVideo，标题自动覆盖，不用这里管）
+        curVideoTitle = if (curTitlePrefix.isNotBlank()) "${curTitlePrefix} · ${ep.name}" else ep.name
+        videoTitle.text = curVideoTitle
         // 切集同步历史：集名/下标/直链变，播放位置从头开始
         VideoHistoryStore.updateEpisode(this, curHisKey, ep.name, i, ep.url)
         curHisRec?.put("epName", ep.name)?.put("idx", i)?.put("url", ep.url)?.put("positionMs", 0)
@@ -1440,6 +1456,7 @@ class VideoActivity : AppCompatActivity() {
         showSystemBars()
         setKeepScreenOn(false)
         videoPip.visibility = View.GONE
+        videoTitle.visibility = View.GONE
         // 返回后把"播放前那一页"找回来：若刚才是全网搜索，恢复搜索页+该视频详情弹窗，
         // 避免退回 App 首页推荐流（页面 DOM 仍在，只是要让对应浮层重新显示）。
         webView.post { safeEval("if(window.__restoreAfterPlay)window.__restoreAfterPlay()") }
@@ -1451,12 +1468,14 @@ class VideoActivity : AppCompatActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    /** 小窗按钮：仅在「未进小窗 + 正在播放 + 控制条可见」时显示。
-     *  控制条自动隐藏（持续播放几秒后）时小窗按钮一并隐藏，点屏幕唤出控制条即重新出现，
+    /** 小窗按钮 + 视频标题：仅在「未进小窗 + 正在播放 + 控制条可见」时显示。
+     *  控制条自动隐藏（持续播放几秒后）时二者一并隐藏，点屏幕唤出控制条即重新出现，
      *  与暂停/快进按钮保持一致。 */
     private fun updatePipButton() {
         val show = !miniMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
         videoPip.visibility = if (show) View.VISIBLE else View.GONE
+        // 标题跟小窗按钮完全同条件；尚未起播（标题为空）时不占位
+        videoTitle.visibility = if (show && curVideoTitle.isNotBlank()) View.VISIBLE else View.GONE
     }
 
     // ===================== App 内小窗（悬浮小播放器） =====================
@@ -1498,6 +1517,7 @@ class VideoActivity : AppCompatActivity() {
         VideoFloatState.player = p
         playerView.player = null            // 先摘下来，交给浮层
         videoPip.visibility = View.GONE
+        videoTitle.visibility = View.GONE
         setKeepScreenOn(false)
         hideVideoLayer()                    // 收起全屏播放层，露出页面
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -1569,6 +1589,7 @@ class VideoActivity : AppCompatActivity() {
         showSystemBars()
         setKeepScreenOn(false)
         videoPip.visibility = View.GONE
+        videoTitle.visibility = View.GONE
         videoClock.visibility = View.GONE
         videoPrev.visibility = View.GONE
         videoNext.visibility = View.GONE
@@ -1783,6 +1804,7 @@ class VideoActivity : AppCompatActivity() {
         if (isInPictureInPictureMode) {
             wasMiniBeforePip = miniMode
             videoPip.visibility = View.GONE
+            videoTitle.visibility = View.GONE
             pipRestorePending = false
         } else {
             // 退出系统小窗：按"进小窗前的形态"恢复（App 内小窗 or 全屏），别让画面消失
@@ -1796,6 +1818,7 @@ class VideoActivity : AppCompatActivity() {
                 setKeepScreenOn(false)
                 videoMiniLayer.visibility = View.VISIBLE
                 videoPip.visibility = View.GONE
+                videoTitle.visibility = View.GONE
                 videoClock.visibility = View.GONE
                 videoPrev.visibility = View.GONE
                 videoNext.visibility = View.GONE
@@ -1821,6 +1844,9 @@ class VideoActivity : AppCompatActivity() {
         videoClock.visibility = if (miniMode) View.GONE else v
         videoPrev.visibility = if (miniMode) View.GONE else v
         videoNext.visibility = if (miniMode) View.GONE else v
+        // 标题与 updatePipButton 同条件（这行兜住 PiP 退出/小窗恢复两条路径的瞬间状态）
+        videoTitle.visibility =
+            if (miniMode || curVideoTitle.isBlank() || !controlsVisible || player?.isPlaying != true) View.GONE else v
         // PlayerView 自带的播放控制条也隐藏：系统小窗只几寸大，控制条会糊满画面；
         // 退出小窗恢复（useController 切换会重建 SubtitleView 等子视图，必须主线程）
         playerView.useController = !isInPictureInPictureMode && !miniMode
