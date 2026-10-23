@@ -439,7 +439,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 首页资源位统一网格：固定入口 + 自定义资源位 + 「＋」同一样式，一行 6 个等宽 cell。
      *  - page 类徽章 = 自带 emoji，软底用主题色 33% 透明
      *  - link 类徽章 = 站点字典 emoji 或「首字+哈希配色」字母徽章（见 [ShortcutBadge]）
-     *  - 名称 11.5sp 居中、最多两行、超出省略——横向宽度全部给文字，根治截断
+     *  - 名称 11sp 居中、最多两行、超出省略——横向宽度全部给文字，根治截断
      *  - 固定入口 + 自定义 + 「＋」同一网格不区分样式：固定 4 项在前，自定义随后，「＋」收尾
      *  - 只有自定义 cell 挂 tag=item + 触摸监听（可拖可删）；固定项与「＋」无 tag，
      *    childIndexAt 对无 tag 的 view 返回 -1，天然不会成为拖动落点
@@ -448,7 +448,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun renderShortcuts() {
         shortcutRow.removeAllViews()
         val d = resources.displayMetrics.density
-        val badgeSize = (38 * d).toInt()
+        val badgeSize = (46 * d).toInt()
         val marginH = (4 * d).toInt()
         val marginV = (4 * d).toInt()
         // ⚠️ 必须减 6 不是 5：一行 6 个 cell 每个都带右 margin，FlowLayout
@@ -489,9 +489,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     setColor(if (badge.emoji) softPrimary else badge.color)
                 }
                 if (badge.emoji) {
-                    textSize = 20f
+                    textSize = 24f
                 } else {
-                    textSize = 17f
+                    textSize = 20f
                     setTextColor(0xFFFFFFFF.toInt())
                     paint.isFakeBoldText = true
                 }
@@ -499,7 +499,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             cell.addView(badgeTv, LinearLayout.LayoutParams(badgeSize, badgeSize))
             val label = TextView(this).apply {
                 text = item.label
-                textSize = 11.5f
+                textSize = 11f
                 setTextColor(0xFFFFFFFF.toInt())
                 gravity = Gravity.CENTER
                 maxLines = 2
@@ -534,7 +534,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         plusCell.addView(
             TextView(this).apply {
                 text = "＋"
-                textSize = 20f
+                textSize = 24f
                 setTextColor(0xFFFFFFFF.toInt())
                 paint.isFakeBoldText = true
                 gravity = Gravity.CENTER
