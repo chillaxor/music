@@ -436,28 +436,28 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     )
 
     /**
-     * 首页资源位统一网格：固定入口 + 自定义资源位 + 「＋」同一样式，一行 5 个等宽 cell。
+     * 首页资源位统一网格：固定入口 + 自定义资源位 + 「＋」同一样式，一行 6 个等宽 cell。
      *  - page 类徽章 = 自带 emoji，软底用主题色 33% 透明
      *  - link 类徽章 = 站点字典 emoji 或「首字+哈希配色」字母徽章（见 [ShortcutBadge]）
      *  - 名称 11.5sp 居中、最多两行、超出省略——横向宽度全部给文字，根治截断
      *  - 固定入口 + 自定义 + 「＋」同一网格不区分样式：固定 4 项在前，自定义随后，「＋」收尾
      *  - 只有自定义 cell 挂 tag=item + 触摸监听（可拖可删）；固定项与「＋」无 tag，
      *    childIndexAt 对无 tag 的 view 返回 -1，天然不会成为拖动落点
-     *  - 一行 5 个等宽的公式（含 -5 份右间距的坑）见下，FlowLayout 换行行为不变
+     *  - 一行 6 个等宽的公式（含 -6 份右间距的坑）见下，FlowLayout 换行行为不变
      */
     private fun renderShortcuts() {
         shortcutRow.removeAllViews()
         val d = resources.displayMetrics.density
         val badgeSize = (38 * d).toInt()
-        val marginH = (6 * d).toInt()
+        val marginH = (4 * d).toInt()
         val marginV = (4 * d).toInt()
-        // ⚠️ 必须减 5 不是 4：一行 5 个 cell 每个都带右 margin，FlowLayout
-        // 换行判断 x+cw>行宽 时第 5 个 cell 的右 margin 同样占宽度；少减一份
-        // 会让 5 个 cell 总宽超行宽几个 px，第 5 个被挤到第二行。
+        // ⚠️ 必须减 6 不是 5：一行 6 个 cell 每个都带右 margin，FlowLayout
+        // 换行判断 x+cw>行宽 时第 6 个 cell 的右 margin 同样占宽度；少减一份
+        // 会让 6 个 cell 总宽超行宽几个 px，第 6 个被挤到第二行。
         // 行宽取 shortcutRow 实测宽（布局后）；首次渲染可能还是 0，用屏宽-父容器 24dp padding 兜底
         val rowW = if (shortcutRow.width > 0) shortcutRow.width
         else resources.displayMetrics.widthPixels - (24 * d).toInt()
-        val chipW = ((rowW - marginH * 5) / 5).coerceAtLeast((44 * d).toInt())
+        val chipW = ((rowW - marginH * 6) / 6).coerceAtLeast((40 * d).toInt())
         val primary = ThemePrefs.currentPack(this).primary
         val softPrimary = (primary and 0x00FFFFFF) or 0x55000000.toInt()
 
