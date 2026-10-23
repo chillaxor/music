@@ -21,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -37,7 +38,9 @@ import kotlin.math.sin
  *  - 长按 0.5s：以主球为圆心**放射展开气泡菜单**，每个气泡是一个可配入口
  *    （默认影视仓 / 首页，见 [FloatButtonStore.bubbles]）；点气泡直达，
  *    再点主球 / 点气泡 / 5 秒无操作自动收起
- *  - 拖动：位移超过 touchSlop 算拖动，松手写回坐标（和首页 chip 拖拽同一套阈值逻辑）
+ *  - 拖动：位移超过 touchSlop 算拖动，松手写回坐标（和首页 chip 拖拽同一套阈值逻辑）；
+ *    拖到左右边缘附近松手会**贴边半隐藏**（整球滑出屏外只露一条边），
+ *    摸一下露出的小条即滑回可见位（本手势不再触发点击，再点一下才是主动作）
  *
  * 配置（主动作 / 气泡 / 图标）统一在 App 设置页的「常驻悬浮按钮」卡片里改，
  * 长按小球不再弹配置框。
@@ -56,6 +59,12 @@ class FloatButtonService : Service() {
         private const val NOTI_ID = 9002
         const val ACTION_STOP = "com.linghit.gdmusic.FLOAT_BTN_STOP"
         const val ACTION_REFRESH = "com.linghit.gdmusic.FLOAT_BTN_REFRESH"
+        /** 贴边半隐藏：正常态 */
+        private const val HIDDEN_NONE = 0
+        /** 贴边半隐藏：藏左缘 */
+        private const val HIDDEN_LEFT = 1
+        /** 贴边半隐藏：藏右缘 */
+        private const val HIDDEN_RIGHT = 2
         private const val LONG_PRESS_MS = 500L
         private const val AUTO_COLLAPSE_MS = 5000L
 
@@ -97,6 +106,19 @@ class FloatButtonService : Service() {
     private var ballX = 0
     private var ballY = 0
     private var expanded = false
+
+    // ---- 贴边半隐藏 ----
+    /** 当前半隐藏边：HIDDEN_NONE / HIDDEN_LEFT / HIDDEN_RIGHT */
+    private var hiddenSide = HIDDEN_NONE
+    /** 半隐藏时留在屏内的可见宽度（球宽 dp52 的 ~30%，够点又不太占地） */
+    private var sliverSize = 0
+    /** 松手时距边缘多近算「要贴边」 */
+    private var snapRange = 0
+    private var animStartX = 0
+    private var animTargetX = 0
+    private var animStartT = 0L
+    private val animDur = 260L
+    private val interpolator = DecelerateInterpolator()
 
     private var ballHost: View? = null
     private var iconHost: ImageView? = null
@@ -175,6 +197,8 @@ class FloatButtonService : Service() {
         ballSize = dp(52)
         bubbleSize = dp(40)
         fanRadius = dp(62)
+        sliverSize = dp(16)
+        snapRange = dp(24)
         // 正方形 root：主球居中钉在某一角，放射气泡摆满其余空间；
         // 半径 + 气泡半径 + 内边距，两边正好放下最扁的扇形
         rootSize = 2 * (fanRadius + bubbleSize / 2 + dp(6))
@@ -245,8 +269,12 @@ class FloatButtonService : Service() {
         else WindowManager.LayoutParams.TYPE_PHONE
 
         val saved = FloatButtonStore.position(this)
+        // 半隐藏态要跨进程重启保留：先把球摆到贴边位置，再由 hiddenSide 决定露出哪条边
+        hiddenSide = FloatButtonStore.hiddenSide(this)
         ballX = saved?.first ?: (dm.widthPixels - ballSize - dp(12))
         ballY = saved?.second ?: (dm.heightPixels * 0.35f).toInt()
+        if (hiddenSide == HIDDEN_LEFT) ballX = -ballSize + sliverSize
+        else if (hiddenSide == HIDDEN_RIGHT) ballX = dm.widthPixels - sliverSize
 
         // 收起态窗口就是球大小，不拦截球以外的触摸；展开时才撑成 rootSize
         val lp = WindowManager.LayoutParams(
@@ -275,12 +303,15 @@ class FloatButtonService : Service() {
     private fun onBallTouch(ev: MotionEvent): Boolean {
         return when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                mainHandler.removeCallbacks(xAnimRunnable)
                 downRawX = ev.rawX; downRawY = ev.rawY
-                downX = ballX; downY = ballY
                 dragged = false
                 longPressed = false
-                suppressClick = false
-                mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MS)
+                // 半隐藏态被摸到：立刻滑回可见位，本手势不再算点击/长按
+                // （否则用户点小条想唤出球，顺手就把主动作触发了）
+                suppressClick = restoreFromEdge()
+                downX = ballX; downY = ballY
+                if (!suppressClick) mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MS)
                 true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -311,6 +342,12 @@ class FloatButtonService : Service() {
                 mainHandler.removeCallbacks(longPressRunnable)
                 if (dragged) {
                     FloatButtonStore.setPosition(this, ballX, ballY)
+                    // 贴边吸附半隐藏：松手时离左/右缘够近 → 整球滑出屏外只露一条边
+                    val w = resources.displayMetrics.widthPixels
+                    when {
+                        ballX <= snapRange -> hideToEdge(HIDDEN_LEFT)
+                        ballX >= w - ballSize - snapRange -> hideToEdge(HIDDEN_RIGHT)
+                    }
                 } else if (!longPressed && !suppressClick && ev.actionMasked == MotionEvent.ACTION_UP) {
                     if (expanded) collapseBubbles() else performClick()
                 }
@@ -323,6 +360,59 @@ class FloatButtonService : Service() {
     private val longPressRunnable = Runnable {
         longPressed = true
         if (expanded) collapseBubbles() else expandBubbles()
+    }
+
+    // ==================== 贴边半隐藏 ====================
+
+    /** 松手贴边 → 整球滑出屏外只露 sliverSize 宽的一条边；状态落盘，重启仍藏 */
+    private fun hideToEdge(side: Int) {
+        hiddenSide = side
+        FloatButtonStore.setHiddenSide(this, side)
+        val w = resources.displayMetrics.widthPixels
+        val target = if (side == HIDDEN_LEFT) -ballSize + sliverSize else w - sliverSize
+        animateXTo(target)
+        Log.d(TAG, "贴边半隐藏 side=$side targetX=$target")
+    }
+
+    /** 摸到露出的小条 → 滑回可见位。返回 true 表示本手势已消费（不再当点击/长按） */
+    private fun restoreFromEdge(): Boolean {
+        if (hiddenSide == HIDDEN_NONE) return false
+        hiddenSide = HIDDEN_NONE
+        FloatButtonStore.setHiddenSide(this, HIDDEN_NONE)
+        val w = resources.displayMetrics.widthPixels
+        val target = if (ballX < w / 2) dp(12) else w - ballSize - dp(12)
+        // 手指已经摸上来了，不再播 260ms 动画，直接跳到可见位，跟手不粘
+        mainHandler.removeCallbacks(xAnimRunnable)
+        val p = params
+        if (p != null) {
+            p.x = target; ballX = target
+            runCatching { wm.updateViewLayout(root, p) }
+        }
+        Log.d(TAG, "半隐藏滑回 visibleX=$target")
+        return true
+    }
+
+    /** 横向吸附动画：只动 params.x，球纵坐标 ballY 不动；ballX 实时同步供拖动基准 */
+    private val xAnimRunnable = object : Runnable {
+        override fun run() {
+            val p = params ?: return
+            val t = ((android.os.SystemClock.uptimeMillis() - animStartT).toFloat() / animDur)
+                .coerceIn(0f, 1f)
+            p.x = animStartX + ((animTargetX - animStartX) * interpolator.getInterpolation(t)).toInt()
+            ballX = p.x
+            runCatching { wm.updateViewLayout(root, p) }
+            if (t < 1f) mainHandler.post(this) else ballX = animTargetX
+        }
+    }
+
+    private fun animateXTo(targetX: Int) {
+        val p = params ?: return
+        mainHandler.removeCallbacks(xAnimRunnable)
+        if (p.x == targetX) { ballX = targetX; return }
+        animStartX = p.x
+        animTargetX = targetX
+        animStartT = android.os.SystemClock.uptimeMillis()
+        mainHandler.post(xAnimRunnable)
     }
 
     private val autoCollapseRunnable = Runnable { collapseBubbles() }
@@ -514,7 +604,9 @@ class FloatButtonService : Service() {
     private fun removeView() {
         mainHandler.removeCallbacks(autoCollapseRunnable)
         mainHandler.removeCallbacks(longPressRunnable)
+        mainHandler.removeCallbacks(xAnimRunnable)
         expanded = false
+        hiddenSide = HIDDEN_NONE
         root?.let { runCatching { wm.removeView(it) } }
         root = null
         bubbleViews.clear()

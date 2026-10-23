@@ -327,7 +327,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="一个可拖动的小球常驻在所有页面之上，点击执行设定动作（默认记一笔），长按小球可改动作。需要授予「显示在其他应用上层」权限。"
+                        android:text="一个可拖动的小球常驻在所有页面之上，点击执行设定动作（默认记一笔），长按小球展开气泡菜单。拖到屏幕左右边缘松手会贴边半隐藏，只露一条小边，点一下小边即滑回。需要授予「显示在其他应用上层」权限。"
                         android:textSize="13sp"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:layout_marginTop="6dp"/>

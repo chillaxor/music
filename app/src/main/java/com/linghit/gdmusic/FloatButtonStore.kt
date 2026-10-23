@@ -13,6 +13,7 @@ import org.json.JSONObject
  *    type=link 时 url=链接地址，走 [ShortcutRouter] 与链接页同一套逻辑）
  *  - bubbles：长按悬浮球放射展开的气泡列表，结构同 [action]（默认影视仓 + 首页，上限 [MAX_BUBBLES]）
  *  - x / y：悬浮球左上角坐标（Gravity.TOP|START），拖动松手时写回
+ *  - hiddenSide：贴边半隐藏状态（0=正常 / 1=藏左缘 / 2=藏右缘，见 FloatButtonService）
  */
 object FloatButtonStore {
     private const val FILE = "float_button"
@@ -24,6 +25,8 @@ object FloatButtonStore {
     private const val KEY_ICON = "icon_path"
     /** 长按气泡列表（JSON 数组，元素结构同 action） */
     private const val KEY_BUBBLES = "bubbles"
+    /** 贴边半隐藏：0=正常，1=藏左缘，2=藏右缘 */
+    private const val KEY_HIDDEN_SIDE = "hidden_side"
 
     /** 气泡数量上限：放射展开，超过 5 个会挤到屏幕外 */
     const val MAX_BUBBLES = 5
@@ -89,6 +92,13 @@ object FloatButtonStore {
 
     fun setPosition(ctx: Context, x: Int, y: Int) {
         prefs(ctx).edit().putInt(KEY_X, x).putInt(KEY_Y, y).apply()
+    }
+
+    /** 贴边半隐藏边：0=正常 / 1=左 / 2=右（FloatButtonService.HIDDEN_*） */
+    fun hiddenSide(ctx: Context): Int = prefs(ctx).getInt(KEY_HIDDEN_SIDE, 0)
+
+    fun setHiddenSide(ctx: Context, v: Int) {
+        prefs(ctx).edit().putInt(KEY_HIDDEN_SIDE, v).apply()
     }
 
     /** 自定义图标路径；空串 = 用动作自带的 emoji 图标 */
