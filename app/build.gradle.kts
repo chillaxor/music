@@ -22,6 +22,28 @@ android {
         buildConfigField("String", "BUILD_TIME", "\"$buildTime\"")
     }
 
+    // 统一签名：本机 ~/.android/debug.keystore 的一份副本，放项目内随 git 同步，
+    // 让多台电脑编译出的 APK 签同一证书，可互相覆盖安装（不再需要卸载重装）。
+    // ⚠️ 此 keystore 已进版本控制，debug 用途、无安全风险；请勿用于正式发布签名。
+    signingConfigs {
+        create("shared") {
+            storeFile = file("${rootDir}/signing/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs["shared"]
+        }
+        release {
+            signingConfig = signingConfigs["shared"]
+            isMinifyEnabled = false
+        }
+    }
+
     buildFeatures { buildConfig = true }
 
     compileOptions {

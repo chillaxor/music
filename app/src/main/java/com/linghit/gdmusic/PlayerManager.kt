@@ -20,8 +20,15 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionResult
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,6 +63,12 @@ object PlayerManager {
     private lateinit var player: ExoPlayer
     private var wifiLock: WifiManager.WifiLock? = null
     private var svc: PlaybackService? = null
+
+    /** 系统媒体会话：接入后播放会显示在控制中心 / 锁屏的「正在播放」卡片
+     *  （荣耀等 OEM 的媒体卡片由 MediaSession 驱动，仅自定义通知时认不到） */
+    private var mediaSession: MediaSession? = null
+    /** 媒体卡片默认封面（App 图标压成 PNG 字节，init 时准备一次，所有曲目复用） */
+    private var defaultArtwork: ByteArray? = null
 
     var uiListener: PlayerUiListener? = null
 
@@ -99,6 +112,57 @@ object PlayerManager {
             .build()
         player = ExoPlayer.Builder(appContext).build()
         player.addListener(playerListener)
+        // 系统媒体会话：接入后播放会显示在控制中心 / 锁屏的「正在播放」卡片
+        // （荣耀等 OEM 的媒体卡片由 MediaSession 驱动，仅自定义通知时认不到）
+        // 封面不拉动态图，统一用 App 图标压成的 PNG 字节作默认占位
+        defaultArtwork = runCatching {
+            drawableToBytes(appContext.packageManager.getApplicationIcon(appContext.packageName))
+        }.getOrNull()
+        val sessionActivity = PendingIntent.getActivity(
+            appContext, 0,
+            Intent(appContext, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN; addCategory(Intent.CATEGORY_LAUNCHER)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        mediaSession = MediaSession.Builder(appContext, player)
+            .setSessionActivity(sessionActivity)
+            .setCallback(object : MediaSession.Callback {
+                // 把「上一首/下一首/停止」标记为可用：ExoPlayer 只挂了单曲，默认会禁用这俩切换命令，
+                // 不放开的话系统卡片的切歌按钮是灰的、onPlayerCommandRequest 收不到。
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo
+                ): MediaSession.ConnectionResult {
+                    val cmds = session.player.availableCommands.buildUpon()
+                        .add(Player.COMMAND_SEEK_TO_NEXT)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                        .add(Player.COMMAND_STOP)
+                        .build()
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailablePlayerCommands(cmds)
+                        .build()
+                }
+
+                // play/pause 由会话自动转发给 ExoPlayer，无需拦截；
+                // 切歌（上下首）走咱们自己的队列逻辑，必须在 onPlayerCommandRequest 里拦截，
+                // 否则会话会调 ExoPlayer 的 seekToNext（播放器只挂了单曲，等于空操作）。
+                // onPlayerCommandRequest 在 1.4.1 已 deprecated，但仍是自定义传输命令的唯一可用钩子。
+                @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+                override fun onPlayerCommandRequest(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo,
+                    playerCommand: @Player.Command Int
+                ): Int {
+                    return when (playerCommand) {
+                        Player.COMMAND_SEEK_TO_NEXT -> { skipNext(); SessionResult.RESULT_SUCCESS }
+                        Player.COMMAND_SEEK_TO_PREVIOUS -> { skipPrev(); SessionResult.RESULT_SUCCESS }
+                        Player.COMMAND_STOP -> { stop(); SessionResult.RESULT_SUCCESS }
+                        else -> super.onPlayerCommandRequest(session, controller, playerCommand)
+                    }
+                }
+            })
+            .build()
         // 恢复上次音量（歌词页/设置里调的，切歌、重启 App 都不丢）
         runCatching { player.volume = savedVolume / 100f }
     }
@@ -217,7 +281,7 @@ object PlayerManager {
             loadCover(song); loadLyrics(song)
             ensureForegroundStarted()
             runCatching {
-                player.setMediaItem(MediaItem.fromUri(local)); player.prepare(); player.play()
+                player.setMediaItem(buildMediaItem(local, song)); player.prepare(); player.play()
             }.onFailure {
                 // 明确起播失败：停掉上一首并清掉它的媒体项，别让用户以为「还是固定那一首在响」，
                 // 也避免之后点播放/暂停时 resume 到旧歌（清空后 togglePlayPause 会重试当前歌）
@@ -238,7 +302,7 @@ object PlayerManager {
                 }
                 val url = o.optString("url")
                 if (url.isBlank() || url == "null") throw Exception("没有可播放地址")
-                player.setMediaItem(MediaItem.fromUri(url)); player.prepare(); player.play()
+                player.setMediaItem(buildMediaItem(Uri.parse(url), song)); player.prepare(); player.play()
                 saveHistory(song)
                 lastStatusText = "在线播放 · ${sourceLabel(song.source)}（已后台缓存，下次离线可听）"
                 uiListener?.onSongStart(song, false, lastStatusText)
@@ -532,6 +596,36 @@ object PlayerManager {
         prefs.edit().putStringSet("history", old.toSet()).apply()
     }
 
+    /** 给某首歌构造带「歌名/歌手/专辑 + 默认封面」元数据的 MediaItem；
+     *  媒体卡片的元数据由 ExoPlayer 当前 MediaItem 体现，会话自动读取并展示到控制中心/锁屏 */
+    private fun buildMediaItem(uri: Uri, song: Song): MediaItem =
+        MediaItem.Builder().setUri(uri).setMediaMetadata(media3Meta(song)).build()
+
+    /** 当前曲目的 media3 元数据（封面统一用默认图，不拉动态封面） */
+    private fun media3Meta(song: Song): MediaMetadata =
+        MediaMetadata.Builder()
+            .setTitle(song.name.ifBlank { "未知曲目" })
+            .setArtist(song.artist.ifBlank { "未知歌手" })
+            .setAlbumTitle(song.album.ifBlank { "" })
+            .apply { defaultArtwork?.let { setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) } }
+            .build()
+
+    /** Drawable → Bitmap → PNG 字节（作媒体卡片默认封面；AdaptiveIcon 也能画到 Canvas） */
+    private fun drawableToBytes(drawable: Drawable): ByteArray {
+        val bmp = if (drawable is BitmapDrawable && drawable.bitmap != null) {
+            drawable.bitmap
+        } else {
+            val w = drawable.intrinsicWidth.coerceAtLeast(1)
+            val h = drawable.intrinsicHeight.coerceAtLeast(1)
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                val c = Canvas(it); drawable.setBounds(0, 0, w, h); drawable.draw(c)
+            }
+        }
+        val os = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, os)
+        return os.toByteArray()
+    }
+
     // ---------- WifiLock：在线播放时防止息屏断 WiFi 导致缓冲中断 ----------
     /** 缺 WAKE_LOCK 权限或个别 ROM 限制时 acquire() 会抛 SecurityException，必须兜住，否则一点播放就崩 */
     private fun acquireWifiLock() {
@@ -667,6 +761,9 @@ object PlayerManager {
     }
 
     fun releaseAll() {
+        runCatching { mediaSession?.release() }
+        mediaSession = null
+        defaultArtwork = null
         runCatching { player.release() }
         releaseWifiLock()
         svc?.stopForeground(true)
