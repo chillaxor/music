@@ -128,13 +128,24 @@ object PlayerManager {
         mediaSession = MediaSession.Builder(appContext, player)
             .setSessionActivity(sessionActivity)
             .setCallback(object : MediaSession.Callback {
-                // 把「上一首/下一首/停止」标记为可用：ExoPlayer 只挂了单曲，默认会禁用这俩切换命令，
-                // 不放开的话系统卡片的切歌按钮是灰的、onPlayerCommandRequest 收不到。
+                // 关键：必须显式把「播放/暂停」也放进可用命令集合。
+                // Media3 在 onConnect 时一次性把「控制器可用命令」定死；若此刻播放器处于
+                // STATE_IDLE（还没媒体项，比如 App 刚启动、控制中心的卡片比第一首歌更早连上来），
+                // ExoPlayer 的 availableCommands 里【没有】COMMAND_PLAY_PAUSE，
+                // 该命令对这个控制器就永久被拒 —— 一旦点播放/暂停，会话直接返回
+                // ERROR_PERMISSION_DENIED（系统卡片表现为「操作失败 / 报错」），且根本不会进 onPlayerCommandRequest。
+                // 这里用全新的 Commands.Builder 显式声明全部命令，无论何时连上，卡片都可用。
                 override fun onConnect(
                     session: MediaSession,
                     controller: MediaSession.ControllerInfo
                 ): MediaSession.ConnectionResult {
+                    // 必须【基于播放器当前可用命令】追加，而不能为空 Builder 只放 4 个——
+                    // 系统媒体卡片要读取当前曲目/时间轴（GET_TIMELINE、GET_CURRENT_MEDIA_ITEM 等默认命令），
+                    // 这些一旦被清空，控制器就读不到内容、卡片直接不显示。
+                    // 同时显式补上 COMMAND_PLAY_PAUSE：播放器在 STATE_IDLE（还没媒体项，比如卡片比第一首更早连上来）
+                    // 时 availableCommands 里没有它，不补会导致点播放/暂停被拒（报错）。
                     val cmds = session.player.availableCommands.buildUpon()
+                        .add(Player.COMMAND_PLAY_PAUSE)
                         .add(Player.COMMAND_SEEK_TO_NEXT)
                         .add(Player.COMMAND_SEEK_TO_PREVIOUS)
                         .add(Player.COMMAND_STOP)
@@ -144,9 +155,9 @@ object PlayerManager {
                         .build()
                 }
 
-                // play/pause 由会话自动转发给 ExoPlayer，无需拦截；
                 // 切歌（上下首）走咱们自己的队列逻辑，必须在 onPlayerCommandRequest 里拦截，
-                // 否则会话会调 ExoPlayer 的 seekToNext（播放器只挂了单曲，等于空操作）。
+                // 否则会话会调 ExoPlayer 的 seekToNext（播放器只挂了单曲，等于空操作）；
+                // 停止额外停掉前台服务。play/pause 交给会话默认路径（已正确 toggle），不拦截。
                 // onPlayerCommandRequest 在 1.4.1 已 deprecated，但仍是自定义传输命令的唯一可用钩子。
                 @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
                 override fun onPlayerCommandRequest(
@@ -154,11 +165,18 @@ object PlayerManager {
                     controller: MediaSession.ControllerInfo,
                     playerCommand: @Player.Command Int
                 ): Int {
-                    return when (playerCommand) {
-                        Player.COMMAND_SEEK_TO_NEXT -> { skipNext(); SessionResult.RESULT_SUCCESS }
-                        Player.COMMAND_SEEK_TO_PREVIOUS -> { skipPrev(); SessionResult.RESULT_SUCCESS }
-                        Player.COMMAND_STOP -> { stop(); SessionResult.RESULT_SUCCESS }
-                        else -> super.onPlayerCommandRequest(session, controller, playerCommand)
+                    return try {
+                        when (playerCommand) {
+                            Player.COMMAND_SEEK_TO_NEXT -> { skipNext(); SessionResult.RESULT_SUCCESS }
+                            Player.COMMAND_SEEK_TO_PREVIOUS -> { skipPrev(); SessionResult.RESULT_SUCCESS }
+                            Player.COMMAND_STOP -> { stop(); SessionResult.RESULT_SUCCESS }
+                            else -> super.onPlayerCommandRequest(session, controller, playerCommand)
+                        }
+                    } catch (e: Throwable) {
+                        // 任何意外（队列空、媒体未就绪等）都别让会话抛异常导致卡片崩，
+                        // 记日志便于定位，仍回 SUCCESS 让系统认为指令已被接收。
+                        Log.e("GDPlayer", "MediaSession cmd err: $playerCommand", e)
+                        SessionResult.RESULT_SUCCESS
                     }
                 }
             })
