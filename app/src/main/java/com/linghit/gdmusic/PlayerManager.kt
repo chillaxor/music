@@ -56,6 +56,9 @@ interface PlayerUiListener {
  * 不受首页 Activity 被系统回收影响，从根本解决「息屏后播放停止」。
  * 配合前台服务 + 通知实现息屏续播（通知栏带上一首/暂停/下一首控制）。
  */
+/** 播放场景：音乐 / 播客 / 电台。三类内容各自保留独立队列，互不覆盖，可一键切换续听 */
+enum class Scene { MUSIC, PODCAST, RADIO }
+
 object PlayerManager {
 
     private lateinit var appContext: Context
@@ -87,9 +90,22 @@ object PlayerManager {
 
     var current: Song? = null
         private set
-    val queue = mutableListOf<Song>()
-    var queueIndex = 0
+    /** 播放场景：音乐 / 播客 / 电台。三类内容各自独立保留队列，互不覆盖 */
+    var activeScene: Scene = Scene.MUSIC
         private set
+    /** 每个场景独立的播放队列；对外仍通过 computed `queue` 访问当前场景那份，旧调用无需改 */
+    private val queues = mutableMapOf(
+        Scene.MUSIC to mutableListOf<Song>(),
+        Scene.PODCAST to mutableListOf<Song>(),
+        Scene.RADIO to mutableListOf<Song>()
+    )
+    private val sceneIndex = mutableMapOf(Scene.MUSIC to 0, Scene.PODCAST to 0, Scene.RADIO to 0)
+    /** 向后兼容：所有 queue / queueIndex 读写都作用于「当前场景」 */
+    val queue: MutableList<Song>
+        get() = queues[activeScene]!!
+    var queueIndex: Int
+        get() = sceneIndex[activeScene] ?: 0
+        private set(v) { sceneIndex[activeScene] = v }
     var playMode = 2 // 0 顺序播完停，1 列表循环，2 随机（默认随机）
     /**
      * 临时播放中：当前播放的歌不在播放列表里（点了搜索/导入/收藏里的单首）。
@@ -286,10 +302,14 @@ object PlayerManager {
     }
 
     /**
-     * 队列播放：用 queueSongs 整体替换播放列表，从 index 首开始播。
-     * 「播放全部」类入口走这里——覆盖播放列表正是预期行为。
+     * 队列播放：用 queueSongs 整体替换【当前场景】的播放列表，从 index 首开始播。
+     * 「播放全部」类入口走这里——覆盖播放列表正是预期行为，但只覆盖对应场景那份，
+     * 其它场景的队列原样保留（音乐队列、播客队列互不干扰）。
+     * @param scene 本次播放所属场景，默认沿用当前场景；播客「播放全部」应传 Scene.PODCAST。
      */
-    fun playInternal(song: Song, queueSongs: List<Song>, index: Int) {
+    fun playInternal(song: Song, queueSongs: List<Song>, index: Int, scene: Scene = activeScene) {
+        activeScene = scene
+        persistActiveScene()
         queue.clear(); queue.addAll(queueSongs); queueIndex = index
         tempPlaying = false
         current = song
@@ -304,8 +324,12 @@ object PlayerManager {
     /**
      * 临时播放：只播这一首，播放列表原样不动（点搜索/导入/收藏里的单首走这里）。
      * 这首播完或被切歌切走时，自动回到队列里原来那首；期间不碰队列、不持久化队列。
+     * @param scene 这首所属场景，默认沿用当前场景；电台应传 Scene.RADIO（会记住上次电台以便续听）。
      */
-    fun playTemp(song: Song) {
+    fun playTemp(song: Song, scene: Scene = activeScene) {
+        activeScene = scene
+        persistActiveScene()
+        if (scene == Scene.RADIO) persistLastRadio(song)
         tempPlaying = true
         current = song
         persistTemp(song)
@@ -466,12 +490,24 @@ object PlayerManager {
     // ---------- 队列持久化：进程被杀后重进 App 原样恢复列表和「播放中」位置 ----------
     // 队列原先只在内存里，用户从下载页点了播放全部、退出重进就全没了。
     // 存 SharedPreferences（与设置共用 "music"）：列表 JSON + 播到第几首。
+    // 现在按场景分别存（music / podcast / radio 各一套 key），切场景互不覆盖。
     // 只恢复列表和高亮，不自动起播——开 App 就响会很突兀，且后台起播有被系统拦的风险。
+    private fun queueKey(s: Scene) = when (s) {
+        Scene.MUSIC -> "play_queue_music_v1"
+        Scene.PODCAST -> "play_queue_podcast_v1"
+        Scene.RADIO -> "play_queue_radio_v1"
+    }
+    private fun indexKey(s: Scene) = when (s) {
+        Scene.MUSIC -> "play_index_music_v1"
+        Scene.PODCAST -> "play_index_podcast_v1"
+        Scene.RADIO -> "play_index_radio_v1"
+    }
+
     private fun persistQueue() {
         runCatching {
             prefs.edit()
-                .putString("play_queue_v1", songsToJsonArray(queue))
-                .putInt("play_index_v1", queueIndex)
+                .putString(queueKey(activeScene), songsToJsonArray(queue))
+                .putInt(indexKey(activeScene), queueIndex)
                 .apply()
         }
     }
@@ -491,6 +527,8 @@ object PlayerManager {
 
     /** 内存队列为空时恢复上次的播放列表（有活队列则不碰，避免覆盖当前会话） */
     fun restoreQueueIfEmpty() {
+        // 先恢复上次所在场景，再按需恢复该场景的队列
+        activeScene = restoreActiveScene()
         if (queue.isNotEmpty()) return
         // 临时播放优先：被杀时正在播临时歌，先恢复那首的显示，再恢复队列内容
         if (prefs.getBoolean("play_temp_v1", false)) {
@@ -500,12 +538,7 @@ object PlayerManager {
             if (s != null) {
                 tempPlaying = true
                 current = s
-                val json = prefs.getString("play_queue_v1", null)
-                val list = runCatching { json?.let { songsFromJsonArray(it) } }.getOrNull()
-                if (!list.isNullOrEmpty()) {
-                    queue.clear(); queue.addAll(list)
-                    queueIndex = prefs.getInt("play_index_v1", 0).coerceIn(0, list.size - 1)
-                }
+                restoreSceneQueue(activeScene)
                 // 恢复「是否本地」状态：能让播放条显示对的状态文案（本地/在线）
                 currentIsLocal = runCatching { DownloadStore.localUri(appContext, s) }.getOrNull() != null
                 lastStatusText = if (currentIsLocal) "离线播放 · 本地文件" else "在线播放"
@@ -514,17 +547,90 @@ object PlayerManager {
                 return
             }
         }
-        val json = prefs.getString("play_queue_v1", null) ?: return
-        val list = runCatching { songsFromJsonArray(json) }.getOrNull() ?: return
-        if (list.isEmpty()) return
-        val idx = prefs.getInt("play_index_v1", 0).coerceIn(0, list.size - 1)
-        queue.clear(); queue.addAll(list); queueIndex = idx
+        restoreSceneQueue(activeScene)
+        if (queue.isEmpty()) return
+        val idx = queueIndex.coerceIn(0, queue.size - 1)
         current = queue[idx]
         // 恢复「是否本地」状态：能让播放条显示对的状态文案（本地/在线）
         currentIsLocal = runCatching { DownloadStore.localUri(appContext, current!!) }.getOrNull() != null
         lastStatusText = if (currentIsLocal) "离线播放 · 本地文件" else "在线播放"
         uiListener?.onQueueChanged()
         uiListener?.onSongStart(current!!, currentIsLocal, lastStatusText)
+    }
+
+    // ---------- 场景切换与续听 ----------
+    private fun persistActiveScene() {
+        runCatching { prefs.edit().putString("scene_v1", activeScene.name).apply() }
+    }
+    private fun restoreActiveScene(): Scene {
+        return runCatching { Scene.valueOf(prefs.getString("scene_v1", "MUSIC") ?: "MUSIC") }
+            .getOrDefault(Scene.MUSIC)
+    }
+    /** 记住上次电台（单流，无队列），供「继续电台」续听 */
+    private fun persistLastRadio(song: Song) {
+        runCatching { prefs.edit().putString("last_radio_v1", FavoritesStore.songToJson(song)).apply() }
+    }
+    /** 上次电台（可能为 null） */
+    fun lastRadioSong(): Song? =
+        runCatching { prefs.getString("last_radio_v1", null)?.let { FavoritesStore.fromJsonStr(it) } }.getOrNull()
+
+    /** 某场景是否还有可续听的内容（内存队列 / 持久化队列 / 上次电台） */
+    fun sceneHasContent(scene: Scene): Boolean {
+        if (queues[scene]!!.isNotEmpty()) return true
+        if (scene == Scene.RADIO) return lastRadioSong() != null
+        val json = runCatching { prefs.getString(queueKey(scene), null) }.getOrNull()
+        return !json.isNullOrBlank()
+    }
+    /** 从持久化恢复某场景的队列到内存（仅在内存为空时，避免覆盖活队列） */
+    private fun restoreSceneQueue(scene: Scene) {
+        if (queues[scene]!!.isNotEmpty()) return
+        var json = prefs.getString(queueKey(scene), null)
+        // 兼容升级前的旧 key：音乐队列首次迁移
+        if (json.isNullOrBlank() && scene == Scene.MUSIC) json = prefs.getString("play_queue_v1", null)
+        val list = runCatching { json?.let { songsFromJsonArray(it) } }.getOrNull() ?: return
+        if (list.isEmpty()) return
+        var idx = prefs.getInt(indexKey(scene), if (scene == Scene.MUSIC) prefs.getInt("play_index_v1", 0) else 0)
+        idx = idx.coerceIn(0, list.size - 1)
+        queues[scene]!!.addAll(list)
+        sceneIndex[scene] = idx
+    }
+
+    /**
+     * 切换播放场景并续听：把 activeScene 切到目标，加载其队列（或电台上次单流）并起播。
+     * 音乐/播客的队列互不覆盖，电台续听上次那家；下次进来一键直达，免清空重导。
+     */
+    fun switchScene(scene: Scene) {
+        // 已在播该场景且非临时态：直接续播（暂停则恢复播放），不重复加载
+        if (scene == activeScene && current != null && !tempPlaying) {
+            if (!player.isPlaying) togglePlayPause()
+            uiListener?.onQueueChanged()
+            return
+        }
+        activeScene = scene
+        persistActiveScene()
+        when (scene) {
+            Scene.RADIO -> {
+                val last = lastRadioSong()
+                if (last != null) {
+                    tempPlaying = true
+                    current = last
+                    pendingSeekMs = 0L
+                    startPlayback(last)
+                    uiListener?.onQueueChanged()
+                }
+            }
+            else -> {
+                restoreSceneQueue(scene)
+                if (queue.isNotEmpty()) {
+                    tempPlaying = false
+                    val idx = queueIndex.coerceIn(0, queue.size - 1)
+                    current = queue[idx]
+                    pendingSeekMs = 0L
+                    startPlayback(current!!)
+                    uiListener?.onQueueChanged()
+                }
+            }
+        }
     }
 
     /** 首页 Activity 重新创建时，把当前播放状态同步到新的 UI */

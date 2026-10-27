@@ -324,7 +324,7 @@ class PodcastActivity : AppCompatActivity() {
             directUrl = st.url, coverUrl = st.favicon
         )
         PlayerManager.pendingSeekMs = 0L
-        PlayerManager.playTemp(song)
+        PlayerManager.playTemp(song, Scene.RADIO)
         Toast.makeText(this, "正在播放：${st.name}", Toast.LENGTH_SHORT).show()
     }
 

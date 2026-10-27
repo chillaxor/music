@@ -99,6 +99,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var nextBtn:ImageButton
     private lateinit var modeBtn:ImageButton
     private lateinit var playerBar:View
+    // 三场景续听 chips（有音乐/播客队列或上次电台时才显隐）
+    private lateinit var sceneResumeRow: View
+    private lateinit var chipResumeMusic: TextView
+    private lateinit var chipResumePodcast: TextView
+    private lateinit var chipResumeRadio: TextView
     // 分段切换：播放列表（默认）/ 搜索
     private lateinit var tabPlaylist:TextView
     private lateinit var tabSearch:TextView
@@ -336,6 +341,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         loadDailyImage()
         greetingRow.setOnClickListener { switchDailyImage() }
         findViewById<View>(R.id.switchBgBtn).setOnClickListener { switchDailyImage() }
+        // 三场景续听 chips：绑定 + 点击切场景续听（音乐/播客互不覆盖，电台续听上次单流）
+        sceneResumeRow = findViewById(R.id.sceneResumeRow)
+        chipResumeMusic = findViewById(R.id.chipResumeMusic)
+        chipResumePodcast = findViewById(R.id.chipResumePodcast)
+        chipResumeRadio = findViewById(R.id.chipResumeRadio)
+        chipResumeMusic.setOnClickListener { PlayerManager.switchScene(Scene.MUSIC); refreshSceneResume() }
+        chipResumePodcast.setOnClickListener { PlayerManager.switchScene(Scene.PODCAST); refreshSceneResume() }
+        chipResumeRadio.setOnClickListener { PlayerManager.switchScene(Scene.RADIO); refreshSceneResume() }
         greetingRow.setOnLongClickListener {
             AlertDialog.Builder(this)
                 .setTitle("每日一图")
@@ -424,6 +437,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         PlayerManager.uiListener = this
         // 队列可能在 QueueActivity 里被改过（移除/清空），同步入口卡计数
         refreshQueueEntry()
+        // 续听 chips 也可能因队列变化需要刷新显隐
+        refreshSceneResume()
     }
 
     /** 无边界涟漪（按压反馈）：网格版 chip 没有 pill 底色，靠这个给触摸反馈 */
@@ -1248,6 +1263,18 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // no-op：pill 文本固定为 🎵
     }
 
+    /** 三场景续听 chips：按各场景是否还有可续听内容显隐对应 chip */
+    private fun refreshSceneResume(){
+        if (!::sceneResumeRow.isInitialized) return
+        val showMusic = PlayerManager.sceneHasContent(Scene.MUSIC)
+        val showPod = PlayerManager.sceneHasContent(Scene.PODCAST)
+        val showRadio = PlayerManager.sceneHasContent(Scene.RADIO)
+        chipResumeMusic.visibility = if (showMusic) View.VISIBLE else View.GONE
+        chipResumePodcast.visibility = if (showPod) View.VISIBLE else View.GONE
+        chipResumeRadio.visibility = if (showRadio) View.VISIBLE else View.GONE
+        sceneResumeRow.visibility = if (showMusic || showPod || showRadio) View.VISIBLE else View.GONE
+    }
+
     private fun applyPlayMode() {
         val m = PlayerManager.playMode
         modeBtn.setImageResource(when (m) { 1 -> R.drawable.ic_repeat; 2 -> R.drawable.ic_shuffle; else -> R.drawable.ic_sequence })
@@ -1473,7 +1500,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val list=songsFromJsonArray(queueJson)
             val idx=intent.getIntExtra("play_index",0).coerceIn(0, maxOf(0, list.size-1))
             if(list.isNotEmpty()){
-                PlayerManager.playInternal(list[idx], list, idx)
+                PlayerManager.playInternal(list[idx], list, idx, Scene.MUSIC)
                 // 显式刷新一次入口卡计数：不依赖 onSongStart 回调（起播失败时回调可能不来）
                 refreshQueueEntry()
             }
@@ -1489,7 +1516,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                     o.optString("album"),o.optString("source"),o.optString("picId"),
                     o.optString("lyricId",o.optString("id")),o.optString("localUri").ifBlank{uriStr})
             }.getOrDefault(Song("","","","","","","",uriStr)) else Song("","","","","","","",uriStr)
-            PlayerManager.playInternal(song, listOf(song), 0)
+            PlayerManager.playInternal(song, listOf(song), 0, Scene.MUSIC)
             return
         }
         // 3) 单首在线播放（临时播放：不动播放列表）
@@ -1499,7 +1526,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val s=Song(o.optString("id"),o.optString("name"),o.optString("artist"),
                 o.optString("album"),o.optString("source"),o.optString("picId"),
                 o.optString("lyricId",o.optString("id")))
-            PlayerManager.playTemp(s)
+            PlayerManager.playTemp(s, Scene.MUSIC)
         }
     }
 
@@ -1552,7 +1579,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     override fun onCacheStateChanged(key: String, state: String) {
         dlStates[key] = state; adapter.notifyDataSetChanged()
     }
-    override fun onQueueChanged() { refreshQueueEntry() }
+    override fun onQueueChanged() { refreshQueueEntry(); refreshSceneResume() }
 }
 
 /** 歌单/下载页把歌曲列表传给 MainActivity 的公共序列化（同包可见） */

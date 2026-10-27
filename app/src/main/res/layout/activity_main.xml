@@ -502,6 +502,63 @@
                     android:layout_height="0dp"
                     android:layout_weight="1"/>
 
+                <!-- 三场景续听：有音乐/播客队列或上次电台时才显示对应 chip，点一下切场景续听 -->
+                <LinearLayout
+                    android:id="@+id/sceneResumeRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:layout_marginBottom="8dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/chipResumeMusic"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_pill_glass"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:textSize="13sp"
+                        android:textColor="#FFFFFF"
+                        android:text="继续音乐 ▶"
+                        android:visibility="gone"/>
+
+                    <TextView
+                        android:id="@+id/chipResumePodcast"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_pill_glass"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:textSize="13sp"
+                        android:textColor="#FFFFFF"
+                        android:text="继续播客 ▶"
+                        android:visibility="gone"/>
+
+                    <TextView
+                        android:id="@+id/chipResumeRadio"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_pill_glass"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:textSize="13sp"
+                        android:textColor="#FFFFFF"
+                        android:text="继续电台 ▶"
+                        android:visibility="gone"/>
+                </LinearLayout>
+
                 <!-- 正在播放玻璃卡：按需求常驻页面底部（没有正在播放的歌也显示，只显示「未播放」占位），
                      只有切到搜索页签时才跟着 playlistPanel 一起隐藏；
                      封面用默认音符图，不接在线封面回调 -->

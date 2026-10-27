@@ -82,7 +82,7 @@ class PodcastDetailActivity : AppCompatActivity() {
             if (episodes.isEmpty()) return@setOnClickListener
             val list = episodes.map { toSong(it) }
             PlayerManager.pendingSeekMs = 0L
-            PlayerManager.playInternal(list[0], list, 0)
+            PlayerManager.playInternal(list[0], list, 0, Scene.PODCAST)
             Toast.makeText(this, "正在播放：$podcastTitle", Toast.LENGTH_SHORT).show()
         }
 
@@ -130,7 +130,7 @@ class PodcastDetailActivity : AppCompatActivity() {
         val song = toSong(ep)
         val pos = PodcastStore.getProgress(this, rss, ep.guid)
         PlayerManager.pendingSeekMs = pos
-        PlayerManager.playTemp(song)
+        PlayerManager.playTemp(song, Scene.PODCAST)
         Toast.makeText(this, if (pos > 0) "接着听：${ep.title}" else "正在播放：${ep.title}", Toast.LENGTH_SHORT).show()
     }
 
