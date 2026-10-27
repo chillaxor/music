@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 热门播客横滑卡片（无「订阅」按钮，整卡可点订阅） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="150dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:padding="10dp"
+    android:layout_marginEnd="10dp">
+
+    <ImageView
+        android:id="@+id/pCover"
+        android:layout_width="match_parent"
+        android:layout_height="130dp"
+        android:scaleType="centerCrop"
+        android:background="@color/surface_variant"/>
+
+    <TextView
+        android:id="@+id/pTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="@color/on_surface"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:layout_marginTop="8dp"/>
+
+    <TextView
+        android:id="@+id/pSub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:textColor="@color/on_surface_variant"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:layout_marginTop="2dp"/>
+</LinearLayout>

@@ -48,9 +48,17 @@ data class Song(
     val source:String, val picId:String, val lyricId:String,
     /** 本地文件地址（导入/缓存歌专用）：有了它 key 才唯一，否则导入歌 id/source 全空会共用一个 key "|"，
      *  导致 localUri 按 key 查永远命中第一条 → 点哪首都播固定的那一首 */
-    val localUri:String=""
+    val localUri:String="",
+    /** 直链音频地址（播客单集 / 电台流）：非空时 PlayerManager 跳过在线解析直接播，用于播客/电台独立内容线 */
+    val directUrl:String="",
+    /** 直链封面地址（播客/电台封面）：非空时优先用 OkHttp 直接下载，不走音乐 API 封面接口 */
+    val coverUrl:String=""
 ) {
-    fun key() = if(localUri.isNotBlank()) "local|$localUri" else "$source|$id"
+    fun key() = when {
+        localUri.isNotBlank() -> "local|$localUri"
+        directUrl.isNotBlank() -> "direct|$directUrl"
+        else -> "$source|$id"
+    }
 }
 
 /** 音源 id -> 中文名。保留旧音源(tencent/kugou/kuwo/migu)兜底，避免旧收藏/离线记录显示原始 id */
@@ -431,6 +439,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         HomeShortcutStore.Item("page", "netasset", "记账", "📒"),
         HomeShortcutStore.Item("page", "video", "看片", "🎬"),
         HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
+        HomeShortcutStore.Item("page", "podcast", "播客", "🎙"),
         HomeShortcutStore.Item("page", "downloads", "下载", "⬇")
     )
 

@@ -99,6 +99,8 @@ object PlayerManager {
         private set
     private var currentIsLocal = false
     private var lastStatusText = ""
+    /** 播放前的续播定位（毫秒）：播客/电台点「接着听」时由调用方写入，prepare 后 seek 并清零 */
+    var pendingSeekMs: Long = 0L
 
     private val prefs by lazy { appContext.getSharedPreferences("music", Context.MODE_PRIVATE) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -337,10 +339,30 @@ object PlayerManager {
             loadCover(song); loadLyrics(song)
             ensureForegroundStarted()
             runCatching {
-                player.setMediaItem(buildMediaItem(local, song)); player.prepare(); player.play()
+                player.setMediaItem(buildMediaItem(local, song)); player.prepare()
+                if (pendingSeekMs > 0) { player.seekTo(pendingSeekMs); pendingSeekMs = 0 }
+                player.play()
             }.onFailure {
                 // 明确起播失败：停掉上一首并清掉它的媒体项，别让用户以为「还是固定那一首在响」，
                 // 也避免之后点播放/暂停时 resume 到旧歌（清空后 togglePlayPause 会重试当前歌）
+                runCatching { player.pause() }
+                runCatching { player.clearMediaItems() }
+                uiListener?.onStatus("播放失败：${it.message}")
+            }
+            return
+        }
+        // 直链音频（播客单集 / 电台流）：跳过在线解析，直接按 url 起播（独立内容线，不碰音乐 API）
+        if (song.directUrl.isNotBlank()) {
+            currentIsLocal = false
+            lastStatusText = "播客 / 电台 · 直链"
+            uiListener?.onSongStart(song, false, lastStatusText)
+            loadCover(song); loadLyrics(song)
+            ensureForegroundStarted()
+            runCatching {
+                player.setMediaItem(buildMediaItem(Uri.parse(song.directUrl), song)); player.prepare()
+                if (pendingSeekMs > 0) { player.seekTo(pendingSeekMs); pendingSeekMs = 0 }
+                player.play()
+            }.onFailure {
                 runCatching { player.pause() }
                 runCatching { player.clearMediaItems() }
                 uiListener?.onStatus("播放失败：${it.message}")
@@ -358,7 +380,9 @@ object PlayerManager {
                 }
                 val url = o.optString("url")
                 if (url.isBlank() || url == "null") throw Exception("没有可播放地址")
-                player.setMediaItem(buildMediaItem(Uri.parse(url), song)); player.prepare(); player.play()
+                player.setMediaItem(buildMediaItem(Uri.parse(url), song)); player.prepare()
+                if (pendingSeekMs > 0) { player.seekTo(pendingSeekMs); pendingSeekMs = 0 }
+                player.play()
                 saveHistory(song)
                 lastStatusText = "在线播放 · ${sourceLabel(song.source)}（已后台缓存，下次离线可听）"
                 uiListener?.onSongStart(song, false, lastStatusText)
@@ -513,6 +537,19 @@ object PlayerManager {
 
     // ---------- 封面 / 歌词 / 缓存 ----------
     private fun loadCover(s: Song) {
+        // 直链封面（播客/电台）：优先直接下载，不走音乐 API 封面接口
+        if (s.coverUrl.isNotBlank()) {
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    val bytes = client.newCall(
+                        Request.Builder().url(s.coverUrl).header("User-Agent", "GDMusicPlayer/3.0").build()
+                    ).execute().use { it.body?.bytes() }
+                    val bmp = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    withContext(Dispatchers.Main) { setCurrentCover(bmp) }
+                }.onFailure { withContext(Dispatchers.Main) { setCurrentCover(null) } }
+            }
+            return
+        }
         if (s.picId.isBlank()) { setCurrentCover(null); return }
         val apiBase = readApi()
         scope.launch(Dispatchers.IO) {

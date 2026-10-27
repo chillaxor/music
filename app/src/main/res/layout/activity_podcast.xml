@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播客电台主页：订阅 / 电台 双 Tab，完全独立于音乐搜索 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/primary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="14dp">
+
+        <TextView
+            android:id="@+id/backBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹ 返回"
+            android:textSize="16sp"
+            android:textColor="@color/on_primary"
+            android:paddingEnd="12dp"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🎙 播客电台"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_primary"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+    </LinearLayout>
+
+    <!-- Tab 切换 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/surface"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingEnd="22dp">
+
+            <TextView
+                android:id="@+id/tabSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="订阅"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:paddingTop="12dp"
+                android:paddingBottom="8dp"/>
+
+            <View
+                android:id="@+id/tabSubLine"
+                android:layout_width="28dp"
+                android:layout_height="3dp"
+                android:background="@color/primary"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tabRadio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="电台"
+                android:textSize="16sp"
+                android:textColor="@color/on_surface_variant"
+                android:paddingTop="12dp"
+                android:paddingBottom="8dp"/>
+
+            <View
+                android:id="@+id/tabRadioLine"
+                android:layout_width="28dp"
+                android:layout_height="3dp"
+                android:background="@color/primary"
+                android:visibility="gone"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/background">
+
+        <!-- 订阅面板（可滚动：搜索框 + 热门推荐 + 我的订阅 + 搜索结果） -->
+        <ScrollView
+            android:id="@+id/subPanel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/podcastSearch"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:hint="搜播客，如：故事FM"
+                        android:textSize="14sp"
+                        android:background="@color/surface"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"/>
+
+                    <TextView
+                        android:id="@+id/podcastSearchBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="搜索"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/on_primary"
+                        android:background="@color/primary"
+                        android:gravity="center"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"/>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="热门推荐"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp"/>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/hotList"
+                    android:layout_width="match_parent"
+                    android:layout_height="172dp"
+                    android:nestedScrollingEnabled="false"
+                    android:clipToPadding="false"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="我的订阅"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="10dp"
+                    android:layout_marginBottom="4dp"/>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/subList"
+                    android:layout_width="match_parent"
+                    android:layout_height="160dp"
+                    android:nestedScrollingEnabled="false"
+                    android:clipToPadding="false"/>
+
+                <TextView
+                    android:id="@+id/subEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="还没有订阅，下面挑个热门订阅吧"
+                    android:textSize="13sp"
+                    android:textColor="@color/on_surface_variant"
+                    android:gravity="center"
+                    android:padding="16dp"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="搜索结果"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_surface_variant"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginBottom="4dp"/>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/resultList"
+                    android:layout_width="match_parent"
+                    android:layout_height="160dp"
+                    android:nestedScrollingEnabled="false"
+                    android:clipToPadding="false"/>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 电台面板 -->
+        <LinearLayout
+            android:id="@+id/radioPanel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/radioChips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"/>
+            </HorizontalScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <EditText
+                    android:id="@+id/radioSearch"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:hint="搜电台，如：BBC"
+                    android:textSize="14sp"
+                    android:background="@color/surface"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:singleLine="true"/>
+
+                <TextView
+                    android:id="@+id/radioSearchBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="搜索"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_primary"
+                    android:background="@color/primary"
+                    android:gravity="center"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"/>
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/stationList"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="6dp"
+                android:clipToPadding="false"/>
+
+            <TextView
+                android:id="@+id/stationEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="正在加载电台…"
+                android:textSize="13sp"
+                android:textColor="@color/on_surface_variant"
+                android:gravity="center"
+                android:padding="16dp"
+                android:visibility="gone"/>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

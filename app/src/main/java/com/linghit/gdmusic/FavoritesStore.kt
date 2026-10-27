@@ -56,6 +56,7 @@ object FavoritesStore {
         put("id", s.id); put("name", s.name); put("artist", s.artist)
         put("album", s.album); put("source", s.source)
         put("picId", s.picId); put("lyricId", s.lyricId); put("localUri", s.localUri)
+        put("directUrl", s.directUrl); put("coverUrl", s.coverUrl)
     }.toString()
 
     fun fromJsonStr(v: String): Song? = try {
@@ -68,7 +69,9 @@ object FavoritesStore {
             source = o.optString("source", ""),
             picId = o.optString("picId", ""),
             lyricId = o.optString("lyricId", o.optString("id", "")),
-            localUri = o.optString("localUri", "")
+            localUri = o.optString("localUri", ""),
+            directUrl = o.optString("directUrl", ""),
+            coverUrl = o.optString("coverUrl", "")
         )
     } catch (e: Exception) { null }
 }

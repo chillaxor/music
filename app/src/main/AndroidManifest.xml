@@ -40,6 +40,10 @@
         <!-- 全屏歌词页：从底部播放条的歌词按钮进入 -->
         <activity android:name=".LyricActivity" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".FavoritesActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 播客电台：独立内容线（订阅 RSS + 网络电台），不耦合音乐搜索 -->
+        <activity android:name=".PodcastActivity" android:label="播客电台" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 播客单集列表：点订阅/搜索结果进入，带已听进度续播 -->
+        <activity android:name=".PodcastDetailActivity" android:label="播客单集" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 今日热榜页：从首页「🎵 新闻热榜」信息卡进入，今日头条热榜原生列表 -->
         <activity android:name=".NewsActivity" android:label="今日热榜" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 正在播放列表页：从底部播放条「🎵 N」pill 进入，看完整队列/切歌/移除 -->
