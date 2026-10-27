@@ -66,6 +66,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    // 「系统样式」媒体通知：NotificationCompat.MediaStyle 在 androidx.core 1.7+ 已移除，
+    // 迁到了 androidx.media（androidx.media.app.NotificationCompat.MediaStyle）。
+    // 荣耀/华为控制中心的「音乐卡片」靠 MediaStyle 通知 + session token 识别，
+    // 普通通知它认不出来（media3-session 只把它当 runtime 依赖，编译期要用必须显式声明）。
+    implementation("androidx.media:media:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // MP3/FLAC 等音频文件的 ID3 标签读写（歌名/歌手/专辑/歌词写进文件），移植自 mf_audit

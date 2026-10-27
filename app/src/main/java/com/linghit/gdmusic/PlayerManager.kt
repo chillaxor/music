@@ -69,6 +69,8 @@ object PlayerManager {
     private var mediaSession: MediaSession? = null
     /** 媒体卡片默认封面（App 图标压成 PNG 字节，init 时准备一次，所有曲目复用） */
     private var defaultArtwork: ByteArray? = null
+    /** 当前曲目的真实封面（媒体通知大图用；控制中心卡片的封面也取自这里） */
+    private var currentCover: Bitmap? = null
 
     var uiListener: PlayerUiListener? = null
 
@@ -125,7 +127,30 @@ object PlayerManager {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        mediaSession = MediaSession.Builder(appContext, player)
+        // ⚠️ 必须把「补了切歌命令的包装器」交给 MediaSession，而不是裸 ExoPlayer。
+        //
+        // 原因（反编译 media3 1.4.1 查到的）：平台 MediaSession 的 PlaybackState.actions
+        // 由 PlayerWrapper.createPlaybackStateCompat() 推导，算的是
+        //     availablePlayerCommands ∩ getAvailableCommands()
+        // 这个【交集】。左边是会话侧的命令集（onConnect 里能补），
+        // 右边 getAvailableCommands() 转发给裸 ExoPlayer —— 而咱们是「单曲流式播放」
+        // （每次只 setMediaItem 一首），ExoPlayer 认为没有下一项 → 右边不含切歌命令
+        // → 交集为空 → 平台播放状态里没有 ACTION_SEEK_TO_NEXT
+        // → 荣耀控制中心的卡片就不画「上一首/下一首」，甚至整张卡片都不出现。
+        //
+        // 用 ForwardingPlayer 包一层，重写 getAvailableCommands() 把切歌命令补上，
+        // 交集两端就都含切歌了。播放行为完全不变（所有调用都转发给真实 ExoPlayer），
+        // 切歌的实际动作由 MediaSession.Callback.onPlayerCommandRequest 拦截后走 App 自己的队列逻辑。
+        val sessionPlayer = object : androidx.media3.common.ForwardingPlayer(player) {
+            override fun getAvailableCommands(): Player.Commands =
+                super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .build()
+        }
+        mediaSession = MediaSession.Builder(appContext, sessionPlayer)
             .setSessionActivity(sessionActivity)
             .setCallback(object : MediaSession.Callback {
                 // 关键：必须显式把「播放/暂停」也放进可用命令集合。
@@ -159,6 +184,12 @@ object PlayerManager {
                 // 否则会话会调 ExoPlayer 的 seekToNext（播放器只挂了单曲，等于空操作）；
                 // 停止额外停掉前台服务。play/pause 交给会话默认路径（已正确 toggle），不拦截。
                 // onPlayerCommandRequest 在 1.4.1 已 deprecated，但仍是自定义传输命令的唯一可用钩子。
+                //
+                // ⚠️ 必须同时处理「媒体项版」命令(8/6)：框架控制器（荣耀控制中心/系统媒体区）走的是
+                // legacy 桥接路径，media3 在那里会先查 ExoPlayer 的 isCommandAvailable(COMMAND_SEEK_TO_NEXT)，
+                // 而咱们播放器每次只挂一个 media item → 该命令不可用 → media3 改发
+                // COMMAND_SEEK_TO_NEXT_MEDIA_ITEM(8) / COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM(6)。
+                // 只认 9/7 的话，控制中心点「下一首」会走默认逻辑 seekToNextMediaItem() → 单曲没下一项 → 没反应。
                 @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
                 override fun onPlayerCommandRequest(
                     session: MediaSession,
@@ -167,8 +198,10 @@ object PlayerManager {
                 ): Int {
                     return try {
                         when (playerCommand) {
-                            Player.COMMAND_SEEK_TO_NEXT -> { skipNext(); SessionResult.RESULT_SUCCESS }
-                            Player.COMMAND_SEEK_TO_PREVIOUS -> { skipPrev(); SessionResult.RESULT_SUCCESS }
+                            Player.COMMAND_SEEK_TO_NEXT,
+                            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> { skipNext(); SessionResult.RESULT_SUCCESS }
+                            Player.COMMAND_SEEK_TO_PREVIOUS,
+                            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> { skipPrev(); SessionResult.RESULT_SUCCESS }
                             Player.COMMAND_STOP -> { stop(); SessionResult.RESULT_SUCCESS }
                             else -> super.onPlayerCommandRequest(session, controller, playerCommand)
                         }
@@ -261,6 +294,9 @@ object PlayerManager {
         persistQueue()
         persistTemp(null)
         startPlayback(song)
+        // 切歌后立刻刷新媒体通知：歌名/歌手变了，控制中心卡片要同步显示新曲目
+        // （否则卡片上还是上一首歌的信息，看起来像"没切歌"）
+        runCatching { updateForeground() }
     }
 
     /**
@@ -272,6 +308,8 @@ object PlayerManager {
         current = song
         persistTemp(song)
         startPlayback(song)
+        // 同上：切到临时这首后刷新媒体通知，卡片显示的歌名要跟上
+        runCatching { updateForeground() }
     }
 
     /** 插播：插到播放列表最前面并直接播放（搜索/导入行的「⏫ 插入」按钮） */
@@ -475,17 +513,28 @@ object PlayerManager {
 
     // ---------- 封面 / 歌词 / 缓存 ----------
     private fun loadCover(s: Song) {
-        if (s.picId.isBlank()) { uiListener?.onCover(null); return }
+        if (s.picId.isBlank()) { setCurrentCover(null); return }
         val apiBase = readApi()
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val u = JSONObject(get(apiBase, "$apiBase?types=pic&source=${enc(s.source)}&id=${enc(s.picId)}&size=500")).optString("url")
-                if (u.isBlank()) { withContext(Dispatchers.Main) { uiListener?.onCover(null) }; return@runCatching }
+                if (u.isBlank()) { withContext(Dispatchers.Main) { setCurrentCover(null) }; return@runCatching }
                 val bytes = client.newCall(Request.Builder().url(u).build()).execute().use { it.body?.bytes() }
                 val bmp = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                withContext(Dispatchers.Main) { uiListener?.onCover(bmp) }
-            }.onFailure { withContext(Dispatchers.Main) { uiListener?.onCover(null) } }
+                withContext(Dispatchers.Main) { setCurrentCover(bmp) }
+            }.onFailure { withContext(Dispatchers.Main) { setCurrentCover(null) } }
         }
+    }
+
+    /**
+     * 保存当前封面并同步给 UI + 媒体通知。
+     * 控制中心卡片的封面取自通知大图，所以封面到了要刷新一次通知，否则卡片显示的还是旧封面。
+     */
+    private fun setCurrentCover(bmp: Bitmap?) {
+        currentCover = bmp
+        uiListener?.onCover(bmp)
+        // 刷新前台通知（带上新封面）；前台服务没起时静默跳过，不影响播放
+        runCatching { updateForeground() }
     }
     // ---------- 歌词状态（全屏歌词页 + 桌面歌词悬浮窗的唯一数据源） ----------
     /** 当前歌词原文（LRC 或纯文本），空串 = 暂无歌词 */
@@ -763,13 +812,48 @@ object PlayerManager {
             .setContentIntent(pi)
             .setOngoing(isPlaying)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        // 真实封面：没有就退回 App 图标，控制中心卡片的封面取自通知大图
+        currentCover?.let { builder.setLargeIcon(it) }
         builder.addAction(android.R.drawable.ic_media_previous, "上一首", makePI("PREV"))
         builder.addAction(NotificationCompat.Action(
             if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, "播放/暂停", makePI("TOGGLE")))
         builder.addAction(android.R.drawable.ic_media_next, "下一首", makePI("NEXT"))
         // 常驻通知无法滑动清除，必须给一个主动关闭入口
         builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "关闭", makePI("STOP"))
+        // ⚠️ 关键：必须是「系统样式」的媒体通知（MediaStyle + 绑 session token），
+        // 否则荣耀/华为控制中心的「音乐卡片」认不出来（普通通知只有通知栏自己能看到）。
+        // 酷狗之所以能在控制中心显示并操作播放/暂停/切歌，靠的就是这个 MediaStyle 通知。
+        applyMediaStyle(builder)
         return builder.build()
+    }
+
+    /**
+     * 把通知升级成 MediaStyle（系统媒体样式）并绑定当前会话的 token。
+     *
+     * 原理：系统（荣耀控制中心 / 通知栏媒体区 / 锁屏）不是靠扫描通知来发现"正在播放"的 App，
+     * 而是靠 MediaSession 的 token 把通知和会话绑起来 —— 通知里带上 token 后，
+     * 系统才知道这条通知对应哪个会话、当前播到哪、能不能切歌。
+     *
+     * 注意 androidx.core 1.7+ 已把 NotificationCompat.MediaStyle 挪到 androidx.media，
+     * 这里用的是 androidx.media.app.NotificationCompat.MediaStyle（依赖已在 build.gradle.kts 显式声明）。
+     */
+    private fun applyMediaStyle(builder: NotificationCompat.Builder) {
+        val session = mediaSession ?: return
+        // androidx.media 的 MediaStyle.setMediaSession() 要的正是 support-v4 类型的 Token，
+        // 与 media3 的 getSessionCompatToken() 返回类型一致（内部已转成平台 token）。
+        // media3 把它标了 @Deprecated（1.5 起要换新 API），但 1.4.1 上是唯一可用入口，先用着。
+        @Suppress("DEPRECATION")
+        val token = runCatching { session.sessionCompatToken }.getOrNull() ?: return
+        runCatching {
+            builder.setStyle(
+                androidx.media.app.NotificationCompat.MediaStyle()
+                    .setMediaSession(token)
+                    // 折叠态只显示 上一首/播放暂停/下一首 三个按钮，和酷狗一致
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
+        }.onFailure {
+            Log.w("GDPlayer", "apply MediaStyle 失败（不影响播放）", it)
+        }
     }
 
     private fun makePI(action: String): PendingIntent {
