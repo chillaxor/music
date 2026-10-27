@@ -56,6 +56,8 @@
         <activity android:name=".PodcastDetailActivity" android:label="播客单集" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 今日热榜页：从首页「🎵 新闻热榜」信息卡进入，今日头条热榜原生列表 -->
         <activity android:name=".NewsActivity" android:label="今日热榜" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 新闻详情页：App 内嵌 WebView 打开热榜原文，不跳出 App -->
+        <activity android:name=".NewsDetailActivity" android:label="新闻详情" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 正在播放列表页：从底部播放条「🎵 N」pill 进入，看完整队列/切歌/移除 -->
         <activity android:name=".QueueActivity" android:label="正在播放列表" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 播放历史（影视仓）：断点续播，竖屏列表页 -->

@@ -114,6 +114,25 @@
                 android:contentDescription="下一集" />
         </LinearLayout>
 
+        <!-- 横向拖动快进/后退时的居中提示：目标时间 + 快进/后退秒数（见 VideoActivity.setupSeekGesture） -->
+        <TextView
+            android:id="@+id/videoSeekHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#99000000"
+            android:gravity="center"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text=""
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="#ffffff"
+            android:visibility="gone"
+            android:contentDescription="快进后退提示" />
+
         <TextView
             android:id="@+id/videoBuffering"
             android:layout_width="wrap_content"

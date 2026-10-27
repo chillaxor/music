@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  正在播放列表页（从首页「🎵 正在播放列表」入口卡进入）：
+  播放列表页（从首页底部播放条点空白区进入）：
   - 顶部主题色标题栏：返回 / 标题 / 播放全部 / 清空 + 计数行（与收藏页/下载页同款头栏）
+  - 标题下方：列表内搜索框（按歌名/歌手/专辑过滤，只影响显示不影响队列）
   - 列表复用 item_queue_song（白卡行，主题属性文字色）：行点击=切到该首播放，
     右侧 ✕=从队列移除，当前播放项主题色高亮 + 「▶ 播放中」徽章
-  - 空状态：提示去搜索（按钮跳回首页并切到搜索页签，MainActivity 读 open_tab）
+  - 空状态：队列空 / 搜索无结果两种文案，按钮跳回首页并切到搜索页签
   数据全部来自全局 PlayerManager，与首页播放条/歌词页/桌面歌词同一份队列。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -43,7 +44,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="🎵 正在播放列表"
+                android:text="播放列表"
                 android:textSize="20sp"
                 android:textStyle="bold"
                 android:textColor="@color/on_primary"
@@ -90,6 +91,51 @@
             android:includeFontPadding="false"/>
     </LinearLayout>
 
+    <!-- 列表内搜索：按歌名/歌手/专辑过滤当前播放列表。
+         注意：过滤只影响「显示」，行点击/移除用的仍是真实队列索引（QueueAdapter 里存 realIdx） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/background"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp">
+
+        <EditText
+            android:id="@+id/queueSearch"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_search_round"
+            android:hint="🔍 搜索列表里的歌曲"
+            android:textSize="14sp"
+            android:textColor="@color/on_surface"
+            android:textColorHint="@color/on_surface_variant"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:maxLines="1"
+            android:inputType="text"
+            android:imeOptions="actionSearch"
+            android:importantForAutofill="no"/>
+
+        <TextView
+            android:id="@+id/queueSearchClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="清除"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/primary"
+            android:paddingStart="12dp"
+            android:paddingEnd="2dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone"/>
+    </LinearLayout>
+
     <!-- 列表区：占满剩余高度 -->
     <FrameLayout
         android:layout_width="match_parent"
@@ -107,7 +153,7 @@
             android:paddingTop="8dp"
             android:paddingBottom="16dp"/>
 
-        <!-- 空列表提示 -->
+        <!-- 空列表提示（队列空 / 搜索无结果两种情况，文案由代码切换） -->
         <LinearLayout
             android:id="@+id/queueEmpty"
             android:layout_width="match_parent"
@@ -117,12 +163,7 @@
             android:visibility="gone">
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="🎵"
-                android:textSize="48sp"/>
-
-            <TextView
+                android:id="@+id/queueEmptyTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="播放列表还是空的"

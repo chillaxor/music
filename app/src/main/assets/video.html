@@ -31,7 +31,7 @@
   }
   @media(max-width:360px){
     .topbar{gap:5px;padding:8px 7px}
-    .topbar .musicswitch .ms-txt{display:none}   /* 只留 🎵 图标 */
+    /* 顶栏音乐按钮已按需求去掉「音乐」二字，只留 🎵 图标（musicswitch 不再含文字） */
     .search{padding:5px 9px}
   }
   .srcDrawer .cur{font-weight:600;color:var(--accent);font-size:12px;margin-left:8px}
@@ -173,7 +173,7 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="musicswitch" onclick="switchToMusic()">🎵<span class="ms-txt"> 音乐</span></div>
+    <div class="musicswitch" onclick="switchToMusic()" title="切到音乐播放页">🎵</div>
     <div class="search">
       <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()" onfocus="showHistPanel()" onclick="showHistPanel()" onblur="setTimeout(hideHistPanel,180)">
       <span class="go" onclick="doSearch()">搜索</span>

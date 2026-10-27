@@ -125,10 +125,13 @@ class FloatButtonService : Service() {
     private var emojiHost: TextView? = null
     private val bubbleViews = mutableListOf<View>()
     private val bubbleLabels = mutableListOf<TextView>()
+    // 每颗气泡的窗口参数：气泡窗在服务启动时就**预创建**好（常驻 GONE），
+    // 长按只改坐标 + 切可见性，全程零 addView——不少 ROM 对悬浮窗 addView
+    // 带系统进场动画，长按时才创建窗口会让气泡「弹进来」（用户反馈观感）
+    private val bubbleParams = mutableListOf<WindowManager.LayoutParams>()
     private var ballSize = 0
     private var bubbleSize = 0
     private var fanRadius = 0
-    private var rootSize = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -143,7 +146,7 @@ class FloatButtonService : Service() {
             ACTION_REFRESH -> {
                 if (root != null) {
                     // 配置/图标变了：先收起气泡重置几何，再换内容，不重建窗口
-                    collapseBubbles(animate = false)
+                    collapseBubbles()
                     refreshBubbleLabels()
                     applyStyle()
                 } else addView()
@@ -199,9 +202,11 @@ class FloatButtonService : Service() {
         fanRadius = dp(62)
         sliverSize = dp(16)
         snapRange = dp(24)
-        // 正方形 root：主球居中钉在某一角，放射气泡摆满其余空间；
-        // 半径 + 气泡半径 + 内边距，两边正好放下最扁的扇形
-        rootSize = 2 * (fanRadius + bubbleSize / 2 + dp(6))
+
+        // 悬浮窗类型：气泡窗也要用，提前算好
+        val type = if (Build.VERSION.SDK_INT >= 26)
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else WindowManager.LayoutParams.TYPE_PHONE
 
         // 主球容器：ImageView（相册图片模式）与 TextView（emoji 模式）叠放，按配置显隐
         val ball = FrameLayout(this).apply {
@@ -236,7 +241,17 @@ class FloatButtonService : Service() {
         val rootView = FrameLayout(this).apply {
             addView(ball, FrameLayout.LayoutParams(ballSize, ballSize))
         }
-        // 气泡一次性建齐（最多 MAX_BUBBLES 个），常驻 GONE，展开时才摆位显示
+        // 气泡一次性建齐（最多 MAX_BUBBLES 个），**服务启动时就各自挂成独立的
+        // 悬浮小窗**（常驻 GONE：不可见、不接收触摸），长按时只改坐标 + 切 VISIBLE，
+        // 全程零 addView / removeView。
+        // 为什么不在长按时才 addView：不少 ROM 对悬浮窗 addView 带系统进场动画，
+        // 长按瞬间创建窗口会让气泡「弹进来」，用户反馈观感很差；提前挂窗把这次
+        // 窗口操作留在启动阶段，长按响应就只有 updateViewLayout（瞬时）。
+        // 为什么不放进 rootView 跟主球共用一个窗：那样展开就得把球的窗撑大 + 移位，
+        // 主球会被窗口带着「弹一下」再回位（用户反馈，且窗口边界动效各 ROM 不一样、
+        // 关不掉）。现在球的窗永远是球大小、位置不动，物理上不可能再移位。
+        // 每颗气泡一个 40dp 小窗也顺带解决了「气泡窗包围盒在斜向展开时盖住主球、
+        // 导致展开后点球收不起来」的问题。
         repeat(FloatButtonStore.MAX_BUBBLES) {
             val b = FrameLayout(this).apply {
                 background = bubbleBg()
@@ -256,17 +271,28 @@ class FloatButtonService : Service() {
             }
             bubbleViews.add(b)
             bubbleLabels.add(b.getChildAt(0) as TextView)
-            rootView.addView(b, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
+            val lp = WindowManager.LayoutParams(
+                bubbleSize, bubbleSize, type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                // 先放屏幕外（FLAG_LAYOUT_NO_LIMITS 允许负坐标）：防御个别 ROM
+                // 对 GONE 悬浮窗的处理缺陷，绝不可能在 (0,0) 闪一下
+                x = -bubbleSize - dp(8)
+                y = -bubbleSize - dp(8)
+                windowAnimations = 0 // 显式关掉窗口动效
+            }
+            bubbleParams.add(lp)
+            runCatching { wm.addView(b, lp) }
+                .onFailure { Log.w(TAG, "气泡窗预创建失败: ${it.message}") }
         }
         refreshBubbleLabels()
 
         // 拖动 + 点击 + 长按。长按 500ms 展开气泡；位移超过 touchSlop 算拖动，
         // 拖动后松手不再触发点击（和首页 chip 拖拽同一套阈值逻辑）
         ball.setOnTouchListener { _, ev -> onBallTouch(ev) }
-
-        val type = if (Build.VERSION.SDK_INT >= 26)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else WindowManager.LayoutParams.TYPE_PHONE
 
         val saved = FloatButtonStore.position(this)
         // 半隐藏态要跨进程重启保留：先把球摆到贴边位置，再由 hiddenSide 决定露出哪条边
@@ -418,6 +444,15 @@ class FloatButtonService : Service() {
     private val autoCollapseRunnable = Runnable { collapseBubbles() }
 
     /** 长按 → 放射展开气泡；扇区方向与边缘全部自适应，气泡不出屏 */
+    /**
+     * 展开气泡：每颗气泡各自 addView 成一个 40dp 的独立悬浮小窗。
+     *
+     * 主球的窗口**完全不碰**（不改 size、不改 x/y），所以主球不可能出现
+     * 「长按时被带着弹一下再回位」——那是早期把气泡塞进球的窗、展开时
+     * 撑大+移位窗口导致的（窗口边界动效还关不掉，各 ROM 表现不一）。
+     *
+     * 扇区方向照旧按剩余空间选（向上/向下，贴边偏 45°），保证气泡都在屏内。
+     */
     private fun expandBubbles() {
         if (expanded || root == null) return
         val items = FloatButtonStore.bubbles(this)
@@ -431,7 +466,6 @@ class FloatButtonService : Service() {
 
         // 扇区中心角：默认向上（-90°）。按球心实际剩余空间判向，不按屏幕百分比——
         // 顶部放不下整个扇形且下方更宽 → 向下；球心离左/右缘太近 → 整体偏 45°。
-        // 方向选对是「球不动」的前提：气泡朝空间大的方向展开，无需再钳制窗口。
         val cx = ballX + ballSize / 2f
         val cy = ballY + ballSize / 2f
         val need = fanRadius + bubbleSize / 2 + dp(6)
@@ -440,87 +474,53 @@ class FloatButtonService : Service() {
         else if (dm.widthPixels - cx < need) center -= 45.0
         val half = when (n) { 1 -> 0.0; 2 -> 42.0; 3 -> 58.0; 4 -> 68.0; else -> 75.0 }
 
-        // 以主球中心为原点算每个气泡偏移，并求内容包围盒 → 主球在 root 里的锚点
-        var minX = -ballSize / 2f; var maxX = ballSize / 2f
-        var minY = -ballSize / 2f; var maxY = ballSize / 2f
-        val offs = ArrayList<Pair<Float, Float>>(n)
+        // 以主球中心为原点算每颗气泡的圆心偏移
         for (i in 0 until n) {
+            val v = bubbleViews[i]
             val ang = Math.toRadians(center + if (n > 1) half * (1.0 - 2.0 * i / (n - 1)) else 0.0)
             val dx = (fanRadius * cos(ang)).toFloat()
             val dy = (fanRadius * sin(ang)).toFloat()
-            offs.add(dx to dy)
-            minX = minOf(minX, dx - bubbleSize / 2f); maxX = maxOf(maxX, dx + bubbleSize / 2f)
-            minY = minOf(minY, dy - bubbleSize / 2f); maxY = maxOf(maxY, dy + bubbleSize / 2f)
-        }
-        val pad = dp(6)
-        val anchorX = (-minX + pad).toInt().coerceAtLeast(0)
-        val anchorY = (-minY + pad).toInt().coerceAtLeast(0)
-
-        // 主球钉到锚点（气泡以此为中心放射）
-        (ballHost?.layoutParams as? FrameLayout.LayoutParams)?.apply {
-            leftMargin = anchorX; topMargin = anchorY
-        }
-        ballHost?.requestLayout()
-
-        // 气泡摆位 + 阶梯弹入动画
-        for (i in 0 until n) {
-            val v = bubbleViews[i]
-            val (dx, dy) = offs[i]
-            (v.layoutParams as FrameLayout.LayoutParams).apply {
-                leftMargin = (anchorX + ballSize / 2 + dx - bubbleSize / 2).toInt()
-                topMargin = (anchorY + ballSize / 2 + dy - bubbleSize / 2).toInt()
-            }
+            // 气泡圆心 = 主球中心 + 偏移；窗口左上角 = 圆心 - 半径
+            val wx = (cx + dx - bubbleSize / 2f).toInt()
+            val wy = (cy + dy - bubbleSize / 2f).toInt()
             v.animate().cancel()
-            v.scaleX = 0f; v.scaleY = 0f; v.alpha = 0f
+            v.scaleX = 1f; v.scaleY = 1f; v.alpha = 1f
             v.visibility = View.VISIBLE
-            v.animate().scaleX(1f).scaleY(1f).alpha(1f)
-                .setStartDelay(30L * i).setDuration(150L).start()
+            // 窗口启动时已挂好，这里只挪坐标 + 确认可见：零 addView、零进场动画
+            val lp = bubbleParams.getOrNull(i) ?: continue
+            lp.x = wx
+            lp.y = wy
+            runCatching { wm.updateViewLayout(v, lp) }
+                .onFailure { Log.w(TAG, "气泡窗 $i 定位失败: ${it.message}") }
         }
+        // 配置变少的那几颗：直接隐掉（窗口仍挂着，下次展开再摆位）
         for (i in n until bubbleViews.size) bubbleViews[i].visibility = View.GONE
-
-        // 窗口撑成 rootSize，主球视觉位置**不变**：原点 = 球坐标 − 锚点，绝不做屏幕钳制。
-        // ⚠️ 早期版本在这里 coerceIn(0, 屏宽-rootSize)，球贴边缘时负值被钳到 0，
-        // 主球当场被推离原位；收起时又移一次（用户反馈「长按移位、关掉气泡也移位」）。
-        // FLAG_LAYOUT_NO_LIMITS 已允许窗口伸出屏幕，扇区方向又按剩余空间选好，
-        // 气泡在屏内；root 超屏的部分被裁掉即可。ballX/Y 不写回，收起精确回到原位。
-        val p = params ?: return
-        p.width = rootSize; p.height = rootSize
-        p.x = ballX - anchorX
-        p.y = ballY - anchorY
-        runCatching { wm.updateViewLayout(root, p) }
 
         mainHandler.postDelayed(autoCollapseRunnable, AUTO_COLLAPSE_MS)
         vibrate()
-        Log.d(TAG, "气泡展开 n=$n center=$center anchor=($anchorX,$anchorY)")
+        Log.d(TAG, "气泡展开 n=$n center=$center ball=(${ballX},${ballY})")
     }
 
     /**
-     * 收起：气泡缩回，窗口缩回球大小，主球回到 ballX/ballY。
-     * 默认**不播动画**：点击/长按/划手/自动收起都走瞬时隐藏，
-     * 早期版本的 120ms 缩放回弹被用户反馈「弹一下」很多余，已去掉。
+     * 收起：气泡窗口**不撤**，只切 GONE（窗口是启动时预挂的，见 onCreate）。
+     * 主球那个窗从头到尾没被碰过，所以收起也不会有任何位移动画。
      */
-    private fun collapseBubbles(animate: Boolean = false) {
+    private fun collapseBubbles() {
         if (!expanded) return
         expanded = false
         mainHandler.removeCallbacks(autoCollapseRunnable)
-        bubbleViews.forEach { v ->
+        val offX = -bubbleSize - dp(8)
+        bubbleViews.forEachIndexed { i, v ->
             v.animate().cancel()
-            if (animate) {
-                v.animate().scaleX(0f).scaleY(0f).alpha(0f).setDuration(120L)
-                    .withEndAction { v.visibility = View.GONE }
-                    .start()
-            } else {
-                v.visibility = View.GONE
-                v.scaleX = 0f; v.scaleY = 0f; v.alpha = 0f
+            v.visibility = View.GONE
+            v.scaleX = 0f; v.scaleY = 0f; v.alpha = 0f
+            // 顺手把窗口挪回屏幕外待命：万一个别 ROM 对 GONE 悬浮窗的刷新有延迟，
+            // 位置先离开可见区域，视觉上绝不会留下残留圆点
+            val lp = bubbleParams.getOrNull(i) ?: return@forEachIndexed
+            if (lp.x != offX || lp.y != offX) {
+                lp.x = offX; lp.y = offX
+                runCatching { wm.updateViewLayout(v, lp) }
             }
-        }
-        (ballHost?.layoutParams as? FrameLayout.LayoutParams)?.apply {
-            leftMargin = 0; topMargin = 0
-        }
-        val p = params
-        if (p != null) {
-            p.width = ballSize; p.height = ballSize; p.x = ballX; p.y = ballY
-            runCatching { wm.updateViewLayout(root, p) }
         }
         Log.d(TAG, "气泡收起")
     }
@@ -611,10 +611,13 @@ class FloatButtonService : Service() {
         mainHandler.removeCallbacks(xAnimRunnable)
         expanded = false
         hiddenSide = HIDDEN_NONE
+        // 气泡是各自独立的窗口（常驻 GONE），服务销毁时统一撤掉
+        bubbleViews.forEach { v -> runCatching { wm.removeView(v) } }
         root?.let { runCatching { wm.removeView(it) } }
         root = null
         bubbleViews.clear()
         bubbleLabels.clear()
+        bubbleParams.clear()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

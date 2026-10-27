@@ -126,6 +126,19 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var newsCard: View
     private lateinit var newsTitle: TextView
     private lateinit var newsSub: TextView
+    /** 首页新闻卡轮播：拉到的热榜标题列表 + 当前播到第几条 */
+    private val newsTitles = mutableListOf<String>()
+    private var newsIdx = 0
+    /** 每 2 秒切到下一条；标题少于 2 条时跑完一轮就自己停（不再 post） */
+    private val newsRotate = object : Runnable {
+        override fun run() {
+            if (newsTitles.size > 1) {
+                newsIdx = (newsIdx + 1) % newsTitles.size
+                showNewsAt(newsIdx)
+                uiHandler.postDelayed(this, NEWS_ROTATE_MS)
+            }
+        }
+    }
     /** 兜底底色：无每日一图时露出的主题渐变（原头部渐变改为全屏通幅） */
     private lateinit var fallbackBg: View
     /** 每日一图（全屏沉浸背景）：用户文件夹按日轮换，点问候行手动换 */
@@ -418,6 +431,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if(!search) refreshQueueEntry()
     }
 
+    companion object {
+        /** 新闻卡轮播间隔：每条停留 2 秒（用户需求） */
+        private const val NEWS_ROTATE_MS = 2000L
+    }
+
     override fun onResume() {
         super.onResume()
         // 记账页可能钉了新的链接资源位回来，刷新一行
@@ -439,6 +457,12 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         refreshQueueEntry()
         // 续听 chips 也可能因队列变化需要刷新显隐
         refreshSceneResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 新闻轮播只在看得见时跑：息屏/切到别的页面就停，回前台 onResume 会重新拉取并重挂
+        uiHandler.removeCallbacks(newsRotate)
     }
 
     /** 无边界涟漪（按压反馈）：网格版 chip 没有 pill 底色，靠这个给触摸反馈 */
@@ -779,28 +803,57 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 卡片常态点击仍进 NewsActivity。
      * 与 NewsActivity 同一接口，但这里只解析第 1 条，开销最小。
      */
+    /**
+     * 首页新闻卡：拉今日头条热榜，取前若干条标题在本卡里轮播（每 2 秒一条，见 newsRotate）。
+     * 主行 newsTitle = 当前那条标题，XML 限制最多 2 行；
+     * 副行 newsSub 只在加载失败时显示「点这里重试 ›」，正常时隐藏。
+     * 热度与「今日热榜 ›」入口提示均按需求去掉。
+     * onResume 每次都会调本方法重新拉取，轮播定时器在这里重挂。
+     */
     private fun loadNewsHot() {
         if (!::newsTitle.isInitialized) return
+        uiHandler.removeCallbacks(newsRotate) // 重拉前先停旧的，避免两条轮播并行
         scope.launch {
-            val first = try {
+            val titles = try {
                 withContext(Dispatchers.IO) {
                     val arr = JSONObject(
                         get("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc")
                     ).optJSONArray("data") ?: JSONArray()
-                    if (arr.length() > 0) arr.getJSONObject(0) else null
+                    // 取前 10 条标题：卡片只放得下一两行字，10 条轮一圈 20 秒足够看
+                    (0 until minOf(arr.length(), 10))
+                        .map { arr.getJSONObject(it).optString("Title", "") }
+                        .filter { it.isNotBlank() }
                 }
-            } catch (e: Exception) { null }
-            if (first == null) {
+            } catch (e: Exception) { emptyList<String>() }
+
+            if (titles.isEmpty()) {
+                newsTitles.clear()
+                newsTitle.animate().cancel()
+                newsTitle.alpha = 1f
                 newsTitle.text = "热榜加载失败"
                 newsSub.text = "点这里重试 ›"
                 newsSub.visibility = View.VISIBLE
-            } else {
-                newsTitle.text = first.optString("Title", "")
-                // 热度与「今日热榜 ›」入口提示均按需求去掉，副行隐藏让标题占满卡
-                newsSub.text = ""
-                newsSub.visibility = View.GONE
+                return@launch
             }
+            newsTitles.clear()
+            newsTitles.addAll(titles)
+            newsIdx = 0
+            newsSub.text = ""
+            newsSub.visibility = View.GONE
+            showNewsAt(0)
+            // 少于 2 条时 newsRotate 跑完一轮自己停，这里也不用特判
+            uiHandler.removeCallbacks(newsRotate)
+            uiHandler.postDelayed(newsRotate, NEWS_ROTATE_MS)
         }
+    }
+
+    /** 新闻卡切到第 idx 条：先淡出换字再淡入，避免文字硬跳 */
+    private fun showNewsAt(idx: Int) {
+        val t = newsTitles.getOrNull(idx) ?: return
+        newsTitle.animate().cancel()
+        newsTitle.alpha = 0f
+        newsTitle.text = t
+        newsTitle.animate().alpha(1f).setDuration(260).start()
     }
 
     /**
@@ -1551,6 +1604,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     override fun onDestroy(){
         // 不再释放播放器：播放由前台服务保活，息屏/退出首页都不会中断；仅断开 UI 监听
         uiHandler.removeCallbacks(progressRunnable)
+        uiHandler.removeCallbacks(newsRotate) // 新闻卡轮播定时器一并停
         scope.cancel()
         // 仅当槽里还是自己才清：本页在后台被回收时，前台可能是 QueueActivity（它持有监听），
         // 无条件置空会把队列页的刷新也打断
@@ -1643,15 +1697,41 @@ class SongAdapter(
 }
 
 /** 播放列表适配器：行点击=切到该首播放，右侧 ✕=从队列移除；当前播放项高亮 */
+/**
+ * 播放列表行适配器。
+ *
+ * ⚠️ 为什么存 Pair<真实索引, Song> 而不是只存 Song：本页支持「列表内搜索过滤」，
+ * 过滤后 RecyclerView 的 position 是**过滤后**的位置，直接拿它去 `queueSnapshot()[pos]`
+ * 会播到/删掉错误的歌。所以每行都带上它在真实队列里的下标，回调原样传出去。
+ */
 class QueueAdapter(
     private val onPlay:(Int, Song)->Unit,
     private val onRemove:(Int, Song)->Unit
 ):RecyclerView.Adapter<QueueAdapter.VH>(){
-    private val data=mutableListOf<Song>()
-    fun submit(l:List<Song>){data.clear();data.addAll(l);notifyDataSetChanged()}
-    override fun getItemCount()=data.size
+    /** full = 全量队列（真实下标 → 歌）；rows = 当前展示（按关键词过滤后） */
+    private val full=mutableListOf<Pair<Int,Song>>()
+    private val rows=mutableListOf<Pair<Int,Song>>()
+    private var kw=""
+    /** 当前展示的行数（过滤后的匹配数），供页头计数用 */
+    fun displayCount()=rows.size
+    fun submit(l:List<Song>){
+        full.clear()
+        l.withIndex().forEach{ full.add(it.index to it.value) }
+        rebuild()
+    }
+    /** 更新搜索关键词并重算展示列表 */
+    fun setKeyword(k:String){ kw=k.trim().lowercase(); rebuild() }
+    private fun rebuild(){
+        rows.clear()
+        rows.addAll(full.filter{(_,s)->
+            kw.isEmpty()||s.name.lowercase().contains(kw)||
+                s.artist.lowercase().contains(kw)||s.album.lowercase().contains(kw)
+        })
+        notifyDataSetChanged()
+    }
+    override fun getItemCount()=rows.size
     override fun onCreateViewHolder(p:ViewGroup,v:Int)=VH(LayoutInflater.from(p.context).inflate(R.layout.item_queue_song,p,false))
-    override fun onBindViewHolder(h:VH,p:Int)=h.bind(data[p],p)
+    override fun onBindViewHolder(h:VH,p:Int)=h.bind(rows[p])
     inner class VH(private val root:View):RecyclerView.ViewHolder(root){
         private val idx=root.findViewById<TextView>(R.id.qIndex)
         private val n=root.findViewById<TextView>(R.id.qName)
@@ -1668,14 +1748,17 @@ class QueueAdapter(
         private val cPrimary=ThemePrefs.currentPack(root.context).primary
         private val cName=ContextCompat.getColor(root.context, R.color.on_surface)
         private val cDim=ContextCompat.getColor(root.context, R.color.on_surface_variant)
-        fun bind(x:Song, position:Int){
+        // ⚠️ 参数名不能叫 row：会遮蔽上面 VH 的 row（itemRoot 那个 View），
+        // 一遮蔽 row.setOnClickListener 就变成在 Pair 上找方法，直接编译不过
+        fun bind(item:Pair<Int,Song>){
+            val x=item.second
             // 高亮「正在播放」：优先对象 identity（队列里就是 current 那个对象），
             // 再退按键匹配。不能只按键——同一首歌在队列里出现两次时按键会撞车，
             // 高亮落到第一首上，而实际播的是第二首（用户看到「显示在播 A、实际响 B」）。
             // 临时播放期间不高亮任何一项：响的是队列外的歌，列表原样没动。
             val cur=PlayerManager.current
             val isCur=!PlayerManager.tempPlaying && cur!=null && (cur===x || cur.key()==x.key())
-            idx.text=(position+1).toString()
+            idx.text=(item.first+1).toString()
             idx.setTextColor(if(isCur) cPrimary else cDim)
             n.text=x.name
             n.setTextColor(if(isCur) cPrimary else cName)
@@ -1683,8 +1766,9 @@ class QueueAdapter(
             a.setTextColor(cDim)
             rm.setTextColor(cDim)
             playing.visibility=if(isCur) View.VISIBLE else View.GONE
-            row.setOnClickListener{ onPlay(position, x) }
-            rm.setOnClickListener{ onRemove(position, x) }
+            // item.first 是真实队列下标，搜索过滤后也不会错位
+            row.setOnClickListener{ onPlay(item.first, x) }
+            rm.setOnClickListener{ onRemove(item.first, x) }
         }
     }
 }

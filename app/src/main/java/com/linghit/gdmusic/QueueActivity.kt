@@ -6,7 +6,10 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -32,8 +35,13 @@ class QueueActivity : AppCompatActivity(), PlayerUiListener {
 
     private lateinit var queueList: RecyclerView
     private lateinit var queueEmpty: View
+    private lateinit var queueEmptyTitle: TextView
     private lateinit var queueCount: TextView
     private lateinit var queueAdapter: QueueAdapter
+    /** 列表内搜索关键词（歌名/歌手/专辑）；只影响显示，不动真实队列 */
+    private var keyword = ""
+    private lateinit var queueSearch: EditText
+    private lateinit var queueSearchClear: TextView
     private val uiHandler = Handler(Looper.getMainLooper())
 
     // 底部播放条（与首页播放条同款控制：上一首/播放暂停/下一首/播放模式）
@@ -53,7 +61,27 @@ class QueueActivity : AppCompatActivity(), PlayerUiListener {
 
         queueList = findViewById(R.id.queueList)
         queueEmpty = findViewById(R.id.queueEmpty)
+        queueEmptyTitle = findViewById(R.id.queueEmptyTitle)
         queueCount = findViewById(R.id.queueCount)
+        queueSearch = findViewById(R.id.queueSearch)
+        queueSearchClear = findViewById(R.id.queueSearchClear)
+
+        // 列表内搜索：输入即过滤（实时），清除按钮一键清空
+        queueSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                keyword = s?.toString()?.trim() ?: ""
+                queueSearchClear.visibility = if (keyword.isEmpty()) View.GONE else View.VISIBLE
+                applyFilter()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        queueSearchClear.setOnClickListener {
+            queueSearch.setText("")
+            keyword = ""
+            queueSearchClear.visibility = View.GONE
+            applyFilter()
+        }
 
         findViewById<TextView>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<View>(R.id.playAllQueue).setOnClickListener {
@@ -148,21 +176,34 @@ class QueueActivity : AppCompatActivity(), PlayerUiListener {
         if (PlayerManager.uiListener === this) PlayerManager.uiListener = null
     }
 
+    /** 按当前关键词重算展示列表 + 计数行 + 空态文案（refreshQueue 已读 keyword，直接复用） */
+    private fun applyFilter() = refreshQueue()
+
     /** 刷新队列页：计数行 + 空状态显隐。线程免疫（onSongStart 可能来自播放器回调线程） */
     private fun refreshQueue() {
         if (!::queueCount.isInitialized) return
         val block = {
             val q = PlayerManager.queueSnapshot()
+            queueAdapter.submit(q)
+            queueAdapter.setKeyword(keyword)
+            val shown = queueAdapter.displayCount()
             queueCount.text = when {
                 // 临时播放中：明确告诉用户列表没被碰，避免以为点首歌列表就乱了
-                PlayerManager.tempPlaying -> "共 ${q.size} 首 · 临时播放中（不动列表）"
                 q.isEmpty() -> "播放列表是空的"
+                keyword.isNotEmpty() -> "匹配 $shown / ${q.size} 首"
+                PlayerManager.tempPlaying -> "共 ${q.size} 首 · 临时播放中（不动列表）"
                 else -> "共 ${q.size} 首"
             }
-            queueAdapter.submit(q)
-            queueEmpty.visibility = if (q.isEmpty()) View.VISIBLE else View.GONE
-            queueList.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
-            scrollQueueToCurrent(q)
+            val none = q.isEmpty() || (keyword.isNotEmpty() && shown == 0)
+            if (keyword.isNotEmpty() && q.isNotEmpty() && shown == 0) {
+                queueEmptyTitle.text = "没有找到「$keyword」相关的歌曲"
+            } else {
+                queueEmptyTitle.text = "播放列表还是空的"
+            }
+            queueEmpty.visibility = if (none) View.VISIBLE else View.GONE
+            queueList.visibility = if (none) View.GONE else View.VISIBLE
+            // 搜索中不自动定位：用户正在按关键词看，别把人弹回正在播放那首
+            if (keyword.isEmpty()) scrollQueueToCurrent(q)
             syncQueueBar()
         }
         if (Looper.myLooper() == Looper.getMainLooper()) block() else uiHandler.post(block)

@@ -100,6 +100,8 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var videoPrev: TextView
     private lateinit var videoNext: TextView
     private lateinit var videoBuffering: TextView
+    /** 横向拖动快进/后退时的居中提示（目标时间 + 快进/后退秒数） */
+    private lateinit var videoSeekHint: TextView
     private lateinit var videoMiniLayer: FrameLayout
     private lateinit var videoMiniBtn: TextView
     private lateinit var videoMiniClose: TextView
@@ -134,8 +136,6 @@ class VideoActivity : AppCompatActivity() {
     private var brightStartVal = -1f
     private var brightDecided = false
     private var brightActive = false
-    private var brightMoved = false
-    private var brightSlop = 0
     private val BRIGHT_MIN = 0.02f
     private val BRIGHT_MAX = 1f
     private val BRIGHT_HIDE_DELAY = 800L
@@ -341,6 +341,7 @@ class VideoActivity : AppCompatActivity() {
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
         videoBuffering = findViewById(R.id.videoBuffering)
+        videoSeekHint = findViewById(R.id.videoSeekHint)
         videoMiniLayer = findViewById(R.id.videoMiniLayer)
         videoMiniBtn = findViewById(R.id.videoMiniBtn)
         videoMiniClose = findViewById(R.id.videoMiniClose)
@@ -362,82 +363,11 @@ class VideoActivity : AppCompatActivity() {
             updatePipButton()
         })
 
-        // 播放时左侧上下滑动调亮度（右半屏 / 横向滑动仍交给播放器自带控制条）
+        // 播放层手势统一在 setupPlayGestures 里注册：
+        //  左侧上下滑 = 调亮度 / 左右拖动 = 快进后退 / 轻点 = 切换控制条显隐。
+        // 三者必须共用一个 OnTouchListener —— PlayerView 只保留一个，后注册的会顶掉前一个。
         brightnessInd = findViewById(R.id.videoBrightness)
-        brightSlop = ViewConfiguration.get(this).scaledTouchSlop
-        fun getBrightness(): Float {
-            val b = window.attributes.screenBrightness
-            return if (b < 0f) 0.5f else b   // 未设置过则是系统默认值(-1)，从 0.5 起调
-        }
-        fun setBrightness(v: Float) {
-            val b = v.coerceIn(BRIGHT_MIN, BRIGHT_MAX)
-            val lp = window.attributes
-            lp.screenBrightness = b
-            window.attributes = lp
-        }
-        fun showBrightness(v: Float) {
-            val pct = (v.coerceIn(BRIGHT_MIN, BRIGHT_MAX) * 100).toInt()
-            brightnessInd.visibility = View.VISIBLE
-            brightnessInd.text = "☀ $pct%"
-            mainHandler.removeCallbacks(brightHide)
-            mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
-        }
-        // PlayerView 自带的「点按切换控制条」是通过它自己的 OnTouchListener 实现的，
-        // 我们覆盖了该 listener，所以这里手动补回：轻点视频区域 = 切换控制条显隐
-        fun toggleController() {
-            if (!playerView.useController) return
-            if (controlsVisible) playerView.hideController() else playerView.showController()
-        }
-        playerView.setOnTouchListener { v, ev ->
-            // 小窗 / 投屏 / 播放层隐藏时不接管，避免影响其它交互
-            if (miniMode || casting || overlay.visibility != View.VISIBLE) return@setOnTouchListener false
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    brightStartX = ev.x
-                    brightStartY = ev.y
-                    brightStartVal = getBrightness()
-                    brightDecided = false
-                    brightActive = false
-                    brightMoved = false
-                    true // 消费 DOWN，才能持续收到 MOVE/UP（否则手势会丢）
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.x - brightStartX
-                    val dy = ev.y - brightStartY
-                    if (!brightDecided) {
-                        if (abs(dx) > brightSlop || abs(dy) > brightSlop) brightMoved = true
-                        // 左半屏 + 以纵向滑动为主 → 判定为亮度手势
-                        if (abs(dy) > brightSlop && abs(dy) > abs(dx) && brightStartX < v.width / 2f) {
-                            brightDecided = true
-                            brightActive = true
-                        } else if (abs(dx) > brightSlop || abs(dy) > brightSlop) {
-                            brightDecided = true // 横向 / 右半屏：让给控制条，不当成亮度手势
-                        }
-                    }
-                    if (brightActive) {
-                        val delta = (brightStartY - ev.y) / v.height   // 上滑变亮、下滑变暗
-                        val nv = (brightStartVal + delta).coerceIn(BRIGHT_MIN, BRIGHT_MAX)
-                        setBrightness(nv)
-                        showBrightness(nv)
-                    }
-                    true // 全程消费，避免触发播放器默认处理
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val was = brightActive
-                    brightActive = false
-                    brightDecided = false
-                    val moved = brightMoved
-                    brightMoved = false
-                    if (was) {
-                        mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
-                    } else if (!moved) {
-                        toggleController() // 轻点：切换控制条显隐（替代被覆盖的默认行为）
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
+        setupPlayGestures()
 
         // 小窗按钮：把播放器缩成 App 内悬浮小窗（页面可继续浏览），
         // 小窗上的「⤢」或点画面 → 展开回全屏继续播（用户要的"关闭小屏回全屏"）
@@ -1204,6 +1134,159 @@ class VideoActivity : AppCompatActivity() {
     }
 
     /**
+     * 播放层手势（用户需求：左右拖动快进后退 + 左侧上下滑动调亮度 + 轻点显隐控制条）。
+     *
+     * 三种手势必须写在同一个 OnTouchListener 里：PlayerView 只保留一个 listener，
+     * 后注册的会整个顶掉前一个，分两个函数各注册一次的话只有最后一个生效。
+     *
+     * 实现要点：
+     *  - 方向裁决只做一次：纵向占优 → 亮度（且起点在左半屏），横向占优 → 快进/后退，
+     *    右半屏竖向滑动不接管（留给系统/其它交互）。
+     *  - 起点落在「进度条那一行 / 片头片尾配置行」内时不接管——那一下是用户在拖进度条，
+     *    抢了它就再也没法拖进度条了。控制条隐藏时这些 View 的 bounds 为 0，判断自然失效，
+     *    那时整幅画面都能滑。
+     *  - 小窗 / 投屏 / 播放层隐藏时不接管，避免影响其它交互。
+     *  - 灵敏度：拖动 100px ≈ 跳 15 秒；亮度按屏幕高度比例调；松手才真正 seek
+     *    （拖动中只更新提示文字，不频繁 seek）。
+     *  - 投屏中 player 是空的，改走 castCtrl.seekTo（本地播放器已停）。
+     *  - 轻点（没产生位移）时手动切换控制条：PlayerView 自带的该行为就是它的
+     *    OnTouchListener 实现的，被我们覆盖后必须补回。
+     */
+    private fun setupPlayGestures() {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        val msPerPx = 150f
+        val padDp = 16 * resources.displayMetrics.density
+        // 不能抢的区域：自带进度条占位行 + 下方的片头/片尾配置行
+        val protectedViews = listOfNotNull(
+            playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress_placeholder),
+            playerView.findViewById<View>(R.id.skipCfgRow)
+        )
+        val loc = IntArray(2)
+        fun inProtected(rx: Float, ry: Float): Boolean = protectedViews.any { v ->
+            v.getLocationOnScreen(loc)
+            rx >= loc[0] - padDp && rx <= loc[0] + v.width + padDp &&
+                ry >= loc[1] - padDp && ry <= loc[1] + v.height + padDp
+        }
+
+        var downX = 0f
+        var downY = 0f
+        var startPos = 0L
+        var target = 0L
+        var seeking = false
+        var moved = false
+        var takeOver = false
+
+        playerView.setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = ev.x; downY = ev.y
+                    startPos = currentPosMs()
+                    target = startPos
+                    seeking = false
+                    moved = false
+                    brightStartX = ev.x
+                    brightStartY = ev.y
+                    brightStartVal = getScreenBrightness()
+                    brightDecided = false
+                    brightActive = false
+                    // 小窗 / 投屏 / 播放层隐藏时不接管，避免影响其它交互；
+                    // 起点落在进度条 / 片头片尾配置行时也不接管（那是用户在拖进度条）
+                    val idle = !miniMode && !casting && overlay.visibility == View.VISIBLE
+                    val onBar = inProtected(ev.rawX, ev.rawY)
+                    takeOver = idle && !onBar
+                    takeOver // 消费 DOWN 才能稳定收到后续 MOVE/UP
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!takeOver) return@setOnTouchListener false
+                    val dx = ev.x - downX
+                    val dy = ev.y - downY
+                    if (abs(dx) > slop || abs(dy) > slop) moved = true
+                    // 方向裁决（只判一次）：纵向占优=亮度，横向占优=快进，其余不动
+                    if (!brightDecided && !seeking) {
+                        when {
+                            abs(dy) > slop && abs(dy) > abs(dx) -> {
+                                brightDecided = true
+                                brightActive = downX < v.width / 2f   // 只认左半屏：右半屏留空
+                            }
+                            abs(dx) > slop && abs(dx) > abs(dy) * 1.5f -> seeking = true
+                            abs(dx) > slop || abs(dy) > slop -> brightDecided = true
+                        }
+                    }
+                    when {
+                        brightActive -> {   // 上滑变亮、下滑变暗
+                            val delta = (brightStartY - ev.y) / v.height
+                            val nv = (brightStartVal + delta).coerceIn(BRIGHT_MIN, BRIGHT_MAX)
+                            setScreenBrightness(nv)
+                            showBrightnessInd(nv)
+                        }
+                        seeking -> {
+                            val dur = runCatching { player?.duration }.getOrNull() ?: 0L
+                            target = (startPos + (dx * msPerPx).toLong()).coerceAtLeast(0L)
+                            if (dur > 0) target = target.coerceAtMost(dur)
+                            val delta = target - startPos
+                            videoSeekHint.text = buildString {
+                                append(fmtTime(target))
+                                append("   ")
+                                append(if (delta >= 0) "快进 ${delta / 1000} 秒" else "后退 ${-delta / 1000} 秒")
+                            }
+                            videoSeekHint.visibility = View.VISIBLE
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!takeOver) return@setOnTouchListener false
+                    val wasBright = brightActive
+                    val wasSeek = seeking
+                    brightActive = false
+                    brightDecided = false
+                    seeking = false
+                    when {
+                        wasBright -> mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+                        wasSeek -> {
+                            videoSeekHint.visibility = View.GONE
+                            if (target != startPos) {
+                                if (casting) castCtrl?.seekTo(target) { _, _ -> }
+                                else runCatching { player?.seekTo(target) }
+                            }
+                        }
+                        // 没移动过 = 轻点：PlayerView 自带的「点按切换控制条」被本 listener 顶掉了，这里补回
+                        !moved -> toggleController()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    // ===================== 屏幕亮度（左侧上下滑动调节） =====================
+    private fun getScreenBrightness(): Float {
+        val b = window.attributes.screenBrightness
+        return if (b < 0f) 0.5f else b   // 未设置过则是系统默认值(-1)，从 0.5 起调
+    }
+
+    private fun setScreenBrightness(v: Float) {
+        val lp = window.attributes
+        lp.screenBrightness = v.coerceIn(BRIGHT_MIN, BRIGHT_MAX)
+        window.attributes = lp
+    }
+
+    private fun showBrightnessInd(v: Float) {
+        val pct = (v.coerceIn(BRIGHT_MIN, BRIGHT_MAX) * 100).toInt()
+        brightnessInd.visibility = View.VISIBLE
+        brightnessInd.text = "☀ $pct%"
+        mainHandler.removeCallbacks(brightHide)
+        mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+    }
+
+    /** 轻点视频区域 = 切换控制条显隐 */
+    private fun toggleController() {
+        if (!playerView.useController) return
+        if (controlsVisible) playerView.hideController() else playerView.showController()
+    }
+
+    /**
      * 片头 / 片尾时间设置弹窗。配置按影片详情维度保存：
      * 对本影片所有剧集/线路生效，其他影片不受影响。
      */
@@ -1224,15 +1307,16 @@ class VideoActivity : AppCompatActivity() {
         }
         // 快捷档位：片头给固定值；片尾按当前时长给「距结尾 X 分钟」
         val dur = runCatching { player?.duration }.getOrNull() ?: 0L
-        val quicks: List<Pair<String, Long>> =
-            if (isStart) listOf("30秒" to 30_000L, "1分" to 60_000L, "1分半" to 90_000L, "2分" to 120_000L)
-            else buildList {
-                if (dur > 0) {
-                    add("剩3分" to (dur - 180_000L))
-                    add("剩5分" to (dur - 300_000L))
-                    add("剩10分" to (dur - 600_000L))
-                }
+        // 第一颗永远是「⏱ 当前 mm:ss」：把当前播放进度一键填进输入框，不用手动敲时间（用户需求）
+        val now = currentPosMs()
+        val quicks: List<Pair<String, Long>> = buildList {
+            if (now > 0) add("⏱ 当前 ${fmtTime(now)}" to now)
+            if (isStart) {
+                add("30秒" to 30_000L); add("1分" to 60_000L); add("1分半" to 90_000L); add("2分" to 120_000L)
+            } else if (dur > 0) {
+                add("剩3分" to (dur - 180_000L)); add("剩5分" to (dur - 300_000L)); add("剩10分" to (dur - 600_000L))
             }
+        }
         if (quicks.isNotEmpty()) {
             val density = resources.displayMetrics.density
             fun dp(v: Int) = (v * density).toInt()

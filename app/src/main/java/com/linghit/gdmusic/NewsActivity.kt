@@ -1,7 +1,6 @@
 package com.linghit.gdmusic
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -56,8 +55,12 @@ class NewsActivity : AppCompatActivity() {
             if (u.isBlank()) {
                 Toast.makeText(this, "这条没有原文链接", Toast.LENGTH_SHORT).show()
             } else {
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) }
-                    .onFailure { Toast.makeText(this, "打不开，没找到浏览器", Toast.LENGTH_SHORT).show() }
+                // 在 App 内用 WebView 打开原文，不跳出 App（系统浏览器入口已下线）
+                startActivity(
+                    Intent(this, NewsDetailActivity::class.java)
+                        .putExtra("url", u)
+                        .putExtra("title", item.title)
+                )
             }
         }
         newsList.apply {
@@ -127,6 +130,7 @@ class NewsActivity : AppCompatActivity() {
             private val title = root.findViewById<TextView>(R.id.nTitle)
             private val hot = root.findViewById<TextView>(R.id.nHot)
             private val badge = root.findViewById<TextView>(R.id.nLabel)
+            private val detail = root.findViewById<TextView>(R.id.nDetail)
 
             fun bind(x: NewsItem, position: Int) {
                 val ctx = root.context
@@ -144,6 +148,8 @@ class NewsActivity : AppCompatActivity() {
                 badge.visibility = if (l.isBlank()) View.GONE else View.VISIBLE
                 badge.setTextColor(ThemePrefs.currentPack(ctx).primary)
                 root.setOnClickListener { onClick(x) }
+                // 明确的「详情 ›」入口：与整行点击等效，但视觉上给出跳转暗示
+                detail.setOnClickListener { onClick(x) }
             }
         }
 

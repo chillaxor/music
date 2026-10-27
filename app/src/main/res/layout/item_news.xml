@@ -91,5 +91,21 @@
             android:paddingBottom="3dp"
             android:visibility="gone"
             android:includeFontPadding="false"/>
+
+        <!-- 跳转详情入口：明确 CTA，点击与整行等效（系统浏览器打开原文 Url） -->
+        <TextView
+            android:id="@+id/nDetail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="详情 ›"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorPrimary"
+            android:paddingStart="12dp"
+            android:paddingEnd="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground"
+            android:includeFontPadding="false"/>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
