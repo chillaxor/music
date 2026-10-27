@@ -27,6 +27,16 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
+        <!--
+          LiteRT-LM GPU 后端（端侧 LLM 跑 GPU 加速）必需：
+          Android 12+ 禁止 App dlopen 未声明的厂商 native 库，而 litertlm AAR 自带的
+          manifest 只声明了 minSdk，没声明这两个库 → 引擎 initialize() 能成功，
+          但第一条消息必报 "Can not find OpenCL library on this device"（上游已知 issue #1860）。
+          ⚠️ 必须写在 <application> 内部（写 manifest 顶层 AAPT 直接报 unexpected element）。
+          required="false" 保证没 OpenCL 的机型也能正常安装（只是自动走 CPU 后端）。
+        -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         <!-- 启动闪屏页：Launcher 唯一入口。进程起来前系统按主题 windowBackground
              画兜底色，本页再按用户配置显示自定义背景图，随后无动画切到 MainActivity -->
         <activity android:name=".SplashActivity" android:label="@string/app_name" android:screenOrientation="portrait" android:exported="true">
@@ -51,6 +61,8 @@
         <!-- 播放历史（影视仓）：断点续播，竖屏列表页 -->
         <activity android:name=".VideoHistoryActivity" android:label="播放历史" android:screenOrientation="portrait" android:exported="false"/>
         <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 端侧 AI 验证页（一期开发用）：跑 LiteRT-LM 本地模型，实测中文质量与速度 -->
+        <activity android:name=".AiTestActivity" android:label="端侧AI验证" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 净资产记账（移植自「净资产快照」WebView 工程）：不锁方向，横竖屏都用 -->
         <activity android:name=".NetAssetActivity" android:label="净资产记账" android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"/>

@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  端侧 AI 验证页（一期开发用）：
+  - 选模型（0.6B / 1.7B / 4B）→ 下载或导入 → 加载引擎
+  - 输入提示词 → 流式生成 → 显示耗时与 tok/s
+  - 目的：实测本机中文输出质量与速度，决定后续正式做多大的模型
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?android:attr/colorBackground">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="?attr/colorPrimary"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="14dp">
+
+        <TextView
+            android:id="@+id/backBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹ 返回"
+            android:textSize="16sp"
+            android:textColor="?attr/colorOnPrimary"
+            android:paddingEnd="12dp"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🤖 端侧 AI 验证"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorOnPrimary"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- 模型选择 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="模型"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:layout_marginTop="6dp">
+
+                <LinearLayout
+                    android:id="@+id/modelRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"/>
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/modelHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textSize="12sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <!-- 模型操作 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="10dp">
+
+                <Button
+                    android:id="@+id/downloadBtn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="下载模型"
+                    android:textSize="13sp"/>
+
+                <Button
+                    android:id="@+id/importBtn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="导入文件"
+                    android:textSize="13sp"/>
+
+                <Button
+                    android:id="@+id/loadBtn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="加载引擎"
+                    android:textSize="13sp"/>
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:visibility="gone"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textSize="12sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:text="未加载模型"/>
+
+            <!-- 提示词 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="系统提示词"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <EditText
+                android:id="@+id/systemInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="top|start"
+                android:inputType="textMultiLine"
+                android:minLines="3"
+                android:maxLines="6"
+                android:textSize="13sp"
+                android:background="@drawable/bg_input"
+                android:padding="10dp"
+                android:hint="设定 AI 的角色和写作规则"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="用户输入"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <EditText
+                android:id="@+id/userInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="top|start"
+                android:inputType="textMultiLine"
+                android:minLines="4"
+                android:maxLines="10"
+                android:textSize="14sp"
+                android:background="@drawable/bg_input"
+                android:padding="10dp"
+                android:hint="粘贴要改写的文字，或直接描述你想写什么"/>
+
+            <Button
+                android:id="@+id/generateBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="生成"
+                android:textSize="15sp"/>
+
+            <!-- 输出 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="输出"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <TextView
+                android:id="@+id/outputText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:minHeight="120dp"
+                android:textSize="14sp"
+                android:lineSpacingExtra="4dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:background="@drawable/bg_input"
+                android:padding="12dp"
+                android:textIsSelectable="true"
+                android:text="（输出会显示在这里）"/>
+
+            <TextView
+                android:id="@+id/timingText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="12sp"
+                android:textColor="?android:attr/textColorSecondary"/>
+
+            <Button
+                android:id="@+id/copyBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="20dp"
+                android:text="复制输出"
+                android:textSize="14sp"/>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

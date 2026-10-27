@@ -39,3 +39,9 @@ tools/W*.class
 tools/child_rw_test.lock
 tools/java_write_test.txt
 ws_eval.py
+
+# 回滚备份目录（改代码前的临时快照，不进仓库）
+.rollback-backup-*/
+
+# 第三方源码参考（ExoPlayer 原文件，仅供对照阅读）
+androidx/

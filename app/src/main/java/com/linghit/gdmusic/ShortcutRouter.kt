@@ -58,6 +58,7 @@ object ShortcutRouter {
                 "downloads" -> go(Intent(ctx, DownloadedActivity::class.java))
                 "favorites" -> go(Intent(ctx, FavoritesActivity::class.java))
                 "podcast" -> go(Intent(ctx, PodcastActivity::class.java))
+                "ai" -> go(Intent(ctx, AiTestActivity::class.java))
                 "settings" -> go(Intent(ctx, SettingsActivity::class.java))
                 // 记账页子视图：add 记一笔 / flow 收支查询 / journal 日志 / links 链接收藏
                 "add", "flow", "journal", "links", "calendar" ->

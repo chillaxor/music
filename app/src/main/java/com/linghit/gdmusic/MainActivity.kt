@@ -440,7 +440,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         HomeShortcutStore.Item("page", "video", "看片", "🎬"),
         HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
         HomeShortcutStore.Item("page", "podcast", "播客", "🎙"),
-        HomeShortcutStore.Item("page", "downloads", "下载", "⬇")
+        HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
+        // 端侧 AI（一期验证页）：手机本地跑 LiteRT-LM 模型，零 Key 零费用
+        HomeShortcutStore.Item("page", "ai", "AI", "🤖")
     )
 
     /**
