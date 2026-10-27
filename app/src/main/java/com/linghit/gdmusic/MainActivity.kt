@@ -869,21 +869,16 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun loadDailyImage() {
         if (!::dailyImage.isInitialized) return
         greetingText.text = greetingByTime()
-        val imgs = DailyImageStore.listImages(this)
+        // 日期/星期/农历：无论有没有设每日一图都先写上（没图时不再回退成「未设置…」提示）
+        updateDateText()
+        val imgs = runCatching { DailyImageStore.listImages(this) }.getOrElse { emptyList() }
         if (imgs.isEmpty()) {
             dailyImage.setImageDrawable(null)
             dailyImage.visibility = View.GONE
-            dateText.text = "未设置每日一图 · 点这里选图片文件夹"
             return
         }
         val idx = DailyImageStore.todayIndex(this).coerceAtLeast(0)
         val uri = imgs[idx]
-        val cal = java.util.Calendar.getInstance()
-        val week = listOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
-            .getOrElse(cal.get(java.util.Calendar.DAY_OF_WEEK) - 1) { "" }
-        val lunar = LunarUtil.text(cal)   // 农历九月十四；表外日期（1900前/2099后）为空串
-        val lunarPart = if (lunar.isNotBlank()) " · $lunar" else ""
-        dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week$lunarPart"
         scope.launch {
             // 之前锁死 1600 + 2 的幂跳变，常只解到 ~1000 宽，全屏放大必糊。
             // 改为按屏幕实际分辨率：最长边×2 封顶 4000，解码尺寸贴着屏幕跑 → 基本 1:1 清晰，
@@ -901,6 +896,19 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 dailyImage.visibility = View.GONE
             }
         }
+    }
+
+    /**
+     * 刷新问候行下方的日期/农历：M月D日 周X · 农历…（不显示时间）。
+     * 与每日一图解耦——没设图片文件夹也照常显示当前日期农历。
+     */
+    private fun updateDateText() {
+        val cal = java.util.Calendar.getInstance()
+        val week = listOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+            .getOrElse(cal.get(java.util.Calendar.DAY_OF_WEEK) - 1) { "" }
+        val lunar = LunarUtil.text(cal)   // 农历九月十四；表外日期（1900前/2099后）为空串
+        val lunarPart = if (lunar.isNotBlank()) " · $lunar" else ""
+        dateText.text = "${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日 $week$lunarPart"
     }
 
     /** 时段问候：早上好 / 中午好 / 下午好 / 晚上好 / 夜深了 */

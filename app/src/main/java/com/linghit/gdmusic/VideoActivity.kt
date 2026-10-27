@@ -105,6 +105,8 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var videoMiniClose: TextView
     private lateinit var videoMiniZoomIn: TextView
     private lateinit var videoMiniZoomOut: TextView
+    /** 左侧上下滑动调亮度时显示的百分比指示器 */
+    private lateinit var brightnessInd: TextView
     /** 小窗（App 内悬浮小窗）模式：播放器缩到角落，页面可继续浏览 */
     private var miniMode = false
     /** 用户是否手动拖过小窗：拖动后不再被 applyMiniLayout 复位回右下角 */
@@ -125,6 +127,19 @@ class VideoActivity : AppCompatActivity() {
     private var pinchStartDist = 0f
     /** 捏合起始缩放倍数 */
     private var pinchStartScale = 1.0f
+
+    // ===================== 播放手势：左侧上下滑动调亮度 =====================
+    private var brightStartX = 0f
+    private var brightStartY = 0f
+    private var brightStartVal = -1f
+    private var brightDecided = false
+    private var brightActive = false
+    private var brightMoved = false
+    private var brightSlop = 0
+    private val BRIGHT_MIN = 0.02f
+    private val BRIGHT_MAX = 1f
+    private val BRIGHT_HIDE_DELAY = 800L
+    private val brightHide = Runnable { if (::brightnessInd.isInitialized) brightnessInd.visibility = View.GONE }
 
     // ===================== 片头 / 片尾跳过（按影片详情维度） =====================
     /**
@@ -346,6 +361,83 @@ class VideoActivity : AppCompatActivity() {
             Log.d("VidPlay", "控制条可见=$controlsVisible 播放中=${player?.isPlaying}")
             updatePipButton()
         })
+
+        // 播放时左侧上下滑动调亮度（右半屏 / 横向滑动仍交给播放器自带控制条）
+        brightnessInd = findViewById(R.id.videoBrightness)
+        brightSlop = ViewConfiguration.get(this).scaledTouchSlop
+        fun getBrightness(): Float {
+            val b = window.attributes.screenBrightness
+            return if (b < 0f) 0.5f else b   // 未设置过则是系统默认值(-1)，从 0.5 起调
+        }
+        fun setBrightness(v: Float) {
+            val b = v.coerceIn(BRIGHT_MIN, BRIGHT_MAX)
+            val lp = window.attributes
+            lp.screenBrightness = b
+            window.attributes = lp
+        }
+        fun showBrightness(v: Float) {
+            val pct = (v.coerceIn(BRIGHT_MIN, BRIGHT_MAX) * 100).toInt()
+            brightnessInd.visibility = View.VISIBLE
+            brightnessInd.text = "☀ $pct%"
+            mainHandler.removeCallbacks(brightHide)
+            mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+        }
+        // PlayerView 自带的「点按切换控制条」是通过它自己的 OnTouchListener 实现的，
+        // 我们覆盖了该 listener，所以这里手动补回：轻点视频区域 = 切换控制条显隐
+        fun toggleController() {
+            if (!playerView.useController) return
+            if (controlsVisible) playerView.hideController() else playerView.showController()
+        }
+        playerView.setOnTouchListener { v, ev ->
+            // 小窗 / 投屏 / 播放层隐藏时不接管，避免影响其它交互
+            if (miniMode || casting || overlay.visibility != View.VISIBLE) return@setOnTouchListener false
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    brightStartX = ev.x
+                    brightStartY = ev.y
+                    brightStartVal = getBrightness()
+                    brightDecided = false
+                    brightActive = false
+                    brightMoved = false
+                    true // 消费 DOWN，才能持续收到 MOVE/UP（否则手势会丢）
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = ev.x - brightStartX
+                    val dy = ev.y - brightStartY
+                    if (!brightDecided) {
+                        if (abs(dx) > brightSlop || abs(dy) > brightSlop) brightMoved = true
+                        // 左半屏 + 以纵向滑动为主 → 判定为亮度手势
+                        if (abs(dy) > brightSlop && abs(dy) > abs(dx) && brightStartX < v.width / 2f) {
+                            brightDecided = true
+                            brightActive = true
+                        } else if (abs(dx) > brightSlop || abs(dy) > brightSlop) {
+                            brightDecided = true // 横向 / 右半屏：让给控制条，不当成亮度手势
+                        }
+                    }
+                    if (brightActive) {
+                        val delta = (brightStartY - ev.y) / v.height   // 上滑变亮、下滑变暗
+                        val nv = (brightStartVal + delta).coerceIn(BRIGHT_MIN, BRIGHT_MAX)
+                        setBrightness(nv)
+                        showBrightness(nv)
+                    }
+                    true // 全程消费，避免触发播放器默认处理
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val was = brightActive
+                    brightActive = false
+                    brightDecided = false
+                    val moved = brightMoved
+                    brightMoved = false
+                    if (was) {
+                        mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+                    } else if (!moved) {
+                        toggleController() // 轻点：切换控制条显隐（替代被覆盖的默认行为）
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
 
         // 小窗按钮：把播放器缩成 App 内悬浮小窗（页面可继续浏览），
         // 小窗上的「⤢」或点画面 → 展开回全屏继续播（用户要的"关闭小屏回全屏"）

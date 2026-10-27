@@ -190,7 +190,6 @@
   <div id="chips" class="chips"></div>
   <div id="status" class="status"><span id="stxt"></span><span id="sload" class="load"></span></div>
   <div id="grid" class="grid"></div>
-  <div id="more" class="more" style="display:none" onclick="loadMore()">加载更多 ▾</div>
 
   <!-- 全网搜索结果页：左列源 tab（只列有结果的源），右侧显示所选源的视频 -->
   <div id="searchPage">
@@ -509,7 +508,7 @@ async function selectSource(){
   var s=STATE.sources[STATE.cur]; if(!s)return;
   $('curSrc').textContent=' · '+esc(s.name);
   setState('正在加载接口…');
-  $('chips').innerHTML=''; $('grid').innerHTML=''; $('more').style.display='none';
+  $('chips').innerHTML=''; $('grid').innerHTML='';
   // 当前源没缓存过（刚添加/切源）就先拉一次
   if(!STATE.srcSites[STATE.cur]) await loadOneSource(STATE.cur);
   var sites=STATE.srcSites[STATE.cur]||[];
@@ -535,7 +534,7 @@ function renderSiteChips(){
 }
 async function loadSite(site){
   STATE.site=site; STATE.t=0; STATE.pg=1; STATE.wd=""; STATE.groups=[];
-  $('grid').innerHTML=''; $('more').style.display='none';
+  $('grid').innerHTML='';
   var api=site.api;
   // 分类
   if(site.type!==3){
@@ -593,20 +592,59 @@ async function loadList(){
     if(rl.ok){try{items=JSON.parse(rl.text).list||[];}catch(e){}}
   }
   STATE.loading=false; $('sload').textContent='';
-  if(STATE.pg===1){$('grid').innerHTML='';}
+  // 剔除空条目：没有标题、或直连条目没有可播放 id 的，一律丢掉，只保留有数据的
+  items = items.filter(function(v){
+    var nm=(v.vod_name||'').toString().trim();
+    if(!nm) return false;
+    if(!v._spider && !(v.vod_id||'').toString().trim()) return false;
+    return true;
+  });
   if(spiderT&&items.length){items.forEach(function(v){v._spider=spiderT;});}
-  if(!items.length){ console.log('loadList: 0 条 (site='+site.name+' wd='+STATE.wd+' t='+STATE.t+')'); if(STATE.pg===1) setState(STATE.wd?'没有匹配的搜索结果':'该分类暂无内容'); $('more').style.display='none'; return; }
+  // 最后一页不足一页量（<10）视为到底，停止自动加载更多
+  STATE.noMoreHome = items.length < 10;
+  if(STATE.pg===1){$('grid').innerHTML='';}
+  if(!items.length){ console.log('loadList: 0 条 (site='+site.name+' wd='+STATE.wd+' t='+STATE.t+')'); if(STATE.pg===1) setState(STATE.wd?'没有匹配的搜索结果':'该分类暂无内容'); return; }
   console.log('loadList: '+items.length+' 条, 首条='+items[0].vod_name);
   items.forEach(function(v){$('grid').appendChild(card(v,STATE.siteIdx));});
   setState((STATE.wd?'搜索':'')+'共 '+items.length+' 条'+(STATE.pg>1?('（第'+STATE.pg+'页）'):''));
-  $('more').style.display = (items.length>=10)?'block':'none';
+  // 「加载更多」按钮已移除：改为下滑接近底部自动加载（见 fillHomeIfNeeded / window scroll 监听）
+  if(!STATE.wd || STATE.searchScope!=='all') setTimeout(fillHomeIfNeeded, 150);
 }
+var LOADING_HOME=false; // 主页翻页防并发：一次只拉一页，避免滚动/补满时叠发请求
+/** 主页（非全网聚合结果页）下滑接近底部，或首屏没填满时，自动加载下一页；「加载更多」按钮已移除 */
 function loadMore(){
-  // 全网搜索结果在结果页里翻页（loadMoreSrc），主页更多按钮此时已隐藏；
-  // 防御：万一可见，点它就打开结果页
+  // 全网搜索结果在结果页里翻页（loadMoreSrc），主页更多按钮已移除；
+  // 防御：万一主页处于全网聚合态，就打开结果页
   if(STATE.wd&&STATE.searchScope==='all'&&STATE.groups.length){openSearchPage();return;}
-  STATE.pg++;loadList();
+  if(LOADING_HOME||STATE.noMoreHome)return;
+  LOADING_HOME=true;
+  STATE.pg++;
+  Promise.resolve(loadList()).then(function(){ LOADING_HOME=false; });
 }
+/** 若内容还没填满可视区（无滚动条 / 接近底部），继续拉下一页，直到填满或到底 */
+function fillHomeIfNeeded(){
+  if(STATE.loading||LOADING_HOME||STATE.noMoreHome)return;
+  if(!STATE.site)return;
+  if($('searchPage').classList.contains('show'))return; // 搜索结果页是另一层，主页此时不滚
+  if($('sheet').classList.contains('show'))return;       // 详情弹层打开时背景不触发
+  if($('srcDrawer').classList.contains('show'))return;
+  if(STATE.wd&&STATE.searchScope==='all'&&STATE.groups.length)return; // 全网聚合态交给结果页
+  var doc=document.documentElement, sc=window.scrollY||doc.scrollTop||0;
+  var dh=doc.scrollHeight||0, wh=window.innerHeight||0;
+  if(dh-sc-wh < 220) loadMore();
+}
+// 主页下滑无限加载：滑到接近底部自动拉取下一页（替代「加载更多」按钮）；passive 不挡滚动
+window.addEventListener('scroll', function(){
+  if(STATE.loading||LOADING_HOME||STATE.noMoreHome)return;
+  if(!STATE.site)return;
+  if($('searchPage').classList.contains('show'))return;
+  if($('sheet').classList.contains('show'))return;
+  if($('srcDrawer').classList.contains('show'))return;
+  if(STATE.wd&&STATE.searchScope==='all'&&STATE.groups.length)return;
+  var doc=document.documentElement, sc=window.scrollY||doc.scrollTop||0;
+  var dh=doc.scrollHeight||0, wh=window.innerHeight||0;
+  if(dh-sc-wh < 220) loadMore();
+}, {passive:true});
 function card(v,si){
   var d=document.createElement('div'); d.className='vcard2';
   var pic=v.vod_pic||"";
@@ -906,7 +944,7 @@ async function searchAll(w){
     STATE.wd=w;STATE.pg=1;$('grid').innerHTML='';renderClassChips();loadList();return;
   }
   STATE.wd=w; STATE.pg=1; STATE.groups=[];
-  $('more').style.display='none'; renderClassChips();
+  renderClassChips();
   // 结果进新开的结果页（左源 tab + 右结果），主页浏览列表原样留在背后
   openSearchPage();
   setState('正在全网搜索 '+targets.length+' 个源…');
@@ -937,7 +975,6 @@ async function searchAll(w){
   setLoad('');
   // 直连结果立刻渲染（不再等爬虫源——那批每个都有超时，等着能把出结果拖几分钟）
   refreshSrcTabs(); renderSrcResults();
-  $('more').style.display='none';
   setState(STATE.groups.length
     ? ('全网搜索：直连 '+hit+'/'+targets.length+' · 共 '+cnt+' 条')
     : ('直连源无结果（已搜 '+targets.length+' 个）'));

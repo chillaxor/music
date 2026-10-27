@@ -76,7 +76,8 @@ object MusicImporter {
 
         // —— 阶段②：逐文件读标签 + 匹配歌词 + 分块写盘（慢，进度条切 determinate） ——
         val total = collected.size
-        val batch = mutableListOf<DownloadedItem>()
+        val batch = mutableListOf<DownloadedItem>()   // 累积到 CHUNK 再落盘（避免结尾巨写）
+        val emitBuf = mutableListOf<DownloadedItem>() // 累积到 step 就推给列表（导入哪条显示哪条）
         var lrcFound = 0
         var lrcMissing = 0
         // 进度按总量动态步进：总量小（<50）也每首更新，避免进度条卡在 1/N；
@@ -102,23 +103,30 @@ object MusicImporter {
             val parent = file.parentFile ?: root
             val lrcDoc = if (parent != null) findLrcIn(parent, base) else null
             if (lrcDoc != null) lrcFound++ else lrcMissing++
-            batch.add(
-                DownloadedItem(
-                    song.key(), song, file.uri,
-                    path.ifBlank { root?.name ?: "导入" },
-                    "manual", file.length(),
-                    lrcDoc?.uri?.toString() ?: ""
-                )
+            val item = DownloadedItem(
+                song.key(), song, file.uri,
+                path.ifBlank { root?.name ?: "导入" },
+                "manual", file.length(),
+                lrcDoc?.uri?.toString() ?: ""
             )
+            batch.add(item)
+            emitBuf.add(item)
+            // 落盘照旧分块（每 CHUNK 首一次），不拖慢 IO
             if (batch.size >= CHUNK) {
                 DownloadStore.addScanned(appCtx, batch)
                 batch.clear()
+            }
+            // 列表实时更新：每 step 首推一批给 DownloadedActivity（无订阅页面时自动丢弃）
+            if (emitBuf.size >= step || i == total - 1) {
+                ImportProgress.emitItems(emitBuf.toList())
+                emitBuf.clear()
             }
             if (i % step == 0 || i == total - 1) {
                 ImportProgress.progress("正在导入 ${i + 1} / $total 首…", i + 1, total)
             }
         }
         if (batch.isNotEmpty()) DownloadStore.addScanned(appCtx, batch)
+        if (emitBuf.isNotEmpty()) ImportProgress.emitItems(emitBuf.toList())
 
         Log.d(
             "DlImport",

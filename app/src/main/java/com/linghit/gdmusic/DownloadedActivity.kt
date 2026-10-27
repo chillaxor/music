@@ -37,6 +37,19 @@ class DownloadedActivity : AppCompatActivity() {
             if (::adapter.isInitialized) refresh()
         }
     }
+    /** 逐条导入订阅：每批新歌进来就实时追加进列表（「导入哪条显示哪条」），
+     *  不等职结束才整盘刷新。按 key 去重，避免与 refresh() 整盘重载撞出重复项 */
+    private val importItemListener: (List<DownloadedItem>) -> Unit = { items ->
+        if (items.isNotEmpty() && ::adapter.isInitialized) {
+            val seen = allItems.map { it.key }.toSet()
+            val add = items.filter { it.key !in seen }
+            if (add.isNotEmpty()) {
+                allItems = (allItems + add).sortedWith(compareBy({ it.folder }, { it.song.name }))
+                renderTabs()
+                applyFilter()
+            }
+        }
+    }
     private var allItems = listOf<DownloadedItem>()
     private var currentItems = listOf<DownloadedItem>()
     /** null = 全部文件夹；否则只显示/只播该文件夹（导入时的目录路径） */
@@ -60,6 +73,7 @@ class DownloadedActivity : AppCompatActivity() {
         searchClear = findViewById(R.id.dlSearchClear)
         importBtn = findViewById(R.id.importBtn)
         ImportProgress.listen(importStateListener)
+        ImportProgress.listenItems(importItemListener)
 
         searchBox.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
@@ -262,6 +276,7 @@ class DownloadedActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ImportProgress.unlisten(importStateListener)
+        ImportProgress.unlistenItems(importItemListener)
         super.onDestroy()
     }
 
