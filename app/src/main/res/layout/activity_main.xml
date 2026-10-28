@@ -175,6 +175,17 @@
                 android:paddingEnd="12dp"
                 android:paddingTop="4dp">
 
+                <!-- 小窗/分屏适配：上方内容包进可滚动 NestedScrollView，playerBar 留在滚动区外钉底部 -->
+                <androidx.core.widget.NestedScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:fillViewport="true">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
                 <!-- 问候行：时段问候 + 日期 + 图序号；点一下=手动换图，长按=换文件夹 -->
                 <LinearLayout
                     android:id="@+id/greetingRow"
@@ -504,13 +515,9 @@
                 <!-- 播放卡已整体移除：完整队列入口 = 底部播放条整条点击进 QueueActivity
                      ——自定义资源位再多也挤不到播放区 -->
 
-                <!-- 弹性占位：把底部播放条继续钉在屏幕底。
-                     原「播放列表卡」靠 layout_weight=1 占满剩余高度顺带实现了这个效果，
-                     队列拆去 QueueActivity 后这里补一个纯 View，布局语义不变 -->
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"/>
+                <!-- 上方内容已纳入可滚动区；续听行与 playerBar 留在滚动区外，矮窗始终可见 -->
+                </LinearLayout>
+                </androidx.core.widget.NestedScrollView>
 
                 <!-- 三场景续听：有音乐/播客队列或上次电台时才显示对应 chip，点一下切场景续听 -->
                 <LinearLayout

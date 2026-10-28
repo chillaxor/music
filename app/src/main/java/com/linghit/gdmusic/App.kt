@@ -2,6 +2,7 @@ package com.linghit.gdmusic
 
 import android.app.Activity
 import android.app.Application
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 
 /**
@@ -24,6 +25,11 @@ class App : Application() {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(a: Activity, b: Bundle?) {
                 ImportOverlay.attach(a)
+                // 多窗口（小窗/分屏）下系统会忽略此方向请求，因此小窗仍可自由 resize；
+                // 全屏时保持竖屏观感。排除记账页（它本就设计为横竖屏都可用）。
+                if (a !is NetAssetActivity) {
+                    a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+                }
             }
             override fun onActivityStarted(a: Activity) {}
             override fun onActivityResumed(a: Activity) {
