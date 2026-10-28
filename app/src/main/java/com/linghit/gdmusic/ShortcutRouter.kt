@@ -47,6 +47,7 @@ object ShortcutRouter {
             }
             else -> when (item.target) {
                 "video" -> go(Intent(ctx, VideoActivity::class.java))
+                "voice" -> go(Intent(ctx, VoiceActivity::class.java))
                 // 首页：CLEAR_TOP 复用已有实例，不叠新页面（从 Service/悬浮球启动时尤其重要）
                 "home" -> go(
                     Intent(ctx, MainActivity::class.java)
@@ -59,6 +60,7 @@ object ShortcutRouter {
                 "favorites" -> go(Intent(ctx, FavoritesActivity::class.java))
                 "podcast" -> go(Intent(ctx, PodcastActivity::class.java))
                 "ai" -> go(Intent(ctx, AiTestActivity::class.java))
+                "qna" -> go(Intent(ctx, QnaActivity::class.java))
                 "settings" -> go(Intent(ctx, SettingsActivity::class.java))
                 // 记账页子视图：add 记一笔 / flow 收支查询 / journal 日志 / links 链接收藏
                 "add", "flow", "journal", "links", "calendar" ->

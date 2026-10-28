@@ -34,10 +34,11 @@ object FloatButtonStore {
     /** 默认动作：记一笔（和首页「＋」面板第一项一致） */
     val DEFAULT_ACTION = HomeShortcutStore.Item("page", "add", "记一笔", "✏️")
 
-    /** 默认气泡：影视仓 + 首页 */
+    /** 默认气泡：影视仓 + 首页 + 语音助手 */
     val DEFAULT_BUBBLES = listOf(
         HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
-        HomeShortcutStore.Item("page", "home", "首页", "🏠")
+        HomeShortcutStore.Item("page", "home", "首页", "🏠"),
+        HomeShortcutStore.Item("page", "voice", "语音助手", "🎤")
     )
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)

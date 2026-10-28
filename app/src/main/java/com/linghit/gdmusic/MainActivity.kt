@@ -373,6 +373,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
         // 主题切换：弹出选色面板（12 套色板，含渐变），选中即应用并重建页面
         findViewById<View>(R.id.themeBtn).setOnClickListener { showThemePicker() }
+        findViewById<View>(R.id.voiceBtn).setOnClickListener {
+            startActivity(Intent(this, VoiceActivity::class.java))
+        }
         // 等宽 chip 需要实测行宽：onCreate 时 shortcutRow.width 还是 0，
         // 先按估算渲染一版，布局完成后再用真实宽度精确渲染一次
         renderShortcuts()
@@ -481,7 +484,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         HomeShortcutStore.Item("page", "podcast", "播客", "🎙"),
         HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
         // 端侧 AI（一期验证页）：手机本地跑 LiteRT-LM 模型，零 Key 零费用
-        HomeShortcutStore.Item("page", "ai", "AI", "🤖")
+        HomeShortcutStore.Item("page", "qna", "问一句", "🤖")
     )
 
     /**
@@ -1237,7 +1240,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
             HomeShortcutStore.Item("page", "rail", "高铁往返", "🚄"),
             HomeShortcutStore.Item("page", "reminder", "提醒", "⏰"),
-            HomeShortcutStore.Item("page", "settings", "设置", "⚙")
+            HomeShortcutStore.Item("page", "settings", "设置", "⚙"),
+            // 端侧 AI 验证页（模型下载/加载/导入）——「问一句」顶栏也有入口
+            HomeShortcutStore.Item("page", "ai", "端侧AI验证", "🧠")
         ).filter { it.id() !in fixedShortcuts.map { f -> f.id() } }
         val have = HomeShortcutStore.list(this).map { it.id() }.toSet()
         val names = catalog.map {

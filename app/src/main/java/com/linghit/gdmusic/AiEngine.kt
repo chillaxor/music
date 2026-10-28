@@ -17,8 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 
@@ -156,17 +155,24 @@ object AiEngine {
      * @param userText     用户输入
      * @return Flow，每个元素是一段增量文本
      */
+    /**
+     * 流式生成。
+     *
+     * ⚠️ 用 channelFlow 而非 flow：库内部的 `conv.sendMessageAsync` 在自己的调度器/线程上
+     * 发射 token，我们在其 collect 回调里 `send`，跨调度器发射在 flow 构建器里会触发
+     * "Flow invariant is violated"，channelFlow 的 send 允许跨调度器安全发射。
+     */
     fun generate(
         context: Context,
         systemPrompt: String,
         userText: String
-    ): Flow<String> = flow {
+    ): Flow<String> = channelFlow {
         val e = engine
         if (e == null || !e.isInitialized()) {
             throw IllegalStateException("模型未加载，请先调用 load()")
         }
         try {
-            generateWith(e, systemPrompt, userText).collect { emit(it) }
+            generateWith(e, systemPrompt, userText).collect { send(it) }
         } catch (t: Throwable) {
             // GPU 后端在推理期才暴露的问题（OpenCL 缺失等）→ 降级 CPU 重试
             if (!gpuDisabled && isGpuFatal(t)) {
@@ -181,12 +187,12 @@ object AiEngine {
                 releaseInternal()
                 engine = cpu
                 loadedPath = path
-                generateWith(cpu, systemPrompt, userText).collect { emit(it) }
+                generateWith(cpu, systemPrompt, userText).collect { send(it) }
             } else {
                 throw t
             }
         }
-    }.flowOn(Dispatchers.Default)
+    }
 
     /** 判断是不是「GPU 后端不可用」这类可降级的错误 */
     private fun isGpuFatal(t: Throwable): Boolean {
@@ -201,7 +207,7 @@ object AiEngine {
         e: Engine,
         systemPrompt: String,
         userText: String
-    ): kotlinx.coroutines.flow.Flow<String> = flow {
+    ): kotlinx.coroutines.flow.Flow<String> = channelFlow {
         // 会话级配置：关思维链 + 采样参数
         // temperature 0.7：文案要有点变化但不能发散；topK/topP 收窄候选词
         val cfg = ConversationConfig(
@@ -210,20 +216,24 @@ object AiEngine {
             samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7, seed = 0),
             // ⚠️ Qwen3 默认开思维链，会把 2048 上下文吃光，必须显式关
             thinkingConfig = ThinkingConfig(enableThinking = false),
-            maxOutputToken = 1024
+            // ⚠️ 上下文窗口 2048 是**硬上限，超了不报错而是静默截断输入**。
+            // 留 768 给回答，输入就有 ~1280 可用；系统提示词约 200 字 + 参考资料 600 字
+            // 刚好放得下。maxOutputToken 给太大反而会挤掉输入（实测导致回答为空）。
+            maxOutputToken = 768
         )
         val conv = e.createConversation(cfg)
         try {
-            // Flow 版 sendMessageAsync：按消息增量吐出，结束时最后一条是完整结果
+            // Flow 版 sendMessageAsync：按消息增量吐出，结束时最后一条是完整结果。
+            // 库在自己线程上发射，这里用 channelFlow 的 send 跨调度器安全转发。
             conv.sendMessageAsync(userText).collect { msg ->
                 val text = extractText(msg)
-                if (text.isNotEmpty()) emit(text)
+                if (text.isNotEmpty()) send(text)
             }
         } finally {
             // 会话必须关，否则 native 侧资源泄漏；close 幂等已由引擎侧保证
             runCatching { conv.close() }
         }
-    }.flowOn(Dispatchers.Default)
+    }
 
     /** 从 Message 里取纯文本（contents 是 List<Content>，文本型是 Content.Text） */
     private fun extractText(msg: Message): String {

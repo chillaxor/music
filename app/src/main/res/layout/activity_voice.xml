@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  语音助手页：极简单页，核心是中间那个大麦克风按钮。
+  - 点击麦克风：申请权限 → 起 STT → 实时转写（transcript）→ 识别定稿后自动路由执行
+  - 首次进入若模型未下载：显示「下载离线语音模型」按钮
+  配色与首页沉浸风格保持一致（深底 + 白字 + 主题色圆钮）
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1C1A18"
+    android:padding="24dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="语音助手"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:layout_marginTop="12dp" />
+
+    <TextView
+        android:id="@+id/subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="试着说：播放周杰伦、记一笔 12 元 餐、提醒我明天 8 点吃药"
+        android:textSize="13sp"
+        android:textColor="#B8FFFFFF"
+        android:gravity="center"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp" />
+
+    <ImageButton
+        android:id="@+id/micBtn"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:background="@drawable/bg_circle_primary"
+        android:src="@drawable/ic_mic"
+        android:tint="#FFFFFF"
+        android:scaleType="centerInside"
+        android:contentDescription="开始说话" />
+
+    <TextView
+        android:id="@+id/transcript"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:layout_marginTop="28dp"
+        android:minHeight="28dp"
+        android:text="" />
+
+    <TextView
+        android:id="@+id/result"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="15sp"
+        android:textColor="#D9FFFFFF"
+        android:gravity="center"
+        android:layout_marginTop="16dp"
+        android:text="" />
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="#B8FFFFFF"
+        android:gravity="center"
+        android:layout_marginTop="20dp"
+        android:text="点击麦克风开始说话" />
+
+    <Button
+        android:id="@+id/downloadBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="下载离线语音模型（约 42MB）"
+        android:layout_marginTop="16dp"
+        android:visibility="gone" />
+
+</LinearLayout>

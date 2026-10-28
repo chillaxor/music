@@ -237,11 +237,14 @@ class FloatConfigActivity : AppCompatActivity() {
         HomeShortcutStore.Item("page", "journal", "日志", "📖"),
         HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
         HomeShortcutStore.Item("page", "video", "影视仓", "🎬"),
+        HomeShortcutStore.Item("page", "voice", "语音助手", "🎤"),
         HomeShortcutStore.Item("page", "home", "首页", "🏠"),
         HomeShortcutStore.Item("page", "netasset", "记账本", "📒"),
         HomeShortcutStore.Item("page", "downloads", "下载管理", "⬇️"),
         HomeShortcutStore.Item("page", "favorites", "我的收藏", "❤️"),
-        HomeShortcutStore.Item("page", "settings", "设置", "⚙️")
+        HomeShortcutStore.Item("page", "settings", "设置", "⚙️"),
+        HomeShortcutStore.Item("page", "qna", "问一句", "🤖"),
+        HomeShortcutStore.Item("page", "ai", "端侧AI验证", "🧠")
     )
 
     private fun pickTarget(cur: HomeShortcutStore.Item?, onPicked: (HomeShortcutStore.Item) -> Unit) {

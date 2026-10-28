@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- 悬浮按钮长按展开气泡时的震动反馈（普通权限，安装即授予） -->
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- 语音助手：离线语音识别需要麦克风 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 桌面歌词悬浮窗：在其他 App 之上显示歌词，需用户在设置里授权 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
@@ -65,6 +67,10 @@
         <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 端侧 AI 验证页（一期开发用）：跑 LiteRT-LM 本地模型，实测中文质量与速度 -->
         <activity android:name=".AiTestActivity" android:label="端侧AI验证" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 问一句：端侧三段式检索 + 可切换回答引擎（端侧 Qwen3 / 升级到云端） -->
+        <activity android:name=".QnaActivity" android:label="问一句" android:screenOrientation="portrait" android:exported="false"/>
+        <!-- 语音助手：端侧离线语音识别 + 意图路由（播放/记账/提醒/闲聊） -->
+        <activity android:name=".VoiceActivity" android:label="语音助手" android:screenOrientation="portrait" android:exported="false"/>
         <!-- 净资产记账（移植自「净资产快照」WebView 工程）：不锁方向，横竖屏都用 -->
         <activity android:name=".NetAssetActivity" android:label="净资产记账" android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"/>
