@@ -60,6 +60,44 @@
             android:paddingStart="12dp"/>
     </LinearLayout>
 
+    <!-- 页签：问答 / 玩法（并排胶囊） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:id="@+id/tabAsk"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="22dp"
+            android:paddingEnd="22dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="问答"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/tabPlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="22dp"
+            android:paddingEnd="22dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="玩法"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -71,6 +109,13 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="16dp">
+
+            <!-- ====== 问答面板（默认显示） ====== -->
+            <LinearLayout
+                android:id="@+id/qnaPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <!-- 回答引擎选择 -->
             <TextView
@@ -219,6 +264,147 @@
                 android:layout_marginBottom="20dp"
                 android:text="复制回答"
                 android:textSize="14sp"/>
+            </LinearLayout>
+            <!-- ====== /问答面板 ====== -->
+
+            <!-- ====== 玩法面板（默认隐藏） ====== -->
+            <LinearLayout
+                android:id="@+id/playPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="贴一段材料（文字 / 对话 / 素材）"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"/>
+
+                <EditText
+                    android:id="@+id/playContentInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="top|start"
+                    android:inputType="textMultiLine"
+                    android:minLines="4"
+                    android:maxLines="10"
+                    android:textSize="14sp"
+                    android:background="@drawable/bg_input"
+                    android:padding="10dp"
+                    android:hint="粘贴要处理的文字、对话记录或素材…"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="指令模板"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"/>
+
+                <Spinner
+                    android:id="@+id/tplSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="指令（可直接修改）"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"/>
+
+                <EditText
+                    android:id="@+id/playPromptInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="top|start"
+                    android:inputType="textMultiLine"
+                    android:minLines="2"
+                    android:maxLines="6"
+                    android:textSize="14sp"
+                    android:background="@drawable/bg_input"
+                    android:padding="10dp"
+                    android:hint="选模板会自动填入，也可自己写，如「起 5 个标题」"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp">
+
+                    <Button
+                        android:id="@+id/saveTplBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="存为模板"
+                        android:textSize="14sp"/>
+
+                    <Button
+                        android:id="@+id/playClearBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="清空"
+                        android:textSize="14sp"/>
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/playRunBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="运行"
+                    android:textSize="15sp"/>
+
+                <TextView
+                    android:id="@+id/playStageText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textSize="12sp"
+                    android:textColor="?attr/colorPrimary"
+                    android:text=""/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="结果"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"/>
+
+                <TextView
+                    android:id="@+id/playOutputText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minHeight="120dp"
+                    android:textSize="14sp"
+                    android:lineSpacingExtra="4dp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:background="@drawable/bg_input"
+                    android:padding="12dp"
+                    android:textIsSelectable="true"
+                    android:text="（结果会显示在这里）"/>
+
+                <Button
+                    android:id="@+id/playCopyBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:layout_marginBottom="20dp"
+                    android:text="复制结果"
+                    android:textSize="14sp"/>
+            </LinearLayout>
+            <!-- ====== /玩法面板 ====== -->
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
