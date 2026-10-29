@@ -140,6 +140,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private var poemData: Poem? = null
     private var poemExpanded = false
     private var poemLoading = false
+    // —— 搜索页签「今日榜单」（网易云官方榜 · 发现层；点卡片=自动搜索，下方可播放/下载）——
+    private lateinit var chartSection: View
+    private lateinit var chartTabs: LinearLayout
+    private lateinit var chartList: RecyclerView
+    private lateinit var chartRefresh: TextView
+    private lateinit var chartAdapter: ChartAdapter
+    private var chartId: String = NeteaseApi.CHARTS.first().id
+    private var chartLoaded = false
     private lateinit var newsCard: View
     private lateinit var newsTitle: TextView
     private lateinit var newsSub: TextView
@@ -332,6 +340,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             })
         }
         findViewById<Button>(R.id.searchButton).setOnClickListener { search() }
+        // 今日榜单区（搜索页签，搜索框下方）
+        setupChartSection()
         input.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_NULL) { search(); true }
             else false
@@ -451,6 +461,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_white else R.drawable.bg_pill_glass)
         tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.primary else R.color.on_primary))
         if(!search) refreshQueueEntry()
+        // 今日榜单：第一次切到搜索页签时才拉数据（不占首页启动流量）
+        if(search && !chartLoaded){
+            chartLoaded=true
+            selectChart(NeteaseApi.CHARTS.first())
+        }
     }
 
     companion object {
@@ -1476,6 +1491,101 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     /** 去重键必须带 source：否则不同音源的"同名歌"会被合并，只留先查到的 netease */
     private fun dedupKey(x:Song)=x.source.lowercase()+"|"+x.name.lowercase()+"|"+x.artist.lowercase()
 
+    /**
+     * 搜索页签的「今日榜单」区（网易云官方榜 · 发现层）。
+     * - 数据：NeteaseApi（免登录实测可用），每天拉一次 + 本地缓存（NeteaseStore）
+     * - 交互：点卡片 = 用「歌名 歌手」自动填进搜索框并搜索 → 下方结果列表照旧可播放/下载
+     * - ⚠️ 榜单只给元信息（网易云播放地址要 VIP/版权），实际播放仍走本 app 现有音乐源
+     * - 懒加载：第一次切到搜索页签时才拉数据，不占首页启动流量
+     */
+    private fun setupChartSection() {
+        chartSection = findViewById(R.id.chartSection)
+        chartTabs = findViewById(R.id.chartTabs)
+        chartList = findViewById(R.id.chartList)
+        chartRefresh = findViewById(R.id.chartRefresh)
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+
+        chartAdapter = ChartAdapter { song ->
+            val kw = "${song.name} ${song.artist}".trim()
+            input.setText(kw)
+            search()
+        }
+        chartList.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
+        chartList.adapter = chartAdapter
+
+        chartTabs.removeAllViews()
+        NeteaseApi.CHARTS.forEach { c ->
+            val tv = TextView(this)
+            tv.text = c.label
+            tv.textSize = 13f
+            tv.gravity = Gravity.CENTER
+            tv.setTextColor(android.graphics.Color.WHITE)
+            tv.setPadding(dp(14), dp(6), dp(14), dp(6))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.marginEnd = dp(8)
+            tv.layoutParams = lp
+            tv.setBackgroundResource(R.drawable.bg_pill_glass)
+            tv.setOnClickListener { selectChart(c) }
+            chartTabs.addView(tv)
+        }
+        styleChartChips(0)
+
+        chartRefresh.setOnClickListener {
+            val c = NeteaseApi.CHARTS.firstOrNull { it.id == chartId } ?: return@setOnClickListener
+            loadChart(c)
+        }
+    }
+
+    /** 切榜单：先吃当天缓存，没有再联网 */
+    private fun selectChart(c: NeteaseApi.Chart) {
+        chartId = c.id
+        styleChartChips(NeteaseApi.CHARTS.indexOfFirst { it.id == c.id })
+        val cached = NeteaseStore.load(this, c.id)
+        if (cached.isNotEmpty()) {
+            chartAdapter.submit(cached)
+            chartRefresh.text = "刷新"
+        } else {
+            loadChart(c)
+        }
+    }
+
+    private fun styleChartChips(selected: Int) {
+        for (i in 0 until chartTabs.childCount) {
+            val tv = chartTabs.getChildAt(i) as? TextView ?: continue
+            val on = i == selected
+            tv.setBackgroundResource(if (on) R.drawable.bg_pill_purple else R.drawable.bg_pill_glass)
+            tv.setTextColor(
+                if (on) android.graphics.Color.WHITE
+                else android.graphics.Color.parseColor("#B8FFFFFF")
+            )
+        }
+    }
+
+    private fun loadChart(c: NeteaseApi.Chart) {
+        chartRefresh.text = "加载中…"
+        scope.launch {
+            val songs = withContext(Dispatchers.IO) {
+                runCatching { NeteaseApi.fetchChart(c.id) }.getOrDefault(emptyList())
+            }
+            if (songs.isNotEmpty()) {
+                NeteaseStore.save(this@MainActivity, c.id, songs)
+                if (chartId == c.id) {
+                    chartAdapter.submit(songs)
+                    chartRefresh.text = "刷新"
+                }
+            } else {
+                if (chartId == c.id) {
+                    chartAdapter.submit(emptyList())
+                    chartRefresh.text = "重试"
+                }
+            }
+        }
+    }
+
     private fun search(){
         val kw=input.text.toString().trim(); if(kw.isEmpty())return
         lastKeyword=kw; currentPage=1; hasMore=true; isLoadingMore=false
@@ -1909,5 +2019,41 @@ class QueueAdapter(
             row.setOnClickListener{ onPlay(item.first, x) }
             rm.setOnClickListener{ onRemove(item.first, x) }
         }
+    }
+}
+
+/**
+ * 今日榜单横滑卡片适配器（网易云官方榜 · 发现层）。
+ * 只展示元信息；点击交给外部去触发「自动搜索」，播放/下载仍走本 app 现有音乐源。
+ */
+class ChartAdapter(
+    private val onClick: (NeteaseApi.ChartSong) -> Unit
+): RecyclerView.Adapter<ChartAdapter.VH>() {
+
+    private val items = ArrayList<NeteaseApi.ChartSong>()
+
+    fun submit(list: List<NeteaseApi.ChartSong>) {
+        items.clear()
+        items.addAll(list)
+        notifyDataSetChanged()
+    }
+
+    class VH(v: View) : RecyclerView.ViewHolder(v) {
+        val cover: ImageView = v.findViewById(R.id.chartCover)
+        val title: TextView = v.findViewById(R.id.chartTitle)
+        val artist: TextView = v.findViewById(R.id.chartArtist)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+        VH(LayoutInflater.from(parent.context).inflate(R.layout.item_chart_card, parent, false))
+
+    override fun getItemCount(): Int = items.size
+
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        val s = items[position]
+        holder.title.text = s.name
+        holder.artist.text = s.artist
+        ImageLoader.load(holder.cover, s.cover)
+        holder.itemView.setOnClickListener { onClick(s) }
     }
 }

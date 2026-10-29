@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 榜单切换 chip 的选中态：紫色半透底 + 淡紫描边（与首页玻璃卡同一套紫色语言） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#4A7F77DD"/>
+    <corners android:radius="19dp"/>
+    <stroke
+        android:width="0.5dp"
+        android:color="#AFA9EC"/>
+</shape>

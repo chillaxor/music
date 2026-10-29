@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 今日榜单横滑卡片：封面 + 歌名 + 歌手 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="76dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingEnd="8dp">
+
+    <ImageView
+        android:id="@+id/chartCover"
+        android:layout_width="68dp"
+        android:layout_height="68dp"
+        android:background="@drawable/bg_cover_round"
+        android:clipToOutline="true"
+        android:scaleType="centerCrop"
+        android:contentDescription="封面"/>
+
+    <TextView
+        android:id="@+id/chartTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="12sp"
+        android:textColor="#FFFFFF"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:includeFontPadding="false"/>
+
+    <TextView
+        android:id="@+id/chartArtist"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="10sp"
+        android:textColor="#B8FFFFFF"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:includeFontPadding="false"/>
+</LinearLayout>

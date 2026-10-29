@@ -921,6 +921,70 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <!-- ========== 今日榜单（网易云官方榜 · 发现层） ==========
+                     点卡片 = 用「歌名 歌手」自动搜索，下方结果列表照旧可播放/下载。
+                     榜单只提供元信息（歌名/歌手/封面），播放仍走本 app 现有音乐源。 -->
+                <LinearLayout
+                    android:id="@+id/chartSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="今日榜单"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:includeFontPadding="false"/>
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="1dp"
+                            android:layout_weight="1"/>
+
+                        <TextView
+                            android:id="@+id/chartRefresh"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="刷新"
+                            android:textSize="12sp"
+                            android:textColor="#B8FFFFFF"
+                            android:padding="6dp"
+                            android:includeFontPadding="false"/>
+                    </LinearLayout>
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:id="@+id/chartTabs"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"/>
+                    </HorizontalScrollView>
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/chartList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal"
+                        android:clipToPadding="false"
+                        android:scrollbars="none"/>
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/statusText"
                     android:layout_width="match_parent"
