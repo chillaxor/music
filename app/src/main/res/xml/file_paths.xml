@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 路径：只开放「分享图缓存目录」。
+  诗词分享图写在 cacheDir/poem_share/ 下，通过这个 provider 以 content:// 发出，
+  不需要存储权限，也不会被外部长期持有。
+-->
+<paths>
+    <cache-path name="poem_share" path="poem_share/" />
+</paths>

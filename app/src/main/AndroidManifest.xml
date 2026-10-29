@@ -110,5 +110,15 @@
             android:excludeFromRecents="true"
             android:exported="false"/>
         <receiver android:name=".PlayerBroadcastReceiver" android:exported="false"/>
+        <!-- 诗词分享图：把缓存目录里的分享图以 content:// 发出（不落相册、不申请存储权限） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
     </application>
 </manifest>

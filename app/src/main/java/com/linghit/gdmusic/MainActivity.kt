@@ -123,6 +123,23 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var spendCard: View
     private lateinit var spendVal: TextView
     private lateinit var spendCnt: TextView
+    // —— 首页每日一诗卡片（折叠=一行名句，展开=整首；显示开关与默认展开态在设置页）——
+    private lateinit var poemCard: View
+    private lateinit var poemRow: View
+    private lateinit var poemTitleAuthor: TextView
+    private lateinit var poemQuote: TextView
+    private lateinit var poemArrow: ImageView
+    private lateinit var poemFull: View
+    private lateinit var poemFullTitle: TextView
+    private lateinit var poemFullMeta: TextView
+    private lateinit var poemLines: TextView
+    private lateinit var poemTranslate: TextView
+    private lateinit var poemShareBtn: TextView
+    private lateinit var poemFavBtn: TextView
+    private lateinit var poemCollapseBtn: TextView
+    private var poemData: Poem? = null
+    private var poemExpanded = false
+    private var poemLoading = false
     private lateinit var newsCard: View
     private lateinit var newsTitle: TextView
     private lateinit var newsSub: TextView
@@ -337,6 +354,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         newsCard = findViewById(R.id.newsCardRow)
         newsTitle = findViewById(R.id.newsTitle)
         newsSub = findViewById(R.id.newsSub)
+        // 每日一诗卡片：折叠/展开 + 每日缓存（见 setupPoemCard）
+        setupPoemCard()
         // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
         // ⚠️ 必须挂内部行（xxCardRow）而非外层 MaterialCardView：内部 LinearLayout 是
         // clickable 且铺满卡片，点击被它消费，挂外层监听永远收不到（同 queueEntryRow 教训）
@@ -453,6 +472,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         if (::newsTitle.isInitialized) loadNewsHot()
         // 每日一图：跨天自动轮换（在后台过 0 点回来时刷新），文件夹换过也在这里生效
         if (::dailyImage.isInitialized) loadDailyImage()
+        // 每日一诗：跨天自动换新诗；设置里关掉/打开也在这里生效
+        if (::poemCard.isInitialized) loadDailyPoem()
         // 从 QueueActivity 等子页面回来：重新抢回播放 UI 回调（uiListener 是单槽，
         // 子页面 onResume 会抢走；不抢回来息屏切歌后首页播放条就不更新了）
         PlayerManager.uiListener = this
@@ -740,6 +761,119 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 卡片常驻显示：接口失败时国内/国际显示「--」，不整卡隐藏
      * （双列布局下一个卡隐藏会导致另一边落空，视觉断裂）。
      */
+    /**
+     * 首页「每日一诗」卡片：
+     *  - 设置里关掉 → 整卡 GONE，且不再请求接口
+     *  - 默认折叠成一行名句，点卡片展开整首（含译文、分享图、收藏）
+     *  - 数据源 jinrishici 每日一首；本地按天缓存，跨天自动重取
+     */
+    private fun setupPoemCard() {
+        poemCard = findViewById(R.id.poemCard)
+        poemRow = findViewById(R.id.poemRow)
+        poemTitleAuthor = findViewById(R.id.poemTitleAuthor)
+        poemQuote = findViewById(R.id.poemQuote)
+        poemArrow = findViewById(R.id.poemArrow)
+        poemFull = findViewById(R.id.poemFull)
+        poemFullTitle = findViewById(R.id.poemFullTitle)
+        poemFullMeta = findViewById(R.id.poemFullMeta)
+        poemLines = findViewById(R.id.poemLines)
+        poemTranslate = findViewById(R.id.poemTranslate)
+        poemShareBtn = findViewById(R.id.poemShareBtn)
+        poemFavBtn = findViewById(R.id.poemFavBtn)
+        poemCollapseBtn = findViewById(R.id.poemCollapseBtn)
+
+        // 没诗时点卡片=重试；有诗时点卡片=展开/收起
+        poemRow.setOnClickListener {
+            if (poemData == null) {
+                poemLoading = false
+                loadDailyPoem()
+            } else {
+                setPoemExpanded(!poemExpanded)
+            }
+        }
+        poemCollapseBtn.setOnClickListener { setPoemExpanded(false) }
+        poemShareBtn.setOnClickListener {
+            val p = poemData
+            if (p == null) {
+                Toast.makeText(this, "诗词还没加载出来", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            runCatching { PoemShare.share(this, p) }
+                .onFailure { Toast.makeText(this, "分享失败：${it.message}", Toast.LENGTH_SHORT).show() }
+        }
+        poemFavBtn.setOnClickListener {
+            val p = poemData ?: return@setOnClickListener
+            val on = PoemStore.toggleFav(this, p.id)
+            renderPoem(p)
+            Toast.makeText(this, if (on) "已收藏" else "已取消收藏", Toast.LENGTH_SHORT).show()
+        }
+
+        poemExpanded = PoemStore.isDefaultExpanded(this)
+        loadDailyPoem()
+    }
+
+    /**
+     * 取当日诗：先看本地缓存（跨天自动失效），没有再联网。
+     * 接口失败时保留一行提示，不留空壳卡片。
+     */
+    private fun loadDailyPoem() {
+        if (!::poemCard.isInitialized) return
+        if (!PoemStore.isEnabled(this)) {
+            poemCard.visibility = View.GONE
+            return
+        }
+        poemCard.visibility = View.VISIBLE
+        PoemStore.load(this)?.let { cached ->
+            applyPoem(cached)
+            return
+        }
+        if (poemLoading) return
+        poemLoading = true
+        poemQuote.text = "正在取今日一诗…"
+        poemTitleAuthor.text = ""
+        scope.launch {
+            val token = PoemStore.token(this@MainActivity)
+                ?: PoemApi.fetchToken()?.also { PoemStore.setToken(this@MainActivity, it) }
+            val p = withContext(Dispatchers.IO) { PoemApi.fetchPoem(token) }
+            poemLoading = false
+            if (p == null) {
+                poemQuote.text = "今日一诗暂时取不到，点此重试"
+                return@launch
+            }
+            PoemStore.save(this@MainActivity, p)
+            applyPoem(p)
+        }
+    }
+
+    /** 换诗时才重置展开态（按设置里的「默认展开/折叠」），否则保留用户当次的操作 */
+    private fun applyPoem(p: Poem) {
+        val isNew = poemData?.id != p.id
+        poemData = p
+        if (isNew) poemExpanded = PoemStore.isDefaultExpanded(this)
+        renderPoem(p)
+    }
+
+    private fun renderPoem(p: Poem) {
+        poemTitleAuthor.text = listOf(p.title, p.author).filter { it.isNotBlank() }.joinToString(" · ")
+        poemQuote.text = p.quote.ifBlank { p.lines.firstOrNull().orEmpty() }
+        poemFullTitle.text = p.title.ifBlank { "无题" }
+        poemFullMeta.text = listOf(p.dynasty, p.author).filter { it.isNotBlank() }.joinToString(" · ")
+        poemLines.text = if (p.lines.isNotEmpty()) p.lines.joinToString("\n") else p.quote
+        val tr = if (p.translate.isEmpty()) "" else p.translate.joinToString("\n")
+        poemTranslate.text = tr
+        poemTranslate.visibility = if (tr.isBlank()) View.GONE else View.VISIBLE
+        val faved = p.id.isNotBlank() && PoemStore.favIds(this).contains(p.id)
+        poemFavBtn.text = if (faved) "取消收藏" else "收藏此诗"
+        setPoemExpanded(poemExpanded)
+    }
+
+    private fun setPoemExpanded(expanded: Boolean) {
+        if (!::poemFull.isInitialized) return
+        poemExpanded = expanded
+        poemFull.visibility = if (expanded) View.VISIBLE else View.GONE
+        poemArrow.rotation = if (expanded) 180f else 0f
+    }
+
     private fun loadGoldPrice() {
         scope.launch {
             try {

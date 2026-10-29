@@ -221,6 +221,201 @@
                         android:includeFontPadding="false"/>
                 </LinearLayout>
 
+                <!-- ========== 每日一诗卡片（默认折叠；显示开关/默认展开在设置页） ========== -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/poemCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:strokeWidth="0dp">
+
+                    <LinearLayout
+                        android:id="@+id/poemRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_liquid_glass"
+                        android:foreground="@drawable/ripple_liquid_glass"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <!-- 折叠态：标签 + 诗名作者 / 名句一行 + 箭头 -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:id="@+id/poemTag"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="每日一诗"
+                                android:textSize="11sp"
+                                android:textColor="#CECBF6"
+                                android:maxLines="1"
+                                android:includeFontPadding="false"/>
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="1dp"
+                                android:layout_weight="1"/>
+
+                            <TextView
+                                android:id="@+id/poemTitleAuthor"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="11sp"
+                                android:textColor="#B8FFFFFF"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"/>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingTop="5dp">
+
+                            <TextView
+                                android:id="@+id/poemQuote"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text=""
+                                android:textSize="13sp"
+                                android:textColor="#FFFFFF"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"/>
+
+                            <ImageView
+                                android:id="@+id/poemArrow"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="8dp"
+                                android:src="@drawable/ic_expand_more"
+                                android:tint="#FFFFFF"
+                                android:contentDescription="展开或收起"/>
+                        </LinearLayout>
+
+                        <!-- 展开态：全诗 + 译文 + 操作（默认隐藏） -->
+                        <LinearLayout
+                            android:id="@+id/poemFull"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone"
+                            android:paddingTop="8dp">
+
+                            <TextView
+                                android:id="@+id/poemFullTitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="#FFFFFF"
+                                android:includeFontPadding="false"/>
+
+                            <TextView
+                                android:id="@+id/poemFullMeta"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="11sp"
+                                android:textColor="#B8FFFFFF"
+                                android:paddingTop="3dp"
+                                android:includeFontPadding="false"/>
+
+                            <TextView
+                                android:id="@+id/poemLines"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="13sp"
+                                android:textColor="#FFFFFF"
+                                android:lineSpacingExtra="5dp"
+                                android:paddingTop="8dp"
+                                android:includeFontPadding="false"/>
+
+                            <TextView
+                                android:id="@+id/poemTranslate"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text=""
+                                android:textSize="12sp"
+                                android:textColor="#B8FFFFFF"
+                                android:lineSpacingExtra="3dp"
+                                android:paddingTop="8dp"
+                                android:includeFontPadding="false"/>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingTop="12dp">
+
+                                <TextView
+                                    android:id="@+id/poemShareBtn"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:background="@drawable/bg_pill_glass"
+                                    android:paddingStart="14dp"
+                                    android:paddingEnd="14dp"
+                                    android:paddingTop="7dp"
+                                    android:paddingBottom="7dp"
+                                    android:text="生成分享图"
+                                    android:textSize="13sp"
+                                    android:textColor="#FFFFFF"/>
+
+                                <TextView
+                                    android:id="@+id/poemFavBtn"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:background="@drawable/bg_pill_glass"
+                                    android:paddingStart="14dp"
+                                    android:paddingEnd="14dp"
+                                    android:paddingTop="7dp"
+                                    android:paddingBottom="7dp"
+                                    android:text="收藏此诗"
+                                    android:textSize="13sp"
+                                    android:textColor="#FFFFFF"/>
+
+                                <View
+                                    android:layout_width="0dp"
+                                    android:layout_height="1dp"
+                                    android:layout_weight="1"/>
+
+                                <TextView
+                                    android:id="@+id/poemCollapseBtn"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:background="@drawable/bg_pill_glass"
+                                    android:paddingStart="14dp"
+                                    android:paddingEnd="14dp"
+                                    android:paddingTop="7dp"
+                                    android:paddingBottom="7dp"
+                                    android:text="收起"
+                                    android:textSize="13sp"
+                                    android:textColor="#FFFFFF"/>
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <!-- ========== 第一排信息卡：黄金金价 💰 + 高铁日程 🚄（左右双列） ========== -->
                 <LinearLayout
                     android:layout_width="match_parent"

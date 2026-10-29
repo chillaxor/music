@@ -483,6 +483,60 @@
                         android:layout_marginTop="6dp"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+            <!-- 每日一诗：首页问候行下方的诗词卡片 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                xmlns:app="http://schemas.android.com/apk/res-auto"
+                android:layout_marginTop="14dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="首页每日一诗"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="在首页问候行下面放一张卡片，每天一首古诗（整首可展开、能收藏、能生成分享图）。关闭后首页不显示这张卡片，也不再联网取词。"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/poemToggle"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="12dp"
+                        android:text="关闭首页每日一诗"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/poemExpandToggle"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:text="默认折叠成一行"/>
+
+                    <TextView
+                        android:id="@+id/poemStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:layout_marginTop="6dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
             <!-- 版本信息：手机上直接确认装的是哪一版，排查"改了没生效/装的是旧包" -->
             <TextView
                 android:id="@+id/versionInfo"

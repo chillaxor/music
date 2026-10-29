@@ -79,9 +79,46 @@ class SettingsActivity : AppCompatActivity() {
         // ---- 每日一图（首页全屏沉浸背景） ----
         setupDailyImage()
 
+        // ---- 首页每日一诗卡片 ----
+        setupPoem()
+
         // 版本与构建时间：装没装上新包，来这里看一眼就知道（崩溃日志头部也会带同样的信息）
         findViewById<TextView>(R.id.versionInfo).text =
             "GD音乐 版本 ${BuildConfig.VERSION_NAME} · 构建 ${BuildConfig.BUILD_TIME}"
+    }
+
+    /** 首页每日一诗：显示开关 + 默认展开/折叠 */
+    private fun setupPoem() {
+        val toggle = findViewById<MaterialButton>(R.id.poemToggle)
+        val expandToggle = findViewById<MaterialButton>(R.id.poemExpandToggle)
+        val statusText = findViewById<TextView>(R.id.poemStatus)
+
+        fun refresh() {
+            val on = PoemStore.isEnabled(this)
+            toggle.text = if (on) "关闭首页每日一诗" else "开启首页每日一诗"
+            val expanded = PoemStore.isDefaultExpanded(this)
+            expandToggle.text = if (expanded) "默认展开整首" else "默认折叠成一行"
+            val cached = PoemStore.load(this)
+            val today = if (cached == null) "今天还没取到诗" else "${cached.title} · ${cached.author}"
+            statusText.text =
+                "当前：${if (on) "显示" else "隐藏"} · ${if (expanded) "默认展开整首" else "默认折叠一行"}\n今日：$today"
+        }
+
+        toggle.setOnClickListener {
+            val cur = PoemStore.isEnabled(this)
+            PoemStore.setEnabled(this, !cur)
+            Toast.makeText(this, if (cur) "已关闭每日一诗" else "已开启每日一诗", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+
+        expandToggle.setOnClickListener {
+            val cur = PoemStore.isDefaultExpanded(this)
+            PoemStore.setDefaultExpanded(this, !cur)
+            Toast.makeText(this, if (cur) "默认折叠成一行" else "默认展开整首", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+
+        refresh()
     }
 
     private fun setupDesktopLyric() {
