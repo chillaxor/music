@@ -94,6 +94,8 @@ dependencies {
     //    "Provided Metadata instance has version 2.4.0, maximum supported 2.3.0"，
     //    届时把 Dagger 升到 2.60.1+ 或在 ksp 加 kotlin-metadata-jvm:2.4.21 即可。
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
+    // 端侧图像修复（LaMa-Dilated INT8）：仅路径二需要；模型缺失时功能自动降级到纯 Kotlin 路径一
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
     // 端侧离线语音识别（Vosk，纯本地、不联网）：中文小模型约 42MB
     implementation("com.alphacephei:vosk-android:0.3.47")
 }

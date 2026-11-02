@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.google.android.material.textfield.TextInputEditText
 import androidx.activity.result.contract.ActivityResultContracts
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 
@@ -169,6 +170,8 @@ class WatermarkActivity : AppCompatActivity() {
     private fun saveToGallery() {
         val bmp = currentOutput() ?: return
         val name = "watermark_${System.currentTimeMillis()}.png"
+        // 把加水印的参数写成 sidecar，供「去水印」页自动圈出本App水印（无需手涂）
+        writeWatermarkMeta(name, buildConfig())
         val cv = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -183,6 +186,24 @@ class WatermarkActivity : AppCompatActivity() {
             Toast.makeText(this, "已保存到相册", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "保存失败：${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 把加水印参数落 sidecar（filesDir/wm_meta/<图名>.json），供去水印页反推覆盖区 */
+    private fun writeWatermarkMeta(fileName: String, cfg: WatermarkEngine.Config) {
+        runCatching {
+            val base = fileName.substringBeforeLast('.', fileName)
+            val dir = File(filesDir, "wm_meta").apply { mkdirs() }
+            val json = JSONObject().apply {
+                put("text", cfg.text)
+                put("angle", cfg.angleDeg)
+                put("alpha", cfg.alpha)
+                put("sizeRatio", cfg.sizeRatio)
+                put("density", cfg.density)
+                put("color", cfg.color)
+                put("shadow", cfg.shadow)
+            }
+            File(dir, "$base.json").writeText(json.toString())
         }
     }
 

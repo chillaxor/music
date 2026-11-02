@@ -62,6 +62,7 @@ object ShortcutRouter {
                 "ai" -> go(Intent(ctx, AiTestActivity::class.java))
                 "qna" -> go(Intent(ctx, QnaActivity::class.java))
                 "watermark" -> go(Intent(ctx, WatermarkActivity::class.java))
+                "removewm" -> go(Intent(ctx, RemoveWatermarkActivity::class.java))
                 "settings" -> go(Intent(ctx, SettingsActivity::class.java))
                 // 记账页子视图：add 记一笔 / flow 收支查询 / journal 日志 / links 链接收藏
                 "add", "flow", "journal", "links", "calendar" ->

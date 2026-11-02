@@ -73,6 +73,8 @@
         <activity android:name=".QnaActivity" android:label="问一句" android:exported="false"/>
         <!-- 图片加水印：独立工具卡，选图→斜铺水印→保存/分享 -->
         <activity android:name=".WatermarkActivity" android:label="图片加水印" android:exported="false"/>
+        <!-- 图片去水印：独立工具卡，涂抹/自动定位→本地修复→保存/分享 -->
+        <activity android:name=".RemoveWatermarkActivity" android:label="图片去水印" android:exported="false"/>
         <!-- 语音助手：端侧离线语音识别 + 意图路由（播放/记账/提醒/闲聊） -->
         <activity android:name=".VoiceActivity" android:label="语音助手" android:exported="false"/>
         <!-- 净资产记账（移植自「净资产快照」WebView 工程）：不锁方向，横竖屏都用 -->
