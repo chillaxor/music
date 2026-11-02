@@ -73,8 +73,8 @@
   .vcard2 .meta{padding:7px 9px}
   /* 搜索结果标题：去固定高度裁切，有多少字显示多少字（用户需求） */
   .vcard2 .nm{font-size:13.5px;line-height:1.32;color:var(--txt);font-weight:600;word-break:break-word}
-  .vcard2 .yr{font-size:11px;color:var(--sub);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .vcard2 .rm{font-size:11.5px;color:var(--accent2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vcard2 .yr{font-size:11px;color:var(--sub);margin-top:3px;white-space:normal;word-break:break-word;line-height:1.4}
+  .vcard2 .rm{font-size:11.5px;color:var(--accent2);margin-top:2px;white-space:normal;word-break:break-word;line-height:1.4}
   /* 状态条 */
   .status{padding:8px 14px;color:var(--sub);font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}
   .status .load{color:var(--accent2);flex:none}
@@ -119,7 +119,7 @@
   .srcDrawer h3{margin:0 0 10px;font-size:16px}
   .srcItem{display:flex;align-items:center;gap:8px;padding:10px;background:var(--card2);
     border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
-  .srcItem .nm{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srcItem .nm{flex:1;font-size:13px;min-width:0;white-space:normal;word-break:break-word;line-height:1.4}
   .srcItem .del{color:var(--bad);cursor:pointer;padding:4px 8px;font-size:13px}
   .srcItem .use{color:var(--accent);cursor:pointer;padding:4px 8px;font-size:13px}
   .field{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:8px;

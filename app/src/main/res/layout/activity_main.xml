@@ -299,6 +299,21 @@
                                 android:ellipsize="end"
                                 android:includeFontPadding="false"/>
 
+                            <TextView
+                                android:id="@+id/poemExplainBtn"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="10dp"
+                                android:background="@drawable/bg_pill_glass"
+                                android:paddingStart="12dp"
+                                android:paddingEnd="12dp"
+                                android:paddingTop="5dp"
+                                android:paddingBottom="5dp"
+                                android:text="显示解释"
+                                android:textSize="12sp"
+                                android:textColor="#FFFFFF"
+                                android:visibility="gone" />
+
                             <ImageView
                                 android:id="@+id/poemArrow"
                                 android:layout_width="20dp"
@@ -391,20 +406,6 @@
                                     android:paddingTop="7dp"
                                     android:paddingBottom="7dp"
                                     android:text="收藏此诗"
-                                    android:textSize="13sp"
-                                    android:textColor="#FFFFFF"/>
-
-                                <TextView
-                                    android:id="@+id/poemExplainBtn"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginStart="8dp"
-                                    android:background="@drawable/bg_pill_glass"
-                                    android:paddingStart="14dp"
-                                    android:paddingEnd="14dp"
-                                    android:paddingTop="7dp"
-                                    android:paddingBottom="7dp"
-                                    android:text="显示解释"
                                     android:textSize="13sp"
                                     android:textColor="#FFFFFF"/>
 

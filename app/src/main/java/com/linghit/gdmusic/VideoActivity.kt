@@ -1803,30 +1803,30 @@ class VideoActivity : AppCompatActivity() {
     }
 
     /**
-     * 上一集/下一集按钮容器定位：
-     *  - 内嵌态（详情页顶部短条，仅 230dp 高）：改为横排并下沉到 bottom|end，
-     *    高度降到约 44dp，避开顶部右侧全屏键，也避开底部 exo 控制条，消除误触；
-     *  - 全屏态：恢复竖排 + center_vertical|end（远离顶部全屏键与底部 exo 控制条）。
+     * 上一集/下一集按钮容器 + 全屏键定位（两者都靠右，纵向拉开避免误触）：
+     *  - 内嵌态（详情页顶部短条，仅 230dp 高）：sideBtns 竖排沉到右上方（top|end，避开顶部标题/时钟），
+     *    全屏键固定在右下角（XML bottom|end），两者纵向间隔约 12dp，不误触；
+     *  - 全屏态：sideBtns 竖排 center_vertical|end，全屏键仍右下角（bottomMargin 加大避开底部 exo 控制条）。
      */
     private fun positionSideBtns(inline: Boolean) {
-        val lp = sideBtns.layoutParams as FrameLayout.LayoutParams
-        val np = videoNext.layoutParams as LinearLayout.LayoutParams
         val d = resources.displayMetrics.density
+        val lp = sideBtns.layoutParams as FrameLayout.LayoutParams
+        val flp = fullBtn.layoutParams as FrameLayout.LayoutParams
         if (inline) {
-            lp.gravity = Gravity.BOTTOM or Gravity.END
-            lp.bottomMargin = (70 * d).toInt()
-            sideBtns.orientation = LinearLayout.HORIZONTAL
-            np.topMargin = 0
-            np.marginStart = (14 * d).toInt()
+            lp.gravity = Gravity.TOP or Gravity.END
+            lp.topMargin = (50 * d).toInt()
+            lp.bottomMargin = 0
+            flp.bottomMargin = (54 * d).toInt()
         } else {
             lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            lp.topMargin = 0
             lp.bottomMargin = 0
-            sideBtns.orientation = LinearLayout.VERTICAL
-            np.topMargin = (14 * d).toInt()
-            np.marginStart = 0
+            flp.bottomMargin = (70 * d).toInt()
         }
+        lp.marginEnd = (12 * d).toInt()
+        flp.marginEnd = (12 * d).toInt()
         sideBtns.layoutParams = lp
-        videoNext.layoutParams = np
+        fullBtn.layoutParams = flp
     }
 
     /** 内嵌态下点全屏按钮：铺满横屏（进度保留） */

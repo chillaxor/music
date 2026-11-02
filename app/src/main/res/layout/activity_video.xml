@@ -41,18 +41,17 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
-        <!-- 内嵌态全屏切换按钮：内嵌在详情页顶部时点它铺满横屏；全屏时点它收回到详情页顶部继续播。
-             用矢量图标替换原来的 ⤢/⤡ 文字，配玻璃圆角底，兼顾美观与点击区域。 -->
+        <!-- 全屏切换按钮：固定在右下角（两种布局态都如此），避开顶部与右侧中部的上一/下一集按钮，消除误触 -->
         <ImageButton
             android:id="@+id/videoFull"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:layout_gravity="top|end"
-            android:layout_marginTop="48dp"
-            android:layout_marginEnd="10dp"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="60dp"
             android:background="@drawable/bg_pill_glass"
             android:scaleType="fitCenter"
-            android:padding="9dp"
+            android:padding="6dp"
             android:src="@drawable/ic_fullscreen"
             android:tint="#FFFFFF"
             android:contentDescription="全屏切换"
@@ -112,24 +111,24 @@
 
             <TextView
                 android:id="@+id/videoPrev"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="#66000000"
                 android:gravity="center"
                 android:text="⏮"
-                android:textSize="18sp"
+                android:textSize="14sp"
                 android:textColor="#ffffff"
                 android:contentDescription="上一集" />
 
             <TextView
                 android:id="@+id/videoNext"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:layout_marginTop="14dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginTop="10dp"
                 android:background="#66000000"
                 android:gravity="center"
                 android:text="⏭"
-                android:textSize="18sp"
+                android:textSize="14sp"
                 android:textColor="#ffffff"
                 android:contentDescription="下一集" />
         </LinearLayout>

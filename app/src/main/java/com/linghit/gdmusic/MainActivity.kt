@@ -826,9 +826,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             renderPoem(p)
             Toast.makeText(this, if (on) "已收藏" else "已取消收藏", Toast.LENGTH_SHORT).show()
         }
-        // 显示解释：切换译文显隐；无译文时提示并保持不变
+        // 显示解释：折叠态也能点；若卡片未展开先展开，再切换译文显隐；无译文时提示
         poemExplainBtn.setOnClickListener {
             val p = poemData ?: return@setOnClickListener
+            if (!poemExpanded) setPoemExpanded(true)   // 折叠态点「显示解释」直接展开卡片
             if (p.translate.isEmpty()) {
                 Toast.makeText(this, "这首诗暂无译文", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -896,7 +897,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         poemTranslate.text = tr
         // 译文默认收起，由「显示解释」按钮控制；无译文则隐藏该按钮
         poemTranslate.visibility = if (poemExplainShown && tr.isNotBlank()) View.VISIBLE else View.GONE
-        poemExplainBtn.visibility = if (tr.isBlank()) View.GONE else View.VISIBLE
+        poemExplainBtn.visibility = View.VISIBLE   // 始终显示（无译文时点击提示），折叠态也能看到
         poemExplainBtn.text = if (poemExplainShown) "隐藏解释" else "显示解释"
         val faved = p.id.isNotBlank() && PoemStore.favIds(this).contains(p.id)
         poemFavBtn.text = if (faved) "取消收藏" else "收藏此诗"
