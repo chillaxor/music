@@ -43,10 +43,10 @@ class BrushView @JvmOverloads constructor(
     private val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         // 白→红染色滤镜：白(1,1,1)* (1,0,0)=红；透明保持透明 → 只把笔触染成半透明红覆盖层
         colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
-            1f, 0f, 0f, 0f,
-            0f, 0f, 0f, 0f,
-            0f, 0f, 0f, 0f,
-            0f, 0f, 0f, 1f
+            1f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
         )))
         alpha = 160
     }
