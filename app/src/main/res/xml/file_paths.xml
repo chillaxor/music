@@ -6,4 +6,5 @@
 -->
 <paths>
     <cache-path name="poem_share" path="poem_share/" />
+    <cache-path name="watermark_share" path="watermark_share/" />
 </paths>

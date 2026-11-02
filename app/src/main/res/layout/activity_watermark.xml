@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图片加水印页：浅色暖白主题，跟设置页一致。
+  结构：标题 → 预览框 → 选图按钮 → 文字输入 → 四个滑块(角度/透明度/字号/疏密) → 黑字开关 → 保存/分享。
+  滑块旁的文字实时显示当前值；改动经 Activity 节流后重绘预览。
+  配色直接引用 colors.xml 的具体色值，避免主题属性解析差异。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="图片加水印"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_surface"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="整张图斜向平铺水印，可调角度、透明度、字号与疏密"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface_variant"
+            android:paddingBottom="12dp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:background="@color/surface_variant">
+
+            <ImageView
+                android:id="@+id/preview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitCenter"
+                android:src="@android:color/darker_gray" />
+        </FrameLayout>
+
+        <Button
+            android:id="@+id/pickBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="选择图片"
+            android:layout_marginTop="12dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="水印文字"
+            android:layout_marginTop="12dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/textInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:text="从前慢" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 角度 -->
+        <TextView
+            android:id="@+id/angleVal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="角度：向左 28°"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface"
+            android:layout_marginTop="16dp" />
+
+        <SeekBar
+            android:id="@+id/angleBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="45"
+            android:progress="17" />
+
+        <!-- 透明度 -->
+        <TextView
+            android:id="@+id/alphaVal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="透明度：42%"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface"
+            android:layout_marginTop="12dp" />
+
+        <SeekBar
+            android:id="@+id/alphaBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="42" />
+
+        <!-- 字号 -->
+        <TextView
+            android:id="@+id/sizeVal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="字号：中"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface"
+            android:layout_marginTop="12dp" />
+
+        <SeekBar
+            android:id="@+id/sizeBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="31" />
+
+        <!-- 疏密 -->
+        <TextView
+            android:id="@+id/densityVal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="疏密：中"
+            android:textSize="13sp"
+            android:textColor="@color/on_surface"
+            android:layout_marginTop="12dp" />
+
+        <SeekBar
+            android:id="@+id/densityBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="33" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="12dp">
+
+            <Switch
+                android:id="@+id/blackSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="水印用黑色字（适合浅色图）"
+                android:textSize="13sp"
+                android:textColor="@color/on_surface"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="16dp">
+
+            <Button
+                android:id="@+id/saveBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="保存到相册"
+                android:enabled="false" />
+
+            <Button
+                android:id="@+id/shareBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="分享"
+                android:layout_marginStart="12dp"
+                android:enabled="false" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

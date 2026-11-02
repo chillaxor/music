@@ -522,7 +522,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         HomeShortcutStore.Item("page", "podcast", "播客", "🎙"),
         HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),
         // 端侧 AI（一期验证页）：手机本地跑 LiteRT-LM 模型，零 Key 零费用
-        HomeShortcutStore.Item("page", "qna", "问一句", "🤖")
+        HomeShortcutStore.Item("page", "qna", "问一句", "🤖"),
+        HomeShortcutStore.Item("page", "watermark", "水印", "💧")
     )
 
     /**
