@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import kotlin.math.abs
 
@@ -19,7 +20,12 @@ import kotlin.math.abs
  *      **直接走 onTouchEvent、压根不过 onInterceptTouchEvent**（mFirstTouchTarget
  *      为空时 intercepted 恒 true）——只写拦截这一路，空白区滑动永久失灵。
  * - 只在判定为横向（位移超 touchSlop 且明显大于竖向）时才 tracking；竖向一律放行，
- *   RecyclerView 滚动、长按、子 view 点击都不受影响。
+ *   竖向 RecyclerView 滚动、长按、子 view 点击都不受影响。
+ * - 方向性让位（关键！修搜索页榜单滑不动）：横向判定成立时，先查手势落点下的子视图
+ *   在该方向上还能不能横滑（如搜索页 chartList 横向 RecyclerView、chartTabs 横向
+ *   ScrollView）。能横滑 → 整段 skip 让给子视图滚动（榜单终于能滑、能看到全部）；
+ *   滑到边缘（canScrollHorizontally 返回 false）→ 才 tracking 切 tab。
+ *   首页只有竖向 NestedScrollView，横向永远切 tab，覆盖完整。
  * - 排除区（addExcludedView）：起点落在排除 view 里的手势整段不参与。首页快捷方式
  *   网格（shortcutRow）必须排除：那些格子靠横向拖动排序，被抢走就变 ACTION_CANCEL、
  *   拖动当场断裂（同拖动手势铁律）。
@@ -65,6 +71,31 @@ class SwipeFrameLayout @JvmOverloads constructor(
     }
 
     /**
+     * 手势落点 (rawX,rawY) 下的视图树里，是否存在在该方向 (dir) 还能横滑的视图
+     * （如搜索页 chartList 横向 RecyclerView、chartTabs 横向 ScrollView）。
+     * 能横滑 → 返回 true，让 SwipeFrameLayout 把该手势让给子视图滚动，而不是切 tab。
+     * 命中规则：递归遍历，凡是「包含落点」且「canScrollHorizontally(dir) 为真」的视图即算，
+     * 这样即便落点在内部小卡上，也会向上找到真正可横滑的父容器。
+     */
+    private fun canScrollHorizontallyAt(rawX: Float, rawY: Float, dir: Int): Boolean {
+        return hitScrollable(this, rawX, rawY, dir)
+    }
+
+    private fun hitScrollable(view: View, x: Float, y: Float, dir: Int): Boolean {
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        val contains = x >= loc[0] && x <= loc[0] + view.width &&
+            y >= loc[1] && y <= loc[1] + view.height
+        if (contains && view.canScrollHorizontally(dir)) return true
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                if (hitScrollable(view.getChildAt(i), x, y, dir)) return true
+            }
+        }
+        return false
+    }
+
+    /**
      * 两条触摸路共用的状态机：DOWN 记录起点/重置，MOVE 判定横向，UP/CANCEL 触发回调。
      * 幂等——同一事件被两条路各过一次也不会错乱（DOWN 只会重置，判定只认一次）。
      */
@@ -83,7 +114,15 @@ class SwipeFrameLayout @JvmOverloads constructor(
                 val dx = ev.rawX - downX
                 val dy = ev.rawY - downY
                 if (abs(dx) > touchSlop && abs(dx) > abs(dy)) {
-                    tracking = true
+                    // 方向性让位：手指左滑(dx<0)想看右侧内容→滚动方向 +1；
+                    // 手指右滑(dx>0)想看左侧内容→滚动方向 -1。
+                    val scrollDir = if (dx < 0) 1 else -1
+                    if (canScrollHorizontallyAt(downX, downY, scrollDir)) {
+                        // 落点下的子视图在该方向还能横滑 → 让给它滚（榜单滑得动），本手势不切 tab
+                        skip = true
+                    } else {
+                        tracking = true
+                    }
                 } else if (abs(dy) > touchSlop) {
                     // 判定竖向：本段手势到此为止，交还子 view（滚动/长按照常）
                     skip = true

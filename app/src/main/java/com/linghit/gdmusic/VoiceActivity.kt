@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.ImageButton
+import android.net.Uri
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +38,7 @@ class VoiceActivity : AppCompatActivity() {
     private lateinit var result: TextView
     private lateinit var status: TextView
     private lateinit var downloadBtn: Button
+    private lateinit var aiModelBtn: Button
 
     private var stt: SttEngine? = null
     private var listening = false
@@ -50,6 +54,7 @@ class VoiceActivity : AppCompatActivity() {
         result = findViewById(R.id.result)
         status = findViewById(R.id.status)
         downloadBtn = findViewById(R.id.downloadBtn)
+        aiModelBtn = findViewById(R.id.aiModelBtn)
 
         if (!VoskModel.isReady(this)) {
             status.text = "首次使用需下载离线语音模型（约 42MB，纯本地、不联网识别）"
@@ -58,6 +63,126 @@ class VoiceActivity : AppCompatActivity() {
 
         micBtn.setOnClickListener { toggle() }
         downloadBtn.setOnClickListener { downloadModel() }
+        aiModelBtn.setOnClickListener { openModelDialog() }
+        refreshAiModelBtn()
+    }
+
+    /** 导入模型文件（SAF）：从本机任意文件管理器选 .litertlm，复制进内部存储后加载 */
+    private val importLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@registerForActivityResult
+        status.text = "导入中…"
+        scope.launch(Dispatchers.IO) {
+            val r = ModelManager.importFromUri(this@VoiceActivity, uri)
+            withContext(Dispatchers.Main) {
+                r.onSuccess {
+                    status.text = "导入成功：${it.name}（${it.length() / 1024 / 1024}MB），正在加载引擎…"
+                    doLoad(it.absolutePath)
+                }.onFailure {
+                    status.text = "导入失败：${it.message}"
+                }
+            }
+        }
+    }
+
+    /** 根据大模型当前状态刷新按钮文案（已就绪/未下载/已下载待加载） */
+    private fun refreshAiModelBtn() {
+        aiModelBtn.visibility = Button.VISIBLE
+        aiModelBtn.text = if (AiEngine.isReady) {
+            val cur = AiEngine.currentModelPath?.let { java.io.File(it).name } ?: "模型"
+            "智能模型已就绪：$cur（点此管理/卸载）"
+        } else {
+            val n = ModelManager.installed(this).size
+            if (n == 0) "加载智能回答模型（下载约 584MB 或导入文件）"
+            else "加载智能回答模型（已下载 $n 个，待加载）"
+        }
+    }
+
+    /** 模型管理弹窗：加载已下载的 / 下载新的 / 导入文件 / 卸载 */
+    private fun openModelDialog() {
+        val items = mutableListOf<String>()
+        val actions = mutableListOf<() -> Unit>()
+
+        if (AiEngine.isReady) {
+            items.add("卸载当前模型（释放内存）")
+            actions.add { unloadModel() }
+        }
+        ModelManager.installed(this).forEach { f ->
+            val mark = if (f.absolutePath == AiEngine.currentModelPath) "（当前）" else ""
+            items.add("加载：${f.name}$mark")
+            val path = f.absolutePath
+            actions.add { doLoad(path) }
+        }
+        items.add("下载模型…")
+        actions.add { openDownloadDialog() }
+        items.add("从本机导入 .litertlm 文件")
+        actions.add { importLauncher.launch(arrayOf("*/*")) }
+
+        AlertDialog.Builder(this)
+            .setTitle("智能回答模型（端侧离线）")
+            .setItems(items.toTypedArray()) { _, which -> actions.getOrNull(which)?.invoke() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 选择要下载的模型档位（体积差别大，让用户选） */
+    private fun openDownloadDialog() {
+        val specs = ModelManager.CATALOG
+        val labels = specs.map { "${it.displayName}　约 ${it.approxSizeMb}MB\n${it.note}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("选择要下载的模型")
+            .setItems(labels) { _, which -> doDownload(specs[which]) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 下载指定模型，完成后自动加载引擎 */
+    private fun doDownload(spec: ModelManager.ModelSpec) {
+        status.text = "下载 ${spec.displayName} 中… 0%"
+        scope.launch(Dispatchers.IO) {
+            val r = ModelManager.download(this@VoiceActivity, spec) { sum, total, pct ->
+                launch(Dispatchers.Main) {
+                    status.text = if (total > 0) {
+                        "下载中 $pct%　${sum / 1024 / 1024}MB / ${total / 1024 / 1024}MB"
+                    } else "下载中 $pct%"
+                }
+            }
+            withContext(Dispatchers.Main) {
+                r.onSuccess {
+                    status.text = "下载完成：${it.name}（${it.length() / 1024 / 1024}MB），正在加载引擎…"
+                    doLoad(it.absolutePath)
+                }.onFailure {
+                    status.text = "下载失败：${it.message}"
+                }
+            }
+        }
+    }
+
+    /** 把 .litertlm 文件加载进引擎（首次 5–15 秒，GPU 失败自动回落 CPU） */
+    private fun doLoad(path: String) {
+        status.text = "加载引擎中…（首次约 5–15 秒，请稍候）"
+        scope.launch(Dispatchers.IO) {
+            val t0 = System.currentTimeMillis()
+            val r = runCatching { AiEngine.load(this@VoiceActivity, path, useGpu = true) }
+            val dt = System.currentTimeMillis() - t0
+            withContext(Dispatchers.Main) {
+                r.onSuccess { backend ->
+                    status.text = "✅ 智能模型已就绪（后端 $backend，耗时 ${dt}ms）"
+                    refreshAiModelBtn()
+                }.onFailure {
+                    status.text = "❌ 模型加载失败：${it.message}"
+                    refreshAiModelBtn()
+                }
+            }
+        }
+    }
+
+    /** 卸载引擎、释放 native 内存（模型文件保留，下次直接复用） */
+    private fun unloadModel() {
+        scope.launch(Dispatchers.IO) { AiEngine.release() }
+        status.text = "已卸载模型（内存已释放）"
+        refreshAiModelBtn()
     }
 
     private fun toggle() {
