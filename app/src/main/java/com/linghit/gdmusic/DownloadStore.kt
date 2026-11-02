@@ -153,6 +153,43 @@ object DownloadStore {
         return null
     }
 
+    /** 一次扫描导入的会话：加载索引 + 已有 uri 集合，全程复用（同时服务 B 增量跳过与 D 批量写盘） */
+    data class ImportSession(val arr: JSONArray, val have: MutableSet<String>)
+
+    /** 开始一次扫描导入：加载索引并构建已有 uri 集合（只做一次 load） */
+    fun beginImport(ctx: Context): ImportSession {
+        val arr = loadIndex(ctx)
+        val have = (0 until arr.length()).map { arr.getJSONObject(it).optString("uri") }.toMutableSet()
+        return ImportSession(arr, have)
+    }
+
+    /** 往会话里批量 upsert（按 uri 去重、不覆盖已有记录、补歌词），不落盘（由 commitImport 统一保存）。
+     *  已存在的记录只补 lyricUri，不会覆盖原标签——保证「重复导入 + 事后补 .lrc」仍能生效。 */
+    fun addScanned(session: ImportSession, items: List<DownloadedItem>) {
+        if (items.isEmpty()) return
+        for (it in items) {
+            val u = it.uri.toString()
+            if (u in session.have) {
+                if (it.lyricUri.isNotBlank()) {
+                    val idx = (0 until session.arr.length()).indexOfFirst { i ->
+                        session.arr.getJSONObject(i).optString("uri") == u
+                    }
+                    if (idx >= 0 && session.arr.getJSONObject(idx).optString("lyricUri").isBlank()) {
+                        session.arr.getJSONObject(idx).put("lyricUri", it.lyricUri)
+                    }
+                }
+                continue
+            }
+            session.arr.put(recordOf(it.song, u, it.kind, it.folder, it.sizeBytes, it.lyricUri))
+            session.have.add(u)
+        }
+    }
+
+    /** 提交一次扫描导入：把会话里累积的改动一次性写盘（D：全程只 save 这一次，不再每 200 首全量读写） */
+    fun commitImport(ctx: Context, session: ImportSession) {
+        saveIndex(ctx, session.arr)
+    }
+
     /** 批量添加「扫描导入」的本地文件（按 uri 去重，不覆盖已有记录） */
     fun addScanned(ctx: Context, items: List<DownloadedItem>) {
         if (items.isEmpty()) return

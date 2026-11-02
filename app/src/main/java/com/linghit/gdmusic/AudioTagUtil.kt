@@ -29,8 +29,10 @@ object AudioTagUtil {
             if (uri.scheme.equals("content", true)) mmr.setDataSource(context, uri)
             else mmr.setDataSource(pathOrUri)
             AudioMeta(
-                durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L,
-                bitrate = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0,
+                // C1：导入阶段不再取 duration/bitrate（最慢的两步 native 解析）。
+                // 时长由播放器在播放时从 ExoPlayer 取，导入时从未存过，故零风险。
+                durationMs = 0L,
+                bitrate = 0,
                 artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty(),
                 album = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty(),
                 title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).orEmpty(),
