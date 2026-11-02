@@ -28,11 +28,14 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import android.view.Gravity
+import android.content.Context
+import android.media.AudioManager
 import kotlin.math.abs
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
@@ -109,6 +112,10 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var videoMiniZoomOut: TextView
     /** 左侧上下滑动调亮度时显示的百分比指示器 */
     private lateinit var brightnessInd: TextView
+    /** 内嵌态 ↔ 全屏切换按钮（图标：展开 / 收起） */
+    private lateinit var fullBtn: ImageButton
+    /** 右侧上一集/下一集按钮容器：全屏态 center_vertical|end；内嵌态下沉到 bottom|end 避开全屏键 */
+    private lateinit var sideBtns: LinearLayout
     /** 小窗（App 内悬浮小窗）模式：播放器缩到角落，页面可继续浏览 */
     private var miniMode = false
     /** 用户是否手动拖过小窗：拖动后不再被 applyMiniLayout 复位回右下角 */
@@ -123,6 +130,13 @@ class VideoActivity : AppCompatActivity() {
     private var miniDragged = false
     /** 小窗手势缩放倍数（双指捏合调整），默认 1.0 */
     private var miniScale = 1.0f
+    /** 内嵌播放模式：详情页起播默认把播放器 docking 在详情页顶部（竖屏、系统栏可见），
+     *  下方 WebView 详情/选集仍可滚动浏览。false = 经典全屏（历史续播等）。 */
+    private var inlineMode = false
+    /** 内嵌态下是否已展开成横屏全屏：true 时铺满屏幕、隐藏系统栏；false 时只占顶部。 */
+    private var inlineExpanded = false
+    /** 内嵌播放器高度（dp），同时作为详情页顶部占位高度（CSS px ≈ dp）。 */
+    private val INLINE_HEIGHT_DP = 230
     /** 是否正在双指捏合缩放 */
     private var pinching = false
     /** 捏合起始两指间距 */
@@ -140,6 +154,28 @@ class VideoActivity : AppCompatActivity() {
     private val BRIGHT_MAX = 1f
     private val BRIGHT_HIDE_DELAY = 800L
     private val brightHide = Runnable { if (::brightnessInd.isInitialized) brightnessInd.visibility = View.GONE }
+
+    // ===================== 播放手势：右侧上下滑动调音量 =====================
+    private lateinit var audioManager: AudioManager
+    /** 右侧上下滑动调音量时显示的百分比指示器 */
+    private lateinit var volumeInd: TextView
+    private var volDecided = false
+    private var volActive = false
+    private var volStartVal = 0f   // 按下时的系统音量（0..max）
+    private var volStartY = 0f
+    private val VOL_HIDE_DELAY = 800L
+    private val volHide = Runnable { if (::volumeInd.isInitialized) volumeInd.visibility = View.GONE }
+
+    // ===================== 播放手势：长按屏幕 = 3 倍速播放 =====================
+    /** 长按屏幕（按住不动）期间显示的倍速指示器 */
+    private lateinit var speedInd: TextView
+    /** 是否已处于长按 3 倍速状态 */
+    private var longPressActive = false
+    /** 长按前记录的原始倍速，松手后恢复 */
+    private var origSpeed = 1f
+    private var longPressTimer: android.os.CountDownTimer? = null
+    /** 按下后多久（毫秒）判定为「长按」——短于它视为轻点 */
+    private val LP_TRIGGER_MS = 450L
 
     // ===================== 片头 / 片尾跳过（按影片详情维度） =====================
     /**
@@ -335,11 +371,13 @@ class VideoActivity : AppCompatActivity() {
         webView = findViewById(R.id.videoWebView)
         overlay = findViewById(R.id.videoOverlay)
         playerView = findViewById(R.id.videoPlayerView)
+        fullBtn = findViewById(R.id.videoFull)
         videoPip = findViewById(R.id.videoPip)
         videoTitle = findViewById(R.id.videoTitle)
         videoClock = findViewById(R.id.videoClock)
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
+        sideBtns = findViewById(R.id.videoSideBtns)
         videoBuffering = findViewById(R.id.videoBuffering)
         videoSeekHint = findViewById(R.id.videoSeekHint)
         videoMiniLayer = findViewById(R.id.videoMiniLayer)
@@ -367,7 +405,14 @@ class VideoActivity : AppCompatActivity() {
         //  左侧上下滑 = 调亮度 / 左右拖动 = 快进后退 / 轻点 = 切换控制条显隐。
         // 三者必须共用一个 OnTouchListener —— PlayerView 只保留一个，后注册的会顶掉前一个。
         brightnessInd = findViewById(R.id.videoBrightness)
+        volumeInd = findViewById(R.id.videoVolume)
+        speedInd = findViewById(R.id.videoSpeed)
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         setupPlayGestures()
+        fullBtn.setOnClickListener {
+            // 内嵌态 ↔ 全屏：复用同一 ExoPlayer 实例，不重建、不中断播放进度
+            if (inlineExpanded) shrinkToInline() else enterFullscreen()
+        }
 
         // 小窗按钮：把播放器缩成 App 内悬浮小窗（页面可继续浏览），
         // 小窗上的「⤢」或点画面 → 展开回全屏继续播（用户要的"关闭小屏回全屏"）
@@ -475,6 +520,10 @@ class VideoActivity : AppCompatActivity() {
         backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (miniMode) { exitMini(); return }
+                // 内嵌态全屏 → 收回详情页顶部内嵌继续播（不中断）
+                if (inlineMode && inlineExpanded) { shrinkToInline(); return }
+                // 内嵌态 → 关掉内嵌播放器（详情页仍留在背后，可继续浏览/再点选集）
+                if (inlineMode) { closeVideo(); return }
                 if (overlay.visibility == View.VISIBLE) { closeVideo(); return }
                 webView.evaluateJavascript("window.__videoBack?window.__videoBack():false") { r ->
                     if (r != "true") finish()
@@ -606,10 +655,11 @@ class VideoActivity : AppCompatActivity() {
             spiderJson: String,
             metaJson: String
         ) {
-            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson) }
+            // 详情页点选集起播：默认内嵌在详情页顶部（竖屏、可继续浏览选集）
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson, inline = true) }
         }
 
-        /** 爬虫源剧集解析完成后的起播桥：playSpiderEp 拿到直链后回传 */
+        /** 爬虫源剧集解析完成后的起播桥：playSpiderEp 拿到直链后回传（同样内嵌） */
         @JavascriptInterface
         fun playResolved(
             url: String,
@@ -620,7 +670,21 @@ class VideoActivity : AppCompatActivity() {
             spiderJson: String,
             metaJson: String
         ) {
-            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson) }
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson, inline = true) }
+        }
+
+        /** 经典全屏起播（历史续播用）：铺满横屏 + 沉浸式，不进内嵌态 */
+        @JavascriptInterface
+        fun playVideoFull(
+            url: String,
+            title: String,
+            referer: String,
+            epsJson: String,
+            idx: Int,
+            spiderJson: String,
+            metaJson: String
+        ) {
+            runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson, inline = false) }
         }
 
         /** 播放历史页入口（影视仓顶栏 🕘） */
@@ -945,9 +1009,10 @@ class VideoActivity : AppCompatActivity() {
         epsJson: String = "",
         idx: Int = -1,
         spiderJson: String = "",
-        metaJson: String = ""
+        metaJson: String = "",
+        inline: Boolean = true
     ) {
-        Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx")
+        Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx | inline=$inline")
         curCastTitle = title          // 投屏时作为 DIDL-Lite 标题展示在电视端
         // 播放层标题：JS 传的是「片名 · 线路 · 集名」，切集时只换集名那一截
         curVideoTitle = title
@@ -967,9 +1032,11 @@ class VideoActivity : AppCompatActivity() {
         videoBuffering.visibility = View.VISIBLE
         // 小窗状态下又点了新视频 → 先展开回全屏再播
         if (miniMode) exitMini()
-        // 一律本 App 内播放：强制横屏 + 沉浸式全屏（关掉播放器再恢复竖屏）
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        hideSystemBars()
+        // 详情页起播默认内嵌在详情页顶部（竖屏、系统栏可见），点全屏按钮才铺满横屏；
+        // 历史续播等用 playVideoFull 走经典全屏。三态布局统一由 applyPlayerLayout 处理。
+        inlineMode = inline
+        inlineExpanded = false
+        applyPlayerLayout()
         clockHandler.removeCallbacks(clockTick)
         clockTick.run()
         playMediaUrl(url, curReferer)
@@ -1189,24 +1256,61 @@ class VideoActivity : AppCompatActivity() {
                     brightStartVal = getScreenBrightness()
                     brightDecided = false
                     brightActive = false
+                    volDecided = false
+                    volActive = false
                     // 小窗 / 投屏 / 播放层隐藏时不接管，避免影响其它交互；
                     // 起点落在进度条 / 片头片尾配置行时也不接管（那是用户在拖进度条）
                     val idle = !miniMode && !casting && overlay.visibility == View.VISIBLE
                     val onBar = inProtected(ev.rawX, ev.rawY)
                     takeOver = idle && !onBar
+                    // 长按屏幕 = 3 倍速：按下后若一直按住不动（未超过 slop），到点切 3 倍速
+                    longPressActive = false
+                    origSpeed = 1f
+                    longPressTimer?.cancel()
+                    longPressTimer = object : android.os.CountDownTimer(LP_TRIGGER_MS, LP_TRIGGER_MS) {
+                        override fun onTick(millisUntilFinished: Long) {}
+                        override fun onFinish() {
+                            if (!takeOver || moved || miniMode || casting) return
+                            if (overlay.visibility != View.VISIBLE) return
+                            if (brightActive || volActive || seeking) return
+                            val p = player ?: return          // 仅原生 ExoPlayer 在线时生效
+                            if (!p.isPlaying) return
+                            longPressActive = true
+                            origSpeed = p.playbackParameters.speed
+                            p.setPlaybackParameters(
+                                androidx.media3.common.PlaybackParameters(3f, p.playbackParameters.pitch)
+                            )
+                            speedInd.visibility = View.VISIBLE
+                            speedInd.text = "⏩ 3.0x"
+                        }
+                    }.apply { start() }
                     takeOver // 消费 DOWN 才能稳定收到后续 MOVE/UP
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (!takeOver) return@setOnTouchListener false
                     val dx = ev.x - downX
                     val dy = ev.y - downY
-                    if (abs(dx) > slop || abs(dy) > slop) moved = true
-                    // 方向裁决（只判一次）：纵向占优=亮度，横向占优=快进，其余不动
-                    if (!brightDecided && !seeking) {
+                    if (abs(dx) > slop || abs(dy) > slop) {
+                        moved = true
+                        // 一旦产生位移，长按判定作废；若已进入 3 倍速则退出恢复
+                        longPressTimer?.cancel()
+                        if (longPressActive) restoreLongPressSpeed()
+                    }
+                    // 方向裁决（只判一次）：左半屏纵向=亮度，右半屏纵向=音量，横向占优=快进，其余不动
+                    if (!brightDecided && !seeking && !volDecided) {
                         when {
                             abs(dy) > slop && abs(dy) > abs(dx) -> {
-                                brightDecided = true
-                                brightActive = downX < v.width / 2f   // 只认左半屏：右半屏留空
+                                if (downX < v.width / 2f) {
+                                    brightDecided = true
+                                    brightActive = true        // 左半屏：调亮度
+                                    brightStartVal = getScreenBrightness()
+                                    brightStartY = ev.y
+                                } else {
+                                    volDecided = true
+                                    volActive = true           // 右半屏：调音量
+                                    volStartVal = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+                                    volStartY = ev.y
+                                }
                             }
                             abs(dx) > slop && abs(dx) > abs(dy) * 1.5f -> seeking = true
                             abs(dx) > slop || abs(dy) > slop -> brightDecided = true
@@ -1218,6 +1322,18 @@ class VideoActivity : AppCompatActivity() {
                             val nv = (brightStartVal + delta).coerceIn(BRIGHT_MIN, BRIGHT_MAX)
                             setScreenBrightness(nv)
                             showBrightnessInd(nv)
+                        }
+                        volActive -> {      // 右半屏上滑加音量、下滑减音量
+                            val maxv = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            val delta = (volStartY - ev.y) / v.height
+                            val nv = ((volStartVal + delta * maxv).coerceIn(0f, maxv.toFloat()) + 0.5f)
+                                .toInt().coerceIn(0, maxv)
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nv, 0)
+                            val pct = if (maxv > 0) (nv * 100 / maxv) else 0
+                            volumeInd.visibility = View.VISIBLE
+                            volumeInd.text = if (nv <= 0) "🔇 静音" else "🔊 $pct%"
+                            mainHandler.removeCallbacks(volHide)
+                            mainHandler.postDelayed(volHide, VOL_HIDE_DELAY)
                         }
                         seeking -> {
                             val dur = runCatching { player?.duration }.getOrNull() ?: 0L
@@ -1235,14 +1351,27 @@ class VideoActivity : AppCompatActivity() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    // 长按计时器无论如何都要取消（短按/抬手都不再触发）
+                    longPressTimer?.cancel()
+                    longPressTimer = null
                     if (!takeOver) return@setOnTouchListener false
                     val wasBright = brightActive
                     val wasSeek = seeking
+                    val wasVol = volActive
+                    val wasLong = longPressActive
                     brightActive = false
                     brightDecided = false
                     seeking = false
+                    volActive = false
+                    volDecided = false
+                    longPressActive = false
                     when {
+                        wasLong -> {
+                            // 长按 3 倍速：松手恢复原始倍速
+                            restoreLongPressSpeed()
+                        }
                         wasBright -> mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+                        wasVol -> mainHandler.postDelayed(volHide, VOL_HIDE_DELAY)
                         wasSeek -> {
                             videoSeekHint.visibility = View.GONE
                             if (target != startPos) {
@@ -1278,6 +1407,18 @@ class VideoActivity : AppCompatActivity() {
         brightnessInd.text = "☀ $pct%"
         mainHandler.removeCallbacks(brightHide)
         mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
+    }
+
+    /** 退出长按 3 倍速，恢复按下前的原始倍速（松手 / 手势接管时调用） */
+    private fun restoreLongPressSpeed() {
+        longPressActive = false
+        if (::speedInd.isInitialized) speedInd.visibility = View.GONE
+        runCatching {
+            val p = player ?: return
+            p.setPlaybackParameters(
+                androidx.media3.common.PlaybackParameters(origSpeed, p.playbackParameters.pitch)
+            )
+        }
     }
 
     /** 轻点视频区域 = 切换控制条显隐 */
@@ -1605,6 +1746,103 @@ class VideoActivity : AppCompatActivity() {
         return out
     }
 
+    /**
+     * 播放层三态布局：内嵌（详情页顶部，竖屏）/ 全屏展开（横屏沉浸）/ 经典全屏。
+     * 都不重建 ExoPlayer，只改 overlay 尺寸 + 屏幕方向 + 系统栏 + 控制条，进度无缝保留。
+     * 内嵌态会驱动 WebView 详情页顶部占位（__setInlineSpace）给原生播放器腾位置。
+     */
+    private fun applyPlayerLayout() {
+        val lp = overlay.layoutParams as FrameLayout.LayoutParams
+        when {
+            inlineMode && !inlineExpanded -> {
+                // 内嵌：docking 在详情页顶部，高度 INLINE_HEIGHT_DP，竖屏、系统栏可见
+                val h = (INLINE_HEIGHT_DP * resources.displayMetrics.density).toInt()
+                lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.height = h
+                lp.gravity = Gravity.TOP
+                lp.setMargins(0, 0, 0, 0)
+                overlay.layoutParams = lp
+                playerView.useController = true
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                showSystemBars()
+                fullBtn.visibility = View.VISIBLE
+                fullBtn.setImageResource(R.drawable.ic_fullscreen)   // 展开全屏
+                positionSideBtns(true)
+                safeEval("if(window.__setInlineSpace)__setInlineSpace($INLINE_HEIGHT_DP)")
+                videoPip.visibility = View.GONE  // 内嵌态不显示小窗按钮，避免布局冲突
+            }
+            inlineExpanded -> {
+                // 内嵌态下展开成横屏全屏：铺满、沉浸、隐藏系统栏
+                lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.gravity = Gravity.NO_GRAVITY
+                lp.setMargins(0, 0, 0, 0)
+                overlay.layoutParams = lp
+                playerView.useController = true
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                hideSystemBars()
+                fullBtn.visibility = View.VISIBLE
+                fullBtn.setImageResource(R.drawable.ic_fullscreen_exit)   // 收回内嵌
+                positionSideBtns(false)
+                safeEval("if(window.__setInlineSpace)__setInlineSpace(0)")
+            }
+            else -> {
+                // 经典全屏（playVideoFull / 历史续播）：铺满横屏沉浸
+                lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.gravity = Gravity.NO_GRAVITY
+                lp.setMargins(0, 0, 0, 0)
+                overlay.layoutParams = lp
+                playerView.useController = true
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                hideSystemBars()
+                fullBtn.visibility = View.GONE
+                positionSideBtns(false)
+            }
+        }
+    }
+
+    /**
+     * 上一集/下一集按钮容器定位：
+     *  - 内嵌态（详情页顶部短条，仅 230dp 高）：改为横排并下沉到 bottom|end，
+     *    高度降到约 44dp，避开顶部右侧全屏键，也避开底部 exo 控制条，消除误触；
+     *  - 全屏态：恢复竖排 + center_vertical|end（远离顶部全屏键与底部 exo 控制条）。
+     */
+    private fun positionSideBtns(inline: Boolean) {
+        val lp = sideBtns.layoutParams as FrameLayout.LayoutParams
+        val np = videoNext.layoutParams as LinearLayout.LayoutParams
+        val d = resources.displayMetrics.density
+        if (inline) {
+            lp.gravity = Gravity.BOTTOM or Gravity.END
+            lp.bottomMargin = (70 * d).toInt()
+            sideBtns.orientation = LinearLayout.HORIZONTAL
+            np.topMargin = 0
+            np.marginStart = (14 * d).toInt()
+        } else {
+            lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            lp.bottomMargin = 0
+            sideBtns.orientation = LinearLayout.VERTICAL
+            np.topMargin = (14 * d).toInt()
+            np.marginStart = 0
+        }
+        sideBtns.layoutParams = lp
+        videoNext.layoutParams = np
+    }
+
+    /** 内嵌态下点全屏按钮：铺满横屏（进度保留） */
+    private fun enterFullscreen() {
+        if (!inlineMode) return
+        inlineExpanded = true
+        applyPlayerLayout()
+    }
+
+    /** 全屏返回：收回详情页顶部内嵌继续播（进度保留） */
+    private fun shrinkToInline() {
+        if (!inlineMode) return
+        inlineExpanded = false
+        applyPlayerLayout()
+    }
+
     private fun closeVideo() {
         if (casting) stopCast(false)   // 关播放器：电视端也要停，但不切回本地
         saveHisPosition()
@@ -1614,6 +1852,19 @@ class VideoActivity : AppCompatActivity() {
         player?.stop()
         overlay.visibility = View.GONE
         clockHandler.removeCallbacks(clockTick)
+        // 内嵌态关播放器：复位内嵌标志 + 详情页顶部占位 + 播放层尺寸，避免下次起播残留内嵌尺寸
+        if (inlineMode) {
+            inlineMode = false
+            inlineExpanded = false
+            fullBtn.visibility = View.GONE
+            safeEval("if(window.__setInlineSpace)__setInlineSpace(0)")
+            val lp = overlay.layoutParams as FrameLayout.LayoutParams
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = Gravity.NO_GRAVITY
+            lp.setMargins(0, 0, 0, 0)
+            overlay.layoutParams = lp
+        }
         // 小窗状态下关播放器：先把播放层尺寸恢复整屏，否则下次起播会带着小窗尺寸
         if (miniMode) {
             miniMode = false
@@ -1648,7 +1899,8 @@ class VideoActivity : AppCompatActivity() {
      *  控制条自动隐藏（持续播放几秒后）时二者一并隐藏，点屏幕唤出控制条即重新出现，
      *  与暂停/快进按钮保持一致。 */
     private fun updatePipButton() {
-        val show = !miniMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        // 内嵌态下不显示小窗按钮（避免与内嵌布局冲突，全屏按钮已够用）
+        val show = !miniMode && !inlineMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
         videoPip.visibility = if (show) View.VISIBLE else View.GONE
         // 标题跟小窗按钮完全同条件；尚未起播（标题为空）时不占位
         videoTitle.visibility = if (show && curVideoTitle.isNotBlank()) View.VISIBLE else View.GONE

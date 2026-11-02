@@ -394,6 +394,20 @@
                                     android:textSize="13sp"
                                     android:textColor="#FFFFFF"/>
 
+                                <TextView
+                                    android:id="@+id/poemExplainBtn"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:background="@drawable/bg_pill_glass"
+                                    android:paddingStart="14dp"
+                                    android:paddingEnd="14dp"
+                                    android:paddingTop="7dp"
+                                    android:paddingBottom="7dp"
+                                    android:text="显示解释"
+                                    android:textSize="13sp"
+                                    android:textColor="#FFFFFF"/>
+
                                 <View
                                     android:layout_width="0dp"
                                     android:layout_height="1dp"

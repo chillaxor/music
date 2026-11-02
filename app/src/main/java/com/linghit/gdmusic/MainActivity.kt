@@ -136,9 +136,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var poemTranslate: TextView
     private lateinit var poemShareBtn: TextView
     private lateinit var poemFavBtn: TextView
+    private lateinit var poemExplainBtn: TextView
     private lateinit var poemCollapseBtn: TextView
     private var poemData: Poem? = null
     private var poemExpanded = false
+    private var poemExplainShown = false   // 译文是否展开（默认收起，由「显示解释」按钮控制）
     private var poemLoading = false
     // —— 搜索页签「今日榜单」（网易云官方榜 · 发现层；点卡片=自动搜索，下方可播放/下载）——
     private lateinit var chartSection: View
@@ -795,6 +797,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         poemTranslate = findViewById(R.id.poemTranslate)
         poemShareBtn = findViewById(R.id.poemShareBtn)
         poemFavBtn = findViewById(R.id.poemFavBtn)
+        poemExplainBtn = findViewById(R.id.poemExplainBtn)
         poemCollapseBtn = findViewById(R.id.poemCollapseBtn)
 
         // 没诗时点卡片=重试；有诗时点卡片=展开/收起
@@ -821,6 +824,17 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val on = PoemStore.toggleFav(this, p.id)
             renderPoem(p)
             Toast.makeText(this, if (on) "已收藏" else "已取消收藏", Toast.LENGTH_SHORT).show()
+        }
+        // 显示解释：切换译文显隐；无译文时提示并保持不变
+        poemExplainBtn.setOnClickListener {
+            val p = poemData ?: return@setOnClickListener
+            if (p.translate.isEmpty()) {
+                Toast.makeText(this, "这首诗暂无译文", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            poemExplainShown = !poemExplainShown
+            poemTranslate.visibility = if (poemExplainShown) View.VISIBLE else View.GONE
+            poemExplainBtn.text = if (poemExplainShown) "隐藏解释" else "显示解释"
         }
 
         poemExpanded = PoemStore.isDefaultExpanded(this)
@@ -864,7 +878,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun applyPoem(p: Poem) {
         val isNew = poemData?.id != p.id
         poemData = p
-        if (isNew) poemExpanded = PoemStore.isDefaultExpanded(this)
+        if (isNew) {
+            poemExpanded = PoemStore.isDefaultExpanded(this)
+            poemExplainShown = false   // 换诗后译文重新收起
+        }
         renderPoem(p)
     }
 
@@ -876,7 +893,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         poemLines.text = if (p.lines.isNotEmpty()) p.lines.joinToString("\n") else p.quote
         val tr = if (p.translate.isEmpty()) "" else p.translate.joinToString("\n")
         poemTranslate.text = tr
-        poemTranslate.visibility = if (tr.isBlank()) View.GONE else View.VISIBLE
+        // 译文默认收起，由「显示解释」按钮控制；无译文则隐藏该按钮
+        poemTranslate.visibility = if (poemExplainShown && tr.isNotBlank()) View.VISIBLE else View.GONE
+        poemExplainBtn.visibility = if (tr.isBlank()) View.GONE else View.VISIBLE
+        poemExplainBtn.text = if (poemExplainShown) "隐藏解释" else "显示解释"
         val faved = p.id.isNotBlank() && PoemStore.favIds(this).contains(p.id)
         poemFavBtn.text = if (faved) "取消收藏" else "收藏此诗"
         setPoemExpanded(poemExpanded)

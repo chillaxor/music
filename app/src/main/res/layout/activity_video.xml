@@ -41,6 +41,23 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
+        <!-- 内嵌态全屏切换按钮：内嵌在详情页顶部时点它铺满横屏；全屏时点它收回到详情页顶部继续播。
+             用矢量图标替换原来的 ⤢/⤡ 文字，配玻璃圆角底，兼顾美观与点击区域。 -->
+        <ImageButton
+            android:id="@+id/videoFull"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="48dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_pill_glass"
+            android:scaleType="fitCenter"
+            android:padding="9dp"
+            android:src="@drawable/ic_fullscreen"
+            android:tint="#FFFFFF"
+            android:contentDescription="全屏切换"
+            android:visibility="gone" />
+
         <!-- 顶部居中：视频标题（片名 · 线路 · 集名）。
              显隐逻辑与左上角小窗按钮一致：播放中 + 控制条可见才显示，
              控制条自动隐藏/暂停/进小窗/进系统PiP 时一并隐藏（见 updatePipButton）。
@@ -82,8 +99,11 @@
             android:textStyle="bold"
             android:textColor="#ffffff" />
 
-        <!-- 右侧中部：上一集 / 下一集 -->
+        <!-- 右侧中部：上一集 / 下一集。
+             内嵌态（详情页顶部短条）时由 VideoActivity 动态改成 bottom|end 下沉，
+             避开顶部右侧的全屏切换按钮，避免误触；全屏态保持 center_vertical|end。 -->
         <LinearLayout
+            android:id="@+id/videoSideBtns"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_vertical|end"
@@ -155,6 +175,38 @@
             android:paddingTop="10dp"
             android:paddingBottom="10dp"
             android:text="☀ 100%"
+            android:textSize="15sp"
+            android:textColor="#ffffff"
+            android:visibility="gone" />
+
+        <!-- 右侧上下滑动调音量时显示的指示器 -->
+        <TextView
+            android:id="@+id/videoVolume"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#99000000"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="🔊 100%"
+            android:textSize="15sp"
+            android:textColor="#ffffff"
+            android:visibility="gone" />
+
+        <!-- 长按屏幕（按住不动）3 倍速播放时显示的指示器：背景改为极淡透明，弱化存在感 -->
+        <TextView
+            android:id="@+id/videoSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#33000000"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="⏩ 3.0x"
             android:textSize="15sp"
             android:textColor="#ffffff"
             android:visibility="gone" />

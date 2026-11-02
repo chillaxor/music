@@ -71,7 +71,8 @@
   .vcard2 .ph{width:100%;aspect-ratio:2/3;background:linear-gradient(135deg,#2a2d35,#34373f);
     display:flex;align-items:center;justify-content:center;color:#555;font-size:24px}
   .vcard2 .meta{padding:7px 9px}
-  .vcard2 .nm{font-size:13.5px;line-height:1.32;height:3.96em;overflow:hidden;color:var(--txt);font-weight:600}
+  /* 搜索结果标题：去固定高度裁切，有多少字显示多少字（用户需求） */
+  .vcard2 .nm{font-size:13.5px;line-height:1.32;color:var(--txt);font-weight:600;word-break:break-word}
   .vcard2 .yr{font-size:11px;color:var(--sub);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .vcard2 .rm{font-size:11.5px;color:var(--accent2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 状态条 */
@@ -102,12 +103,10 @@
   .epblock .from small{color:var(--sub);font-weight:400;font-size:11.5px;margin-left:6px}
   .eps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   @media(min-width:560px){.eps{grid-template-columns:repeat(5,1fr)}}
-  /* 集按钮：最多 2 行显示全。以前 nowrap+ellipsis 会把「20261021」这种
-     长集名截成「20261…」，改成两行截断 + 数字/英文可断词，长短集名都看得全 */
+  /* 集按钮：去两行截断，有多少字显示多少字（用户需求） */
   .ep{padding:10px 4px;border-radius:8px;background:var(--card2);border:1px solid var(--line);
-    text-align:center;font-size:13px;line-height:1.25;color:var(--txt);cursor:pointer;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-    overflow:hidden;word-break:break-all;min-height:2.5em}
+    text-align:center;font-size:13px;line-height:1.3;color:var(--txt);cursor:pointer;
+    word-break:break-all;min-height:2.5em}
   .ep:active{background:var(--accent);color:#fff}
   /* 正在播放的这一集：主题色实底 + 白字 + 加粗，一眼能看到看到哪了 */
   .ep.on{background:var(--accent);color:#fff;font-weight:700;border-color:var(--accent)}
@@ -207,6 +206,9 @@
   <div id="sheet" class="sheet">
     <div class="mask" onclick="closeSheet()"></div>
     <div class="panel">
+      <!-- 内嵌播放器占位：原生在详情页顶部 docking 一个播放器时，这里撑出等高的空白，
+           让海报/标题/选集都落到播放器下方，不被挡住。高度由 __setInlineSpace 设置。 -->
+      <div id="dPlayerSpace"></div>
       <div class="closeX" onclick="closeSheet()">✕</div>
       <div class="phead">
         <div id="dPic" class="ph">🎬</div>
@@ -261,6 +263,10 @@ var STATE={
   playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:'',
   playVodId:''              // 正在播放的片子 vod_id，选集页用它高亮「正在播放」的集
 };
+/* 进入详情是否自动起播第一集（内嵌在详情页顶部，非全屏）。
+ * 仅「打开详情」时置 true；恢复播放前那一页（__restoreAfterPlay）、点选集重画等
+ * 场景置 false，避免重复起播/回详情时又被从头播放。 */
+var AUTO_PLAY=false;
 var CB={}; var CBID=1;
 window.__videoCb=function(id,ok,b64,code){
   var f=CB[id]; if(!f)return; delete CB[id];
@@ -371,6 +377,7 @@ window.__restoreAfterPlay=function(){
     }
     if(STATE.detail && !$('sheet').classList.contains('show')){
       console.log('restoreAfterPlay: 恢复详情弹窗 '+(STATE.detail.vod_name||''));
+      AUTO_PLAY=false;       // 恢复页面不要重新从头起播，保留当前进度/选集
       renderDetail(STATE.detail, STATE.detailSite||null, STATE.detailSpider||null);
     }
   }catch(e){ console.log('restoreAfterPlay err: '+e); }
@@ -386,6 +393,15 @@ window.__onMiniChange=function(on){
 function isSpiderSite(site){
   return !!(site&&site.api&&String(site.api).indexOf('csp_')===0);
 }
+/** 原生内嵌播放器占位的高度（px）。h>0 时详情页顶部腾出等高空白给原生播放器；
+ *  h<=0 时复位为 0（全屏播放或被关掉）。 */
+function __setInlineSpace(h){
+  try{
+    var el=document.getElementById('dPlayerSpace');
+    if(el) el.style.height=(h>0?h+'px':'0px');
+  }catch(e){}
+}
+window.__setInlineSpace=__setInlineSpace;
 /**
  * 兜底名单：下列爬虫源（api 去掉 csp_ 前缀）若出现在订阅里，直接从搜索跳过。
  * 说明：「go代理启动失败」弹窗的根因已在引擎层解决——SpiderEngine 不再调用 jar 的
@@ -1026,6 +1042,7 @@ async function openDetailAt(id,site){
   if(!r.ok){setState('详情加载失败');return;}
   var v; try{v=(JSON.parse(r.text).list||[])[0];}catch(e){}
   if(!v){setState('未获取到详情');return;}
+  AUTO_PLAY=true;            // 打开直连站详情 → 自动起播第一集（内嵌）
   renderDetail(v,site,null);
 }
 /** 爬虫源详情：走 Spider 桥拿标准 CatVod 详情 JSON */
@@ -1035,6 +1052,7 @@ async function openSpiderDetail(v){
   var txt=await spiderDetail(t,v.vod_id);
   var d=null; try{d=(JSON.parse(txt).list||[])[0];}catch(e){}
   if(!d){setState('详情加载失败');return;}
+  AUTO_PLAY=true;            // 打开爬虫源详情 → 自动起播第一集（内嵌）
   renderDetail(d,null,t);
 }
 /** 详情渲染（直连站与爬虫源共用） */
@@ -1053,6 +1071,13 @@ function renderDetail(v,site,spiderT){
   console.log('renderDetail:',v.vod_name,'| 线路',parsePlay(v).length,'组'+(spiderT?'（爬虫源）':''));
   $('sheet').classList.add('show');
   setState('');
+  // 进入详情自动起播第一集（内嵌在详情页顶部，竖屏继续浏览选集）。
+  // 仅 AUTO_PLAY 为真时触发一次：打开一个新详情会置 true，恢复页面/重画则置 false。
+  if(AUTO_PLAY){
+    AUTO_PLAY=false;
+    var g0=parsePlay(v);
+    if(g0.length && g0[0].eps.length){ playEp(g0[0].from, g0[0].eps, 0); }
+  }
 }
 function parsePlay(v){
   // MacCMS 标准：vod_play_from 与 vod_play_url 都用 $$$ 分隔线路；
@@ -1272,11 +1297,11 @@ window.__resumeHistory=function(b64){
         }
       }catch(err){ console.log('resume 直连: 异常 '+(err&&err.message)); }
     }
-    // 兜底：直接播存的直链
-    if(window.Android&&Android.playVideo&&d.url){
+    // 兜底：直接播存的直链（历史续播走经典全屏，不进内嵌）
+    if(window.Android&&Android.playVideoFull&&d.url){
       var meta=JSON.stringify({key:d.key||'',pic:d.pic||'',epName:d.epName||'',
         vodId:d.vodId||'',siteApi:d.siteApi||'',from:d.from||''});
-      Android.playVideo(d.url,d.title||'','',d.epsJson||'[]',d.epIdx||0,'',meta);
+      Android.playVideoFull(d.url,d.title||'','',d.epsJson||'[]',d.epIdx||0,'',meta);
     } else {
       toast('续播失败：请回列表重新选择');
     }
