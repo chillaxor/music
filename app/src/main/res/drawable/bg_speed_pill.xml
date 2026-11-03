@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- 极淡透明黑底，与原指示器观感一致；大圆角实现 pill（胶囊）形态 -->
+    <solid android:color="#33000000"/>
+    <corners android:radius="999dp"/>
+</shape>

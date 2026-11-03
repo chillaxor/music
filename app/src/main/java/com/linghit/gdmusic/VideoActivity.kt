@@ -35,6 +35,8 @@ import android.widget.TextView
 import android.widget.Toast
 import android.view.Gravity
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.media.AudioManager
 import kotlin.math.abs
 import androidx.activity.OnBackPressedCallback
@@ -176,6 +178,18 @@ class VideoActivity : AppCompatActivity() {
     private var longPressTimer: android.os.CountDownTimer? = null
     /** 按下后多久（毫秒）判定为「长按」——短于它视为轻点 */
     private val LP_TRIGGER_MS = 450L
+
+    // ===================== 耳机断开 = 暂停本地视频 =====================
+    /** 监听 ACTION_AUDIO_BECOMING_NOISY：拔出/关掉有线耳机或断开蓝牙音频设备时，
+     *  系统把音频路由切回扬声器并广播此意图。此时暂停本地播放器，避免外放泄露。
+     *  App 进程级广播已覆盖音乐与悬浮窗视频，这里补上「本页前台播放」这一路。 */
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            // 投屏中（画面在电视上）不暂停本地——手机此时只是遥控，本来就没出声
+            runCatching { if (!casting) player?.pause() }
+        }
+    }
 
     // ===================== 片头 / 片尾跳过（按影片详情维度） =====================
     /**
@@ -400,6 +414,11 @@ class VideoActivity : AppCompatActivity() {
             Log.d("VidPlay", "控制条可见=$controlsVisible 播放中=${player?.isPlaying}")
             updatePipButton()
         })
+
+        // 耳机断开暂停本地视频（与 App 全局广播互补，覆盖本页前台播放场景）
+        runCatching {
+            registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        }
 
         // 播放层手势统一在 setupPlayGestures 里注册：
         //  左侧上下滑 = 调亮度 / 左右拖动 = 快进后退 / 轻点 = 切换控制条显隐。
@@ -1281,7 +1300,7 @@ class VideoActivity : AppCompatActivity() {
                                 androidx.media3.common.PlaybackParameters(3f, p.playbackParameters.pitch)
                             )
                             speedInd.visibility = View.VISIBLE
-                            speedInd.text = "⏩ 3.0x"
+                            speedInd.text = "3.0×"
                         }
                     }.apply { start() }
                     takeOver // 消费 DOWN 才能稳定收到后续 MOVE/UP
@@ -2379,6 +2398,7 @@ class VideoActivity : AppCompatActivity() {
         clockHandler.removeCallbacks(clockTick)
         hisHandler.removeCallbacks(hisTick)
         mainHandler.removeCallbacksAndMessages(null)
+        runCatching { unregisterReceiver(noisyReceiver) }
         if (VideoFloatState.running) {
             // 悬浮窗还在播：播放器已归服务所有，这里绝不能 release（否则浮层立刻黑掉）
             player = null

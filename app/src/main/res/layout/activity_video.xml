@@ -194,18 +194,18 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
-        <!-- 长按屏幕（按住不动）3 倍速播放时显示的指示器：背景改为极淡透明，弱化存在感 -->
+        <!-- 长按屏幕（按住不动）3 倍速播放时显示的指示器：胶囊 pill 背景，弱化存在感 -->
         <TextView
             android:id="@+id/videoSpeed"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:background="#33000000"
+            android:background="@drawable/bg_speed_pill"
             android:paddingStart="18dp"
             android:paddingEnd="18dp"
             android:paddingTop="10dp"
             android:paddingBottom="10dp"
-            android:text="⏩ 3.0x"
+            android:text="3.0×"
             android:textSize="15sp"
             android:textColor="#ffffff"
             android:visibility="gone" />

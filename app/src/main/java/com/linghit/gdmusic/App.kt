@@ -2,7 +2,12 @@ package com.linghit.gdmusic
 
 import android.app.Activity
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.media.AudioManager
 import android.os.Bundle
 
 /**
@@ -15,6 +20,22 @@ import android.os.Bundle
  */
 class App : Application() {
 
+    /**
+     * 耳机/蓝牙断开广播：拔出有线耳机或关掉蓝牙音频设备时，系统会把音频路由切回扬声器
+     * 并广播 [AudioManager.ACTION_AUDIO_BECOMING_NOISY]。此时主动暂停音乐与悬浮窗视频，
+     * 避免外放把正在听的内容泄露出去（用户明确要求「关掉耳机就停」）。
+     * 在 Application 进程级注册，保证后台/息屏状态也能收到。
+     */
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            // 音乐：暂停并撤掉前台通知（保留播放器实例，下次点播可续）
+            runCatching { PlayerManager.stop() }
+            // 悬浮窗视频：本地播放器实例还在，直接暂停
+            if (VideoFloatState.running) runCatching { VideoFloatState.player?.pause() }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // 桌面歌词控制器原来只在 MainActivity.onCreate 里 init，导致「冷启动直接进
@@ -22,6 +43,13 @@ class App : Application() {
         // 未初始化，一读 enabled 就 UninitializedPropertyAccessException 崩。
         // Application 早于所有 Activity，放这里最稳，任何入口进来都已就绪。
         DesktopLyric.init(this)
+        // 注册「耳机断开 = 停播」监听（进程级，息屏/后台也生效）
+        runCatching {
+            registerReceiver(
+                becomingNoisyReceiver,
+                IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            )
+        }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(a: Activity, b: Bundle?) {
                 ImportOverlay.attach(a)
