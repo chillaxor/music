@@ -139,6 +139,16 @@ class VideoActivity : AppCompatActivity() {
     private var inlineExpanded = false
     /** 内嵌播放器高度（dp），同时作为详情页顶部占位高度（CSS px ≈ dp）。 */
     private val INLINE_HEIGHT_DP = 230
+    /**
+     * 当前是否处于「紧凑内嵌短条」形态：播放器缩在详情页顶部（未展开全屏）。
+     *
+     * ⚠️ 别再用 inlineMode 当「隐藏小窗按钮」的条件 —— inlineMode 只表示「本次播放是从
+     * 详情页内嵌起的」，展开成横屏全屏后它仍是 true，但那时布局已经和经典全屏一模一样，
+     * 把按钮藏掉就出现了「影视播放时小窗按钮不见了」的回归。
+     * 真正要区分的是「紧凑短条」还是「已展开全屏」，所以用这个派生属性。
+     */
+    private val isCompactInline: Boolean
+        get() = inlineMode && !inlineExpanded
     /** 是否正在双指捏合缩放 */
     private var pinching = false
     /** 捏合起始两指间距 */
@@ -1788,7 +1798,7 @@ class VideoActivity : AppCompatActivity() {
                 fullBtn.setImageResource(R.drawable.ic_fullscreen)   // 展开全屏
                 positionSideBtns(true)
                 safeEval("if(window.__setInlineSpace)__setInlineSpace($INLINE_HEIGHT_DP)")
-                videoPip.visibility = View.GONE  // 内嵌态不显示小窗按钮，避免布局冲突
+                // 不在这里手动藏小窗按钮：显隐统一交给 updatePipButton（见方法注释）
             }
             inlineExpanded -> {
                 // 内嵌态下展开成横屏全屏：铺满、沉浸、隐藏系统栏
@@ -1819,6 +1829,8 @@ class VideoActivity : AppCompatActivity() {
                 positionSideBtns(false)
             }
         }
+        // 布局切换后同步小窗按钮 / 标题的显隐
+        updatePipButton()
     }
 
     /**
@@ -1916,13 +1928,20 @@ class VideoActivity : AppCompatActivity() {
 
     /** 小窗按钮 + 视频标题：仅在「未进小窗 + 正在播放 + 控制条可见」时显示。
      *  控制条自动隐藏（持续播放几秒后）时二者一并隐藏，点屏幕唤出控制条即重新出现，
-     *  与暂停/快进按钮保持一致。 */
+     *  与暂停/快进按钮保持一致。
+     *
+     *  ⚠️ 这里不能再拿 inlineMode 当隐藏条件：详情页起播默认就是内嵌态（inlineMode=true），
+     *  用它一刀切会把「小窗按钮」整个藏掉 —— 这就是「影视播放时小窗按钮不见了」的根因。
+     *  真正要区分的是「紧凑短条」还是「已展开全屏」，所以用 isCompactInline。 */
     private fun updatePipButton() {
-        // 内嵌态下不显示小窗按钮（避免与内嵌布局冲突，全屏按钮已够用）
-        val show = !miniMode && !inlineMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        // 小窗 / 系统 PiP / 投屏 / 暂停 / 控制条隐藏时，小窗按钮与标题都不显示
+        val show = !miniMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        // 小窗按钮：所有形态都显示（含紧凑短条）—— 顶部左侧是空的，不挡任何东西。
         videoPip.visibility = if (show) View.VISIBLE else View.GONE
-        // 标题跟小窗按钮完全同条件；尚未起播（标题为空）时不占位
-        videoTitle.visibility = if (show && curVideoTitle.isNotBlank()) View.VISIBLE else View.GONE
+        // 标题只在「非紧凑短条」时显示：紧凑短条里标题居中（maxWidth 300dp）会与小窗按钮撞上，
+        // 而详情页下方本来就有片名，藏掉不亏；尚未起播（标题为空）时也不占位。
+        videoTitle.visibility =
+            if (show && !isCompactInline && curVideoTitle.isNotBlank()) View.VISIBLE else View.GONE
     }
 
     // ===================== App 内小窗（悬浮小播放器） =====================
@@ -1958,9 +1977,23 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 从「内嵌短条」形态进小窗/悬浮窗前调用：把详情页顶部给原生播放器腾的占位撤掉。
+     * 否则原生播放器已经不在那个位置了，详情页顶部会留一条 230px 空白。
+     * 顺带复位 inlineMode，让后续按「经典全屏」处理（横屏铺满）。
+     */
+    private fun clearInlineDock() {
+        if (!inlineMode) return
+        inlineMode = false
+        inlineExpanded = false
+        fullBtn.visibility = View.GONE
+        safeEval("if(window.__setInlineSpace)__setInlineSpace(0)")
+    }
+
     /** 交给系统悬浮窗播放：同一个 player 实例挂到浮层上，不重新缓冲 */
     private fun startFloat() {
         val p = player ?: return
+        clearInlineDock()                 // 撤掉详情页顶部占位，别留空白
         VideoFloatState.player = p
         playerView.player = null            // 先摘下来，交给浮层
         videoPip.visibility = View.GONE
@@ -2028,6 +2061,7 @@ class VideoActivity : AppCompatActivity() {
     private fun enterMini() {
         if (miniMode) return
         miniMode = true
+        clearInlineDock()                 // 撤掉详情页顶部占位，别留空白
         miniUserMoved = false   // 每次进小窗回到默认右下角；拖动后不再被转屏/换清晰度弹回
         miniScale = 1.0f        // 每次进小窗回到默认大小，缩放从 1.0 重新开始
         // 先缩窗口再转竖屏，避免全屏播放器在竖屏下闪一下
@@ -2293,7 +2327,8 @@ class VideoActivity : AppCompatActivity() {
         videoNext.visibility = if (miniMode) View.GONE else v
         // 标题与 updatePipButton 同条件（这行兜住 PiP 退出/小窗恢复两条路径的瞬间状态）
         videoTitle.visibility =
-            if (miniMode || curVideoTitle.isBlank() || !controlsVisible || player?.isPlaying != true) View.GONE else v
+            if (miniMode || isCompactInline || curVideoTitle.isBlank() || !controlsVisible ||
+                player?.isPlaying != true) View.GONE else v
         // PlayerView 自带的播放控制条也隐藏：系统小窗只几寸大，控制条会糊满画面；
         // 退出小窗恢复（useController 切换会重建 SubtitleView 等子视图，必须主线程）
         playerView.useController = !isInPictureInPictureMode && !miniMode
