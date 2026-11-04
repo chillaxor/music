@@ -84,6 +84,16 @@
   .year-sum .up{color:var(--profit);font-weight:600}
   .year-sum .down{color:var(--loss);font-weight:600}
   .year-sum .muted{color:var(--sub)}
+  /* 搜索/筛选：默认收起，点这条折叠条展开下面的控件网格 */
+  .filter-toggle{display:flex;align-items:center;gap:6px;width:100%;height:30px;
+    padding:0 10px;margin-bottom:7px;border:1px dashed var(--line);border-radius:8px;
+    background:transparent;color:var(--sub);font-size:12px;font-family:inherit;cursor:pointer;
+    text-align:left;-webkit-tap-highlight-color:transparent}
+  .filter-toggle:hover{border-color:var(--accent);color:var(--accent)}
+  .filter-toggle.has-filter{border-style:solid;border-color:var(--accent);color:var(--accent)}
+  .filter-toggle .ft-badge{font-size:10.5px;color:var(--accent)}
+  .filter-toggle .ft-arrow{margin-left:auto;font-size:14px;line-height:1;transition:transform .15s}
+  .filter-toggle.open .ft-arrow{transform:rotate(180deg)}
   /* 流水明细筛选：4 列 × 2 行紧凑网格，控件等高，去掉分散的独立标签行 */
   .flow-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:7px}
   .flow-filter input,.flow-filter select,.flow-filter .btn{
@@ -202,10 +212,10 @@
   .view{display:none}
   .view.active{display:block;animation:viewIn .18s ease}
   @keyframes viewIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
-  /* 顶部收支汇总：一整条圆角指标带（尺寸约为原来 2×2 的一半），4 指标竖线分隔 + 顶部语义色条 */
-  .flowsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-bottom:7px;
-    background:var(--card);border:1px solid var(--line);border-radius:12px;
-    box-shadow:var(--shadow);overflow:hidden}
+  /* 顶部收支汇总 + 支出拆分：同一个圆角容器里的上下两段，避免两块白卡叠在一起 */
+  .flow-overview{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:12px}
+  .flowsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
   .flowsum .card{position:relative;min-width:0;padding:10px 7px 9px;
     background:transparent;border:none;border-right:1px solid var(--line);
     border-radius:0;box-shadow:none}
@@ -218,7 +228,12 @@
     line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .flowsum .card .val{font-size:14px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sum-note{font-size:10px;color:var(--sub);margin:0 0 10px;line-height:1.4}
+  /* 支出拆分贴在指标带下方，用一条细线分隔 */
+  .who-inline{border-top:1px solid var(--line);padding:8px 10px 10px}
+  .who-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin-bottom:7px;font-size:11px;color:var(--sub)}
+  .who-clear{border:1px solid var(--accent);background:var(--card);color:var(--accent);
+    border-radius:999px;padding:2px 9px;font-size:11px;cursor:pointer;font-family:inherit}
   .seg{display:flex;gap:6px;margin-bottom:12px;background:var(--line);border-radius:10px;padding:4px}
   .seg-btn{flex:1;border:none;background:transparent;color:var(--sub);font-size:14px;
     font-weight:600;padding:7px 0;border-radius:7px;cursor:pointer;transition:all .12s ease}
@@ -239,17 +254,19 @@
   .break-row .bnet{font-weight:700;text-align:right}
   .break-row .bnet.neg{color:var(--loss)}
   .break-row .bnet.pos{color:var(--profit)}
-  /* ===== 支出拆分：按谁花（可点钻取） ===== */
-  .who-break{display:flex;flex-direction:column;gap:6px;margin-top:4px}
-  .who-row{display:grid;grid-template-columns:64px 1fr 84px 48px;gap:8px;align-items:center;
-    padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+  /* ===== 支出拆分：按谁花（可点钻取）—— 与指标带同卡的一行标签 ===== */
+  .who-break{display:flex;flex-wrap:wrap;gap:6px}
+  .who-row{display:inline-flex;align-items:center;gap:6px;min-width:0;
+    padding:5px 9px;border:1px solid var(--line);border-radius:999px;
+    background:var(--bg);cursor:pointer;font-size:11.5px;line-height:1.3;
+    transition:border-color .12s,background .12s}
   .who-row:hover{border-color:var(--accent)}
-  .who-row.who-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-  .who-name{font-weight:700;font-size:14px}
-  .who-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;min-width:20px}
-  .who-bar-fill{display:block;height:100%;background:var(--accent);border-radius:4px}
-  .who-amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
-  .who-pct{text-align:right;color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+  .who-row.who-on{border-color:var(--accent);background:var(--card);box-shadow:0 0 0 1px var(--accent) inset}
+  .who-name{font-weight:600;white-space:nowrap}
+  .who-bar{flex:0 0 30px;width:30px;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+  .who-bar-fill{display:block;height:100%;background:var(--accent);border-radius:2px}
+  .who-amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .who-pct{color:var(--sub);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
   /* ===== 每日情况：入口卡 + 弹窗 ===== */
   .daily-entry{display:flex;align-items:center;justify-content:space-between;gap:8px;
     padding:14px 16px;border:1px dashed var(--accent);border-radius:12px;background:var(--card);cursor:pointer;color:var(--accent);font-weight:600}
@@ -596,20 +613,22 @@
       <button class="seg-btn" data-range="year">年</button>
     </div>
     <div class="range-pick" id="rangePick"></div>
-    <div class="flowsum">
-      <div class="card"><div class="lbl" id="lblIncome">收入</div><div class="val" id="flowIncome" style="color:var(--profit)">¥0</div></div>
-      <div class="card"><div class="lbl" id="lblSpend">支出</div><div class="val" id="flowSpend" style="color:var(--loss)">¥0</div></div>
-      <div class="card"><div class="lbl" id="lblTransfer">转账</div><div class="val" id="flowTransfer">¥0</div></div>
-      <div class="card"><div class="lbl" id="lblNet">净额</div><div class="val" id="flowNet" style="color:var(--accent)">¥0</div></div>
-    </div>
-    <div class="sum-note" id="sumNote"></div>
-    <div class="section">
-      <h2>支出拆分 <button id="whoClearBtn" class="cal-jump" title="取消按对象筛选" style="display:none">✕ 取消筛选</button></h2>
-      <div class="who-break" id="whoBreak"></div>
+    <div class="flow-overview">
+      <div class="flowsum">
+        <div class="card"><div class="lbl" id="lblIncome">收入</div><div class="val" id="flowIncome" style="color:var(--profit)">¥0</div></div>
+        <div class="card"><div class="lbl" id="lblSpend">支出</div><div class="val" id="flowSpend" style="color:var(--loss)">¥0</div></div>
+        <div class="card"><div class="lbl" id="lblTransfer">转账</div><div class="val" id="flowTransfer">¥0</div></div>
+        <div class="card"><div class="lbl" id="lblNet">净额</div><div class="val" id="flowNet" style="color:var(--accent)">¥0</div></div>
+      </div>
+      <div class="who-inline">
+        <div class="who-head"><span>支出拆分 · 按谁花</span><button id="whoClearBtn" class="who-clear" title="取消按对象筛选" style="display:none">✕ 取消筛选</button></div>
+        <div class="who-break" id="whoBreak"></div>
+      </div>
     </div>
     <div class="section">
       <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="按日历看流水">📅 日历视图</button><button id="dailyBtn" class="cal-jump" data-daily-entry="1" title="看每天/每月明细">每日情况</button><button id="exportFlowBtn" class="cal-jump" title="导出流水 JSON">导出流水</button><button id="importFlowBtn" class="cal-jump" title="导入流水 JSON">导入流水</button><input type="file" id="importFlowFile" accept="application/json" style="display:none"></h2>
-      <div class="flow-filter">
+      <button class="filter-toggle" id="filterToggle" aria-expanded="false">🔍 搜索 / 筛选<span class="ft-badge" id="filterBadge"></span><span class="ft-arrow">⌄</span></button>
+      <div class="flow-filter" id="flowFilter" style="display:none">
         <input id="flowSearch" placeholder="搜索…">
         <select id="filterType">
           <option value="">全部类型</option>
@@ -1235,10 +1254,9 @@ function flowPass(f){
 function renderFlowList(){
   const list=document.getElementById("flowList");
   if(!list)return;
-  const tip=document.getElementById("filterTip");
   if(!data.flows.length){
     list.innerHTML='<div class="empty">还没有流水，记一笔试试</div>';
-    if(tip)tip.textContent="";
+    syncFilterUI(0,0);
     renderFlowSummary();
     renderFlowBreak();
     renderWhoBreak();
@@ -1249,10 +1267,8 @@ function renderFlowList(){
   data.flows.forEach((f,i)=>{if(inRange(f,rv)&&flowPass(f))rows.push([f,i]);});
   if(flowFilter.sort==="amt_desc")rows.sort((a,b)=>pnum(b[0].amount)-pnum(a[0].amount));
   else if(flowFilter.sort==="amt_asc")rows.sort((a,b)=>pnum(a[0].amount)-pnum(b[0].amount));
-  if(tip){
-    const total=data.flows.filter(f=>inRange(f,rv)).length;
-    tip.innerHTML=hasFilter()?("筛选出 <b>"+rows.length+"</b> / "+total+" 条"):"共 <b>"+total+"</b> 条流水";
-  }
+  const total=data.flows.filter(f=>inRange(f,rv)).length;
+  syncFilterUI(rows.length,total);
   // 顶部收支卡片 + 底部按日汇总同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary/renderFlowBreak）
   renderFlowSummary();
   renderFlowBreak();
@@ -1344,7 +1360,6 @@ function renderRangePick(){
 function renderFlowSummary(){
   const rv=getRangeValue();
   // 始终限制在当前日/月/年范围内，再叠加筛选条件；筛选不再跨月
-  const filtering=hasFilter();
   let spend=0,income=0,transfer=0;
   data.flows.forEach(f=>{
     if(!inRange(f,rv))return;
@@ -1363,13 +1378,11 @@ function renderFlowSummary(){
   if(i)i.textContent=fmt(income);
   if(t)t.textContent=fmt(transfer);
   if(n)n.textContent=(income-spend>=0?"+":"")+fmt(income-spend);
-  // 4 张小卡只放短标签；期间由上方日期选择器显示，口径说明放到卡片下方一行
+  // 4 张小卡只放短标签；期间由上方日期选择器显示，卡片下方不再放口径说明
   if(ls)ls.textContent="支出";
   if(li)li.textContent="收入";
   if(lt)lt.textContent="转账";
   if(ln)ln.textContent="净额";
-  const sn=document.getElementById("sumNote");
-  if(sn)sn.textContent=(flowRange==="year"?rv+" 年":rv)+" · 支出为纯消费；转账（还卡/买金/互转）不计收支；净额＝收入−支出"+(filtering?" · 当前为筛选后":"");
 }
 function renderFlowBreak(){
   const box=document.getElementById("flowBreak");
@@ -1437,7 +1450,9 @@ function drillWho(val){
   flowFilter.who = (flowFilter.who===val) ? "" : val;
   const wo=document.getElementById("filterWho"); if(wo)wo.value=flowFilter.who;
   renderFlowList();
-  if(flowFilter.who){ const fl=document.getElementById("flowList"); if(fl)fl.scrollIntoView({behavior:"smooth",block:"start"}); }
+  // 钻取后自动展开搜索面板，让用户看得见刚生效的筛选条件
+  setFilterOpen(true);
+  if(flowFilter.who){ const ft=document.getElementById("filterToggle"); if(ft)ft.scrollIntoView({behavior:"smooth",block:"start"}); }
 }
 // ===== 每日情况弹窗 =====
 function openDailyModal(){
@@ -1591,11 +1606,33 @@ document.addEventListener("click",e=>{
   else if(t.dataset.del==="liab"){data.liabs.splice(+t.dataset.i,1);editMode.liab={};save();renderLiabs();}
   else if(t.closest){const c=t.closest("[data-collapse]");if(c){const k=c.dataset.collapse;collapsed[k]=!collapsed[k];saveCollapse();c.closest(".section").classList.toggle("collapsed",collapsed[k]);}}
 });
+// —— 搜索/筛选折叠条：默认收起，点开才显示控件网格 ——
+function setFilterOpen(open){
+  const box=document.getElementById("flowFilter"),btn=document.getElementById("filterToggle");
+  if(box)box.style.display=open?"grid":"none";
+  if(btn){btn.classList.toggle("open",!!open);btn.setAttribute("aria-expanded",open?"true":"false");}
+}
+// 同步折叠条角标 + 明细条数提示；筛选生效但面板收起时也能一眼看出来
+function syncFilterUI(rows,total){
+  const on=hasFilter();
+  const btn=document.getElementById("filterToggle"),badge=document.getElementById("filterBadge");
+  if(btn)btn.classList.toggle("has-filter",on);
+  if(badge)badge.textContent=on?" · 已筛选":"";
+  const tip=document.getElementById("filterTip");
+  if(tip)tip.innerHTML=total===0?"":(on
+    ?("筛选出 <b>"+rows+"</b> / "+total+" 条 · 点上方搜索条调整")
+    :"共 <b>"+total+"</b> 条流水");
+}
 // —— 流水筛选事件 ——
 (function bindFlowFilter(){
   const q=document.getElementById("flowSearch");
   const ty=document.getElementById("filterType"),ac=document.getElementById("filterAcct"),wo=document.getElementById("filterWho");
   const cl=document.getElementById("clearFilter");
+  const tg=document.getElementById("filterToggle");
+  if(tg)tg.onclick=()=>{
+    const box=document.getElementById("flowFilter");
+    setFilterOpen(!(box&&box.style.display!=="none"));
+  };
   if(q)q.oninput=()=>{flowFilter.q=q.value;renderFlowList();};
   if(ty)ty.onchange=()=>{flowFilter.type=ty.value;renderFlowList();};
   if(ac)ac.onchange=()=>{flowFilter.acct=ac.value;renderFlowList();};
