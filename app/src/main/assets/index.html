@@ -465,7 +465,7 @@
 
   /* ===== 日历并入收支查询 ===== */
   #navCal{display:none}
-  .cal-jump{margin-left:8px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:400;vertical-align:middle}
+  .cal-jump{margin-left:8px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:400;vertical-align:middle;white-space:nowrap}
   .cal-jump:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
   .cal-back{border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
   .cal-back:hover{border-color:var(--accent);color:var(--accent)}
@@ -631,7 +631,7 @@
       </div>
     </div>
     <div class="section">
-      <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="按日历看流水">📅 日历视图</button><button id="dailyBtn" class="cal-jump" data-daily-entry="1" title="看每天/每月明细">每日情况</button><button id="exportFlowBtn" class="cal-jump" title="导出流水 JSON">导出流水</button><button id="importFlowBtn" class="cal-jump" title="导入流水 JSON">导入流水</button><input type="file" id="importFlowFile" accept="application/json" style="display:none"></h2>
+      <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="日历视图：按日历看流水">日历</button><button id="dailyBtn" class="cal-jump" data-daily-entry="1" title="每日情况：看每天/每月明细">日况</button><button id="exportFlowBtn" class="cal-jump" title="导出流水 JSON">导出</button><button id="importFlowBtn" class="cal-jump" title="导入流水 JSON">导入</button><input type="file" id="importFlowFile" accept="application/json" style="display:none"></h2>
       <button class="filter-toggle" id="filterToggle" aria-expanded="false">🔍 搜索 / 筛选<span class="ft-badge" id="filterBadge"></span><span class="ft-arrow">⌄</span></button>
       <div class="flow-filter" id="flowFilter" style="display:none">
         <input id="flowSearch" placeholder="搜索…">
