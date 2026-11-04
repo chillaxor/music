@@ -77,21 +77,26 @@
     box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:pointer;z-index:40;
     display:flex;align-items:center;justify-content:center;transition:transform .08s}
   .fab:active{transform:scale(.92)}
-  /* 流水金额筛选第二行 */
-  .flow-filter2{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px;align-items:center}
-  .flow-filter2 input,.flow-filter2 select{padding:6px 8px;font-size:12.5px}
-  .flow-filter2 input{width:84px}
-  .flow-filter2 .lbl{font-size:12px;color:var(--sub)}
+  /* 排序 / 金额区间已并入 .flow-filter 统一网格，不再单独占行 */
   /* 页面最底部：年度一句话总结 */
   .year-sum{margin-top:10px;text-align:center;font-size:12.5px;color:var(--sub);line-height:1.7}
   .year-sum b{color:var(--text);font-weight:600}
   .year-sum .up{color:var(--profit);font-weight:600}
   .year-sum .down{color:var(--loss);font-weight:600}
   .year-sum .muted{color:var(--sub)}
-  /* 流水搜索/筛选栏 */
-  .flow-filter{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;margin-bottom:10px}
-  .flow-filter input,.flow-filter select{padding:7px 9px;font-size:13px}
-  .filter-tip{font-size:11.5px;color:var(--sub);margin:-2px 0 10px}
+  /* 流水明细筛选：4 列 × 2 行紧凑网格，控件等高，去掉分散的独立标签行 */
+  .flow-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:7px}
+  .flow-filter input,.flow-filter select,.flow-filter .btn{
+    box-sizing:border-box;min-width:0;width:100%;height:34px;padding:0 8px;
+    font-size:12px;font-family:inherit;border:1px solid var(--line);border-radius:8px;
+    background:var(--card);color:var(--ink)}
+  .flow-filter input::placeholder{color:var(--sub)}
+  .flow-filter select{-webkit-appearance:none;appearance:none;padding-right:16px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--sub) 50%),linear-gradient(135deg,var(--sub) 50%,transparent 50%);
+    background-position:calc(100% - 12px) 15px,calc(100% - 8px) 15px;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+  .flow-filter .btn{cursor:pointer;font-weight:600;color:var(--sub);padding:0 6px}
+  .flow-filter .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .filter-tip{font-size:11px;color:var(--sub);margin:0 0 8px}
   .filter-tip b{color:var(--accent);font-weight:600}
   /* 净资产页底部：备份位置（在页面里设置，不悬浮） */
   .backup-row{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;
@@ -197,11 +202,22 @@
   .view{display:none}
   .view.active{display:block;animation:viewIn .18s ease}
   @keyframes viewIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
-  /* 顶部收支汇总：4 张小卡排一行，宽/高各约为原来的一半 */
-  .flowsum{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px}
-  .flowsum .card{padding:7px 5px;border-radius:9px;box-shadow:none;min-width:0}
-  .flowsum .card .lbl{font-size:10px;margin-bottom:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .flowsum .card .val{font-size:12px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 顶部收支汇总：一整条圆角指标带（尺寸约为原来 2×2 的一半），4 指标竖线分隔 + 顶部语义色条 */
+  .flowsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-bottom:7px;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);overflow:hidden}
+  .flowsum .card{position:relative;min-width:0;padding:10px 7px 9px;
+    background:transparent;border:none;border-right:1px solid var(--line);
+    border-radius:0;box-shadow:none}
+  .flowsum .card:last-child{border-right:none}
+  .flowsum .card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--sub)}
+  .flowsum .card:nth-child(1)::before{background:var(--profit)}
+  .flowsum .card:nth-child(2)::before{background:var(--loss)}
+  .flowsum .card:nth-child(4)::before{background:var(--accent)}
+  .flowsum .card .lbl{font-size:10.5px;color:var(--sub);margin-bottom:5px;font-weight:600;
+    line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .flowsum .card .val{font-size:14px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .sum-note{font-size:10px;color:var(--sub);margin:0 0 10px;line-height:1.4}
   .seg{display:flex;gap:6px;margin-bottom:12px;background:var(--line);border-radius:10px;padding:4px}
   .seg-btn{flex:1;border:none;background:transparent;color:var(--sub);font-size:14px;
@@ -303,9 +319,9 @@
     .home-pick .hp-lbl{font-size:10px}
     .head-row{gap:8px}
     .meta{font-size:11px;margin-top:16px}
-    .flow-filter{grid-template-columns:1fr 1fr;gap:6px}
-    .flow-filter input{grid-column:1/-1}
-    .flow-filter .btn{padding:11px 10px}
+    .flow-filter{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .flow-filter #flowSearch{grid-column:span 2}
+    .flow-filter .btn{height:34px}
     .snap-row{grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 10px;font-size:12.5px}
     .snap-row.head{display:none}
     .snap-row .sd{grid-column:1/-1}
@@ -584,7 +600,7 @@
       <div class="card"><div class="lbl" id="lblIncome">收入</div><div class="val" id="flowIncome" style="color:var(--profit)">¥0</div></div>
       <div class="card"><div class="lbl" id="lblSpend">支出</div><div class="val" id="flowSpend" style="color:var(--loss)">¥0</div></div>
       <div class="card"><div class="lbl" id="lblTransfer">转账</div><div class="val" id="flowTransfer">¥0</div></div>
-      <div class="card"><div class="lbl" id="lblNet">净额</div><div class="val" id="flowNet">¥0</div></div>
+      <div class="card"><div class="lbl" id="lblNet">净额</div><div class="val" id="flowNet" style="color:var(--accent)">¥0</div></div>
     </div>
     <div class="sum-note" id="sumNote"></div>
     <div class="section">
@@ -592,9 +608,9 @@
       <div class="who-break" id="whoBreak"></div>
     </div>
     <div class="section">
-      <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="按日历看流水">📅 日历视图</button><button id="dailyBtn" class="cal-jump" data-daily-entry="1" title="看每天/每月明细">每日情况</button></h2>
+      <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="按日历看流水">📅 日历视图</button><button id="dailyBtn" class="cal-jump" data-daily-entry="1" title="看每天/每月明细">每日情况</button><button id="exportFlowBtn" class="cal-jump" title="导出流水 JSON">导出流水</button><button id="importFlowBtn" class="cal-jump" title="导入流水 JSON">导入流水</button><input type="file" id="importFlowFile" accept="application/json" style="display:none"></h2>
       <div class="flow-filter">
-        <input id="flowSearch" placeholder="搜索备注 / 账户 / 金额…">
+        <input id="flowSearch" placeholder="搜索…">
         <select id="filterType">
           <option value="">全部类型</option>
           <option value="支出">支出</option>
@@ -611,26 +627,16 @@
           <option value="其他">其他</option>
           <option value="__none__">不指定</option>
         </select>
-        <button class="btn" id="clearFilter">清除</button>
-      </div>
-      <div class="flow-filter2">
-        <span class="lbl">排序</span>
         <select id="filterSort">
-          <option value="">默认（时间）</option>
+          <option value="">默认排序</option>
           <option value="amt_desc">金额 大→小</option>
           <option value="amt_asc">金额 小→大</option>
         </select>
-        <span class="lbl">金额</span>
-        <input id="filterMin" type="number" inputmode="decimal" placeholder="≥">
-        <span class="lbl">~</span>
-        <input id="filterMax" type="number" inputmode="decimal" placeholder="≤">
+        <input id="filterMin" type="number" inputmode="decimal" placeholder="金额≥">
+        <input id="filterMax" type="number" inputmode="decimal" placeholder="金额≤">
+        <button class="btn" id="clearFilter">清除</button>
       </div>
       <div class="filter-tip" id="filterTip"></div>
-      <div class="row-actions">
-        <button class="btn" id="exportFlowBtn">导出流水</button>
-        <button class="btn" id="importFlowBtn">导入流水</button>
-        <input type="file" id="importFlowFile" accept="application/json" style="display:none">
-      </div>
       <div id="flowList"></div>
     </div>
     <div class="section" id="breakSection">
