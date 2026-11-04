@@ -65,6 +65,7 @@ DEV="127.0.0.1:21503"
 ④ **实测验收（能自动验的都自动验，别只说「已改」）**
 - 启动冒烟：`am force-stop` + `am start -n com.linghit.gdmusic/.SplashActivity` → `dumpsys window | grep mCurrentFocus` → logcat 扫 `FATAL EXCEPTION`。
 - WebView 页（记账等 `assets/*.html`）逻辑：Node `vm` 抽函数造样本数据单测（月份边界、收支口径），比手点可靠。
+- ⭐ **WebView 多数据态实测（11-04 新增，比导入私人快照安全）**：debug 包 `BuildConfig.DEBUG` 开了 `WebView.setWebContentsDebuggingEnabled(true)`，`/proc/net/unix` 里有 `@webview_devtools_remote_<pid>` → `adb forward tcp:9222 localabstract:<socket>` → `http://127.0.0.1:9222/json/list` 取 `webSocketDebuggerUrl` → 本机无 `ws` 库，用 Python `socket+base64+os+struct` 手写 WS 客户端（握手后发 masked text frame）调 `Runtime.evaluate`，注入 `data.flows=样本; renderFlowList()`，再用 `getBoundingClientRect()` 拿精确 CSS 坐标。**只改内存、不调 `save()`，`am force-stop` 重启即恢复**，可安全造多对象/跨月数据验版式。
 - 布局：`uiautomator dump --compressed /sdcard/w.xml` + `pull`，Python 正则解析 `bounds` 验控件坐标。⚠️ 这台逍遥模拟器 `screencap` 恒返回纯白 PNG（约 9KB），`exec-out screencap -p > file` 在 Git Bash 下也拿不到图，**别靠截图目检**；dump 在 WebView + 视频 Surface 混合时偶发被系统 SIGKILL，重试一次即可，不是连接问题。
 - 交互：`logcat -c` → 按 dump 出的坐标 `input tap` → `logcat -d -t 500 | grep` 看业务日志。报错要自己上模拟器复现，不凭代码猜、不来回问用户。
 
