@@ -79,6 +79,14 @@ object LedgerBridge {
                 ?: return@runCatching RecordResult(false, "还没有账户，请先打开记账页添加一个资产/负债账户")
         }
 
+        // 口径统一：负债账户（信用卡/花呗）的「收入」其实是还款，必须走转账，
+        // 否则 index.html 会把这笔当成当月收入，虚增收入、收支口径全乱。
+        if (req.type == "收入" && findAccount(data, "liabs", account) != null) {
+            return@runCatching RecordResult(
+                false, "还款请用「转账」：从银行卡转到「$account」，记成收入会虚增当月收入"
+            )
+        }
+
         // 转账的转入账户同样要落到真实账户名（否则 applyFlow 找不到目标账户，余额不会平移）
         val toAccount = if (req.type == "转账" && !req.to.isNullOrBlank()) {
             val m = matchAccount(data, req.to)

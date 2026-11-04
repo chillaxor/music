@@ -219,6 +219,33 @@
   .break-row .bnet{font-weight:700;text-align:right}
   .break-row .bnet.neg{color:var(--loss)}
   .break-row .bnet.pos{color:var(--profit)}
+  /* ===== 支出拆分：按谁花（可点钻取） ===== */
+  .who-break{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+  .who-row{display:grid;grid-template-columns:64px 1fr 84px 48px;gap:8px;align-items:center;
+    padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+  .who-row:hover{border-color:var(--accent)}
+  .who-row.who-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .who-name{font-weight:700;font-size:14px}
+  .who-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;min-width:20px}
+  .who-bar-fill{display:block;height:100%;background:var(--accent);border-radius:4px}
+  .who-amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  .who-pct{text-align:right;color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+  /* ===== 每日情况：入口卡 + 弹窗 ===== */
+  .daily-entry{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:14px 16px;border:1px dashed var(--accent);border-radius:12px;background:var(--card);cursor:pointer;color:var(--accent);font-weight:600}
+  .daily-entry:hover{border-color:var(--accent);background:var(--line)}
+  .de-arrow{font-size:20px;line-height:1}
+  .daily-row{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+  .daily-row:hover{border-color:var(--accent)}
+  .daily-head{display:flex;justify-content:space-between;align-items:baseline}
+  .dh-k{font-weight:700;font-size:14px}
+  .dh-k small{color:var(--sub);font-weight:400;margin-left:6px}
+  .dh-net{font-weight:700;font-variant-numeric:tabular-nums}
+  .dh-net.pos{color:var(--profit)} .dh-net.neg{color:var(--loss)}
+  .daily-sub{font-size:12px;color:var(--sub);margin-top:2px;font-variant-numeric:tabular-nums}
+  .daily-detail{margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+  .daily-detail .flow-item{font-size:12px;padding:4px 0}
+  .daily-detail .flow-item .fdate{font-size:11px}
 
   /* 手机端：每行改卡片式堆叠，输入框放大易点按 */
   @media (max-width:640px){
@@ -510,8 +537,8 @@
     <div class="section">
       <h2>记一笔 <button class="cal-jump" id="flowCfgBtn" title="设置记一笔默认项">⚙ 默认</button> <span class="help-badge" id="wanglaiHelp" title="借出/借入怎么记？点我查看">?</span></h2>
       <p class="liab-note">支出会从对应账户余额自动扣除；转账在俩账户间挪动；收入加进账户。<br>
-        <b>选「负债账户」</b>（信用卡/花呗）：<b>支出</b>=记一笔消费欠款（钱没动，净资产自动下降）；<b>收入</b>=还款。
-        <b>还款</b>也可选「转账」：账户选你的银行卡、转入账户选信用卡 → 卡里扣钱、欠款减少。</p>
+        <b>选「负债账户」</b>（信用卡/花呗）：<b>支出</b>=记一笔消费欠款（钱没动，净资产自动下降）。<br>
+        <b>还款一律用「转账」</b>：账户选你的银行卡、转入账户选信用卡 → 卡里扣钱、欠款减少。<b>还款既不算支出也不算收入</b>，所以同月还、跨月还都不会把开支算两遍。</p>
       <div class="flow-form">
         <input type="date" id="flowDate">
         <select id="flowAccount"></select>
@@ -550,8 +577,10 @@
     </div>
     <div class="range-pick" id="rangePick"></div>
     <div class="flowsum">
-      <div class="card"><div class="lbl" id="lblSpend">本月支出</div><div class="val" id="flowSpend" style="color:var(--loss)">¥0</div></div>
       <div class="card"><div class="lbl" id="lblIncome">本月收入</div><div class="val" id="flowIncome" style="color:var(--profit)">¥0</div></div>
+      <div class="card"><div class="lbl" id="lblSpend">本月支出（纯消费）</div><div class="val" id="flowSpend" style="color:var(--loss)">¥0</div></div>
+      <div class="card"><div class="lbl" id="lblTransfer">本月转账</div><div class="val" id="flowTransfer">¥0</div></div>
+      <div class="card"><div class="lbl" id="lblNet">本月净现金流</div><div class="val" id="flowNet">¥0</div></div>
     </div>
     <div class="section">
       <h2>流水明细 <button id="toCalBtn" class="cal-jump" title="按日历看流水">📅 日历视图</button></h2>
@@ -596,7 +625,11 @@
       <div id="flowList"></div>
     </div>
     <div class="section">
-      <h2 id="breakTitle">按月汇总</h2>
+      <h2>支出拆分 <button id="whoClearBtn" class="cal-jump" title="取消按对象筛选" style="display:none">✕ 取消筛选</button></h2>
+      <div class="who-break" id="whoBreak"></div>
+    </div>
+    <div class="section">
+      <h2 id="breakTitle">每日情况</h2>
       <div class="break" id="flowBreak"></div>
     </div>
   </div><!-- /viewFlow -->
@@ -758,6 +791,13 @@
   </div>
 
 
+
+  <div class="modal-mask" id="dailyModal">
+    <div class="modal">
+      <div class="modal-h"><span id="dailyTitle">每日情况</span><button class="modal-x" id="dailyClose" aria-label="关闭">×</button></div>
+      <div class="modal-b" id="dailyBody"></div>
+    </div>
+  </div>
 
 <script src="lunar.min.js"></script>
 <script>
@@ -1190,19 +1230,22 @@ function renderFlowList(){
     if(tip)tip.textContent="";
     renderFlowSummary();
     renderFlowBreak();
+    renderWhoBreak();
     return;
   }
   const rows=[];
-  data.flows.forEach((f,i)=>{if(flowPass(f))rows.push([f,i]);});
+  const rv=getRangeValue();
+  data.flows.forEach((f,i)=>{if(inRange(f,rv)&&flowPass(f))rows.push([f,i]);});
   if(flowFilter.sort==="amt_desc")rows.sort((a,b)=>pnum(b[0].amount)-pnum(a[0].amount));
   else if(flowFilter.sort==="amt_asc")rows.sort((a,b)=>pnum(a[0].amount)-pnum(b[0].amount));
   if(tip){
-    const on=(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.sort||flowFilter.min!==""||flowFilter.max!=="");
-    tip.innerHTML=on?("筛选出 <b>"+rows.length+"</b> / "+data.flows.length+" 条"):"共 <b>"+data.flows.length+"</b> 条流水";
+    const total=data.flows.filter(f=>inRange(f,rv)).length;
+    tip.innerHTML=hasFilter()?("筛选出 <b>"+rows.length+"</b> / "+total+" 条"):"共 <b>"+total+"</b> 条流水";
   }
   // 顶部收支卡片 + 底部按日汇总同步刷新：有搜索/筛选时统计的就是当前结果（见 renderFlowSummary/renderFlowBreak）
   renderFlowSummary();
   renderFlowBreak();
+  renderWhoBreak();
   if(!rows.length){list.innerHTML='<div class="empty">没有符合条件的流水</div>';return;}
   list.innerHTML=rows.map(([f,i])=>{
     const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
@@ -1241,6 +1284,29 @@ function renderFlowRecent(){
 }
 function curMonth(){return todayStr().slice(0,7);}
 function curYear(){return todayStr().slice(0,4);}
+// 各维度用户选过的值，切来切去不丢（选了 10 月再切年/日，切回月还是 10 月）
+const rangeKeep={day:"",month:"",year:""};
+// 日期规范化：导入/历史数据可能是 2026/10/5、2026-10、带时间等，统一成 YYYY-MM-DD
+function normDate(d){
+  let s=String(d||"").trim().replace(/\//g,"-");
+  if(!s)return "";
+  if(/^\d{4}-\d{1,2}$/.test(s))s+="-01";
+  const m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(!m)return "";
+  const p=n=>String(n).padStart(2,"0");
+  return m[1]+"-"+p(m[2])+"-"+p(m[3]);
+}
+// 当前日/月/年范围判定：明细、收支卡、按日汇总统一走这里。
+// 修复「查 10 月却出现 11 月数据」：范围条件与筛选条件取交集，筛选不再豁免日期。
+function inRange(f,rv){
+  const d=normDate(f&&f.date);
+  if(!d)return false;
+  const v=String(rv||"");
+  if(flowRange==="day")return d.slice(0,10)===normDate(v).slice(0,10);
+  if(flowRange==="year")return d.slice(0,4)===v.slice(0,4);
+  return d.slice(0,7)===v.slice(0,7);
+}
+function hasFilter(){return !!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.min!==""||flowFilter.max!=="");}
 function getRangeValue(){
   if(flowRange==="day"){const el=document.getElementById("rangeDay");return (el&&el.value)||todayStr();}
   if(flowRange==="year"){const el=document.getElementById("rangeYear");return (el&&el.value)||curYear();}
@@ -1249,52 +1315,61 @@ function getRangeValue(){
 function renderRangePick(){
   const box=document.getElementById("rangePick");
   if(!box)return;
+  const keep=rangeKeep[flowRange]||"";
   if(flowRange==="day"){
-    box.innerHTML=`<label class="rp-lbl">选择日期</label><input type="date" id="rangeDay" value="${todayStr()}">`;
+    box.innerHTML=`<label class="rp-lbl">选择日期</label><input type="date" id="rangeDay" value="${keep||todayStr()}">`;
   }else if(flowRange==="year"){
-    const yrs=[...new Set(data.flows.map(f=>f.date?f.date.slice(0,4):null).filter(Boolean))].sort();
+    const yrs=[...new Set(data.flows.map(f=>f.date?normDate(f.date).slice(0,4):null).filter(Boolean))].sort();
     if(!yrs.includes(curYear()))yrs.push(curYear());
+    const sel=keep||curYear();
     box.innerHTML=`<label class="rp-lbl">选择年份</label><select id="rangeYear">`+
-      yrs.map(y=>`<option value="${y}" ${y===curYear()?"selected":""}>${y} 年</option>`).join("")+`</select>`;
+      yrs.map(y=>`<option value="${y}" ${y===sel?"selected":""}>${y} 年</option>`).join("")+`</select>`;
   }else{
-    box.innerHTML=`<label class="rp-lbl">选择月份</label><input type="month" id="rangeMonth" value="${curMonth()}">`;
+    box.innerHTML=`<label class="rp-lbl">选择月份</label><input type="month" id="rangeMonth" value="${keep||curMonth()}">`;
   }
   const inp=box.querySelector("input,select");
-  if(inp)inp.onchange=()=>{renderFlowSummary();renderFlowBreak();};
+  if(inp)inp.onchange=()=>{rangeKeep[flowRange]=inp.value;renderFlowList();};
 }
 function renderFlowSummary(){
   const rv=getRangeValue();
-  // 有搜索/筛选（排序不算）时，顶部收支改统计「当前筛选结果」——搜什么就统计什么；
-  // 没有任何筛选时，维持原来的日/月/年周期统计
-  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.min!==""||flowFilter.max!=="");
-  let spend=0,income=0;
+  // 始终限制在当前日/月/年范围内，再叠加筛选条件；筛选不再跨月
+  const filtering=hasFilter();
+  let spend=0,income=0,transfer=0;
   data.flows.forEach(f=>{
-    if(filtering){ if(!flowPass(f))return; }
-    else if(!f.date||!f.date.startsWith(rv))return;
+    if(!inRange(f,rv))return;
+    if(!flowPass(f))return;
     const amt=pnum(f.amount);
     if(f.type==="支出")spend+=amt;
-    else if(f.type==="收入")income+=amt;
+    // 负债账户的「收入」其实是还款，不计收入（还款一律走转账）
+    else if(f.type==="收入"&&!findLiab(f.account))income+=amt;
+    else if(f.type==="转账")transfer+=amt;
   });
   const e=document.getElementById("flowSpend"),i=document.getElementById("flowIncome");
+  const t=document.getElementById("flowTransfer"),n=document.getElementById("flowNet");
   const ls=document.getElementById("lblSpend"),li=document.getElementById("lblIncome");
+  const lt=document.getElementById("lblTransfer"),ln=document.getElementById("lblNet");
+  const suffix=filtering?"（筛选后）":"";
+  const per=flowRange==="year"?rv+" 年":rv;
   if(e)e.textContent=fmt(spend);
   if(i)i.textContent=fmt(income);
-  if(ls)ls.textContent=filtering?"筛选结果支出":(flowRange==="year"?rv+" 年支出":rv+" 支出");
-  if(li)li.textContent=filtering?"筛选结果收入":(flowRange==="year"?rv+" 年收入":rv+" 收入");
+  if(t)t.textContent=fmt(transfer);
+  if(n)n.textContent=(income-spend>=0?"+":"")+fmt(income-spend);
+  if(ls)ls.textContent=per+" 支出（纯消费）"+suffix;
+  if(li)li.textContent=per+" 收入"+suffix;
+  if(lt)lt.textContent=per+" 转账（非消费）"+suffix;
+  if(ln)ln.textContent=per+" 净现金流（收−支）"+suffix;
 }
 function renderFlowBreak(){
   const box=document.getElementById("flowBreak");
   const title=document.getElementById("breakTitle");
   if(!box)return;
   const rv=getRangeValue();
-  // 与顶部收支卡片同一规则：有搜索/筛选时，底部汇总也跟着只统计筛选结果（搜什么就汇总什么）；
-  // 没有任何筛选时，维持原来的日/月/年周期汇总
-  const filtering=!!(flowFilter.q.trim()||flowFilter.type||flowFilter.acct||flowFilter.who||flowFilter.min!==""||flowFilter.max!=="");
+  // 与顶部收支卡片同一规则：始终限制在当前日/月/年范围内，再叠加筛选条件
+  const filtering=hasFilter();
   if(flowRange==="day"){
-    if(title)title.textContent=filtering?"筛选结果明细":rv+" 当日明细";
-    let list=filtering?data.flows.slice():data.flows.filter(f=>f.date&&f.date.startsWith(rv));
-    if(filtering)list=list.filter(flowPass);
-    list=list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    if(title)title.textContent=rv+" 当日明细"+(filtering?"（筛选后）":"");
+    let list=data.flows.filter(f=>inRange(f,rv)&&flowPass(f));
+    list=list.sort((a,b)=>normDate(b.date).localeCompare(normDate(a.date)));
     if(!list.length){box.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的流水":"这一天没有流水")+'</div>';return;}
     box.innerHTML=list.map(f=>{
       const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
@@ -1311,31 +1386,105 @@ function renderFlowBreak(){
     }).join("");
     return;
   }
-  if(title)title.textContent=filtering?("筛选结果按"+(flowRange==="year"?"月":"日")+"汇总"):(flowRange==="year"?(rv+" 按月汇总"):(rv+" 按日汇总"));
-  const map={};
+  // 日/月/年 的逐期明细改到「每日情况」弹窗里看（点开入口卡进入），这里只留一个入口，
+  // 避免底部一长串表格把页面顶得太长。
+  if(title)title.textContent=(flowRange==="year"?"每月情况":"每日情况")+(filtering?"（筛选后）":"");
+  const tip=flowRange==="year"?"点开看每个月的收入 / 支出 / 转账明细":"点开看每一天的收入 / 支出 / 转账明细";
+  box.innerHTML=`<div class="daily-entry" data-daily-entry="1"><span>📊 ${flowRange==="year"?"每月情况":"每日情况"} · ${tip}</span><span class="de-arrow">›</span></div>`;
+}
+// 支出拆分：按消费对象（谁花）汇总，行可点击钻取到对应筛选
+function renderWhoBreak(){
+  const box=document.getElementById("whoBreak"); if(!box)return;
+  const rv=getRangeValue(); const filtering=hasFilter();
+  const m={}; let total=0;
   data.flows.forEach(f=>{
-    if(filtering){ if(!flowPass(f))return; }
-    else if(!f.date||!f.date.startsWith(rv))return;
-    const k=flowRange==="year"?f.date.slice(0,7):f.date.slice(0,10);
-    if(!map[k])map[k]={spend:0,income:0};
-    const amt=pnum(f.amount);
-    if(f.type==="支出")map[k].spend+=amt;
-    else if(f.type==="收入")map[k].income+=amt;
+    if(!inRange(f,rv))return; if(!flowPass(f))return;
+    if(f.type!=="支出")return;
+    const w=f.who||"不指定";
+    m[w]=(m[w]||0)+pnum(f.amount); total+=pnum(f.amount);
   });
-  const keys=Object.keys(map).sort((a,b)=>b.localeCompare(a));
-  if(!keys.length){box.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的流水":(flowRange==="year"?"这一年":"这个月")+"还没有流水")+'</div>';return;}
-  box.innerHTML=keys.map(k=>{
-    const s=map[k].spend,i=map[k].income,n=i-s;
-    let sub=flowRange==="year"?k.slice(5)+" 月":k.slice(8)+" 日";
-    const shortK=flowRange==="year"?k.slice(5)+"月":k.slice(5);
-    return `<div class="break-row">
-      <div class="bk"><span class="bk-full">${k}</span><span class="bk-short">${shortK}</span><small>${sub}</small></div>
-      <div class="bspend">${fmt(s)}</div>
-      <div class="bincome">${fmt(i)}</div>
-      <div class="bnet ${n>=0?'pos':'neg'}">${n>=0?'+':''}${fmt(n)}</div>
+  const keys=Object.keys(m).sort((a,b)=>m[b]-m[a]);
+  if(!keys.length){box.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的支出":(flowRange==="day"?"这一天":(flowRange==="year"?rv+" 年":"这个月"))+"还没有支出")+'</div>';return;}
+  const cur=flowFilter.who||"";
+  box.innerHTML=keys.map(w=>{
+    const v=m[w]; const pct= total>0? (v/total*100):0;
+    const key=w==="不指定"?"__none__":w;
+    const on=cur===key?" who-on":"";
+    return `<div class="who-row${on}" data-who-break="${key}">
+       <span class="who-name">${esc(w)}</span>
+       <span class="who-bar"><span class="who-bar-fill" style="width:${pct.toFixed(1)}%"></span></span>
+       <span class="who-amt">${fmt(v)}</span>
+       <span class="who-pct">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("");
+  const cb=document.getElementById("whoClearBtn"); if(cb)cb.style.display=cur?"":"none";
+}
+// 点「按谁花」某一行：把流水筛选锁定到该对象，跳到明细看对应数据；再次点同一行则取消
+function drillWho(val){
+  flowFilter.who = (flowFilter.who===val) ? "" : val;
+  const wo=document.getElementById("filterWho"); if(wo)wo.value=flowFilter.who;
+  renderFlowList();
+  if(flowFilter.who){ const fl=document.getElementById("flowList"); if(fl)fl.scrollIntoView({behavior:"smooth",block:"start"}); }
+}
+// ===== 每日情况弹窗 =====
+function openDailyModal(){
+  renderDailyModal();
+  const dm=document.getElementById("dailyModal"); if(dm)dm.classList.add("show");
+}
+function closeDailyModal(){ const dm=document.getElementById("dailyModal"); if(dm)dm.classList.remove("show"); }
+function renderDailyModal(){
+  const body=document.getElementById("dailyBody"); if(!body)return;
+  const title=document.getElementById("dailyTitle");
+  const rv=getRangeValue(); const filtering=hasFilter();
+  const isYear=flowRange==="year";
+  if(title)title.textContent=(isYear?rv+" 每月情况":rv+" 每日情况")+(filtering?"（筛选后）":"");
+  const per={}; // k -> {spend,income,transfer,rows}
+  data.flows.forEach(f=>{
+    if(!inRange(f,rv))return; if(!flowPass(f))return;
+    const k=isYear?normDate(f.date).slice(0,7):normDate(f.date).slice(0,10);
+    if(!per[k])per[k]={spend:0,income:0,transfer:0,rows:[]};
+    const amt=pnum(f.amount);
+    if(f.type==="支出")per[k].spend+=amt;
+    else if(f.type==="收入"&&!findLiab(f.account))per[k].income+=amt;
+    else if(f.type==="转账")per[k].transfer+=amt;
+    per[k].rows.push(f);
+  });
+  const keys=Object.keys(per).sort((a,b)=>b.localeCompare(a));
+  if(!keys.length){body.innerHTML='<div class="liab-note">'+(filtering?"没有符合筛选条件的流水":(isYear?"这一年":"这个月")+"还没有流水")+'</div>';return;}
+  body.innerHTML=keys.map(k=>{
+    const d=per[k]; const net=d.income-d.spend;
+    const sub=isYear?k.slice(5)+" 月":k.slice(5);
+    const detail=d.rows.map(f=>{
+      const cls=f.type==="收入"?"profit":(f.type==="支出"?"loss":"");
+      const sign=f.type==="收入"?"+":(f.type==="转账"?"⇄":"−");
+      const acct=f.type==="转账"?`${esc(f.account)}→${esc(f.to||"")}`:esc(f.account);
+      const tm=(f.date||"").length>10?(f.date.slice(11,16)):"";
+      return `<div class="flow-item">
+        <span class="fdate">${isYear?k.slice(5)+"月":(tm||esc(f.date))}</span>
+        <span class="facct">${acct}</span>
+        <span class="ftype">${f.type}</span>
+        <span class="famt ${cls}">${sign}${fmt(pnum(f.amount))}</span>
+        <span class="fnote">${f.who?'<span class="fwho">'+esc(f.who)+'</span>':''}${esc(f.note||"")}</span>
+      </div>`;
+    }).join("");
+    return `<div class="daily-row" data-daily-k="${k}">
+      <div class="daily-head"><span class="dh-k">${k}<small>${sub}</small></span><span class="dh-net ${net>=0?'pos':'neg'}">${net>=0?'+':''}${fmt(net)}</span></div>
+      <div class="daily-sub">收 ${fmt(d.income)} · 支 ${fmt(d.spend)} · 转 ${fmt(d.transfer)} · 共 ${d.rows.length} 笔（点开收起）</div>
+      <div class="daily-detail" id="dd-${k}" style="display:none">${detail}</div>
     </div>`;
   }).join("");
 }
+// 每日情况弹窗：关闭按钮 + 点遮罩关闭
+(function bindDailyModal(){
+  const dm=document.getElementById("dailyModal"); if(!dm)return;
+  const x=document.getElementById("dailyClose"); if(x)x.onclick=closeDailyModal;
+  dm.addEventListener("click",function(e){ if(e.target.id==="dailyModal")closeDailyModal(); });
+})();
+// 「支出拆分」取消筛选按钮：清空对象筛选并刷新
+(function bindWhoClear(){
+  const b=document.getElementById("whoClearBtn"); if(!b)return;
+  b.onclick=()=>{ flowFilter.who=""; const wo=document.getElementById("filterWho"); if(wo)wo.value=""; renderFlowList(); };
+})();
 function compute(){
   let assets=0,liabs=0,float=0;
   data.assets.forEach((it,i)=>{
@@ -1410,6 +1559,15 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("click",e=>{
   const t=e.target;
+  // 支出拆分：点「谁花」某一行 → 钻取到该对象的流水
+  const whoRow=t.closest&&t.closest("[data-who-break]");
+  if(whoRow){drillWho(whoRow.dataset.whoBreak);return;}
+  // 每日情况入口卡 → 打开弹窗
+  const dEntry=t.closest&&t.closest("[data-daily-entry]");
+  if(dEntry){openDailyModal();return;}
+  // 弹窗里点某一天/月行 → 展开/收起当日明细
+  const dRow=t.closest&&t.closest("[data-daily-k]");
+  if(dRow){const id="dd-"+dRow.dataset.dailyK;const el=document.getElementById(id);if(el)el.style.display=el.style.display==="none"?"":"none";return;}
   if(t.dataset.edit){editMode[t.dataset.edit][+t.dataset.i]=true;save();if(t.dataset.edit==="asset")renderAssets();else renderLiabs();}
   else if(t.dataset.done){editMode[t.dataset.done][+t.dataset.i]=false;save();if(t.dataset.done==="asset")renderAssets();else renderLiabs();}
   else if(t.dataset.delflow!==undefined){closeCalModal();delFlow(+t.dataset.delflow);}
@@ -1620,7 +1778,7 @@ document.querySelectorAll("#flowRange .seg-btn").forEach(b=>{
     document.querySelectorAll("#flowRange .seg-btn").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
     flowRange=b.dataset.range;
-    renderRangePick();renderFlowSummary();renderFlowBreak();
+    renderRangePick();renderFlowList(); // 列表内部会同步刷新顶部收支卡与底部汇总
   };
 });
 document.getElementById("importFlowBtn").onclick=()=>document.getElementById("importFlowFile").click();
@@ -2272,8 +2430,9 @@ if(["snapshot","add","flow","calendar"].indexOf(v)<0)v="snapshot";
 
 function todayStr(){const d=new Date();const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
 // —— 账户查找：资产账户与负债账户都支持参与记账 ——
-// 信用消费（信用卡/花呗）：支出=负债增加（钱没动，先欠着）；收入=多还了，负债减少
-// 还款：转账时资产账户→负债账户，资产减、负债减，净资产不变
+// 信用消费（信用卡/花呗）：支出=负债增加（钱没动，先欠着）
+// 还款：一律走「转账」资产账户→负债账户，资产减、负债减，净资产不变，且不计入支出/收入
+// 兼容旧数据：若历史里已有「收入」记到负债账户，applyFlow 仍减欠款，但汇总里排除、不计收入
 function findAsset(n){return data.assets.find(x=>x.name===n);}
 function findLiab(n){return data.liabs.find(x=>x.name===n);}
 // 往来账户（应收/借出、应付/借入）只能走转账，选到时把类型锁成转账
@@ -2434,6 +2593,12 @@ document.getElementById("addFlowBtn").onclick=()=>{
   if(!account){toast("先选一个账户，或用下拉末尾的「+ 新建账户…」");return;}
   if(!pnum(amount)){toast("填个金额");return;}
   const isEdit=editingFlowIndex!==null;
+  // 口径统一：负债账户（信用卡/花呗）的「收入」其实是还款，只允许走转账，否则会虚增当月收入
+  if(type==="收入"&&findLiab(account)){
+    if(isEdit){applyFlow(data.flows[editingFlowIndex]);save();render();}
+    toast("还款请用「转账」：账户选银行卡、转入账户选「"+account+"」。\n记成收入会虚增当月收入。");
+    return;
+  }
   if(isEdit)reverseFlow(data.flows[editingFlowIndex]); // 编辑：先撤销旧影响，拿到"撤销后"余额
   if(type==="转账"){
     const to=document.getElementById("flowTo").value;

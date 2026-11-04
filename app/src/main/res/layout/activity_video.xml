@@ -31,12 +31,12 @@
             android:layout_height="wrap_content"
             android:layout_gravity="top|start"
             android:layout_margin="10dp"
-            android:background="#66000000"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
+            android:background="@drawable/bg_glass_pill"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
             android:paddingTop="6dp"
             android:paddingBottom="6dp"
-            android:text="🖼 小窗"
+            android:text="小窗"
             android:textSize="13sp"
             android:textColor="#ffffff"
             android:visibility="gone" />
@@ -48,7 +48,7 @@
             android:layout_height="34dp"
             android:layout_gravity="bottom|end"
             android:layout_marginEnd="12dp"
-            android:layout_marginBottom="60dp"
+            android:layout_marginBottom="112dp"
             android:background="@drawable/bg_pill_glass"
             android:scaleType="fitCenter"
             android:padding="6dp"
@@ -194,12 +194,14 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
-        <!-- 长按屏幕（按住不动）3 倍速播放时显示的指示器：胶囊 pill 背景，弱化存在感 -->
+        <!-- 长按屏幕（按住不动）3 倍速播放时显示的指示器：顶部标题下方一行，
+             胶囊 pill 背景弱化存在感；避开与缓冲/亮度/音量指示器居中叠字 -->
         <TextView
             android:id="@+id/videoSpeed"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="52dp"
             android:background="@drawable/bg_speed_pill"
             android:paddingStart="18dp"
             android:paddingEnd="18dp"

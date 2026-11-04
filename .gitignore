@@ -11,7 +11,15 @@ app/build/
 local.properties
 
 # 工作笔记（私有，不进公开仓库）
-.workbuddy/
+# 例外：长期记忆 MEMORY.md 需随仓库同步，让其他工作区/进程拿到构建与验收 SOP；
+#       每日日志 YYYY-MM-DD.md 仍保持私有，不进公开仓库（本仓库是 public）。
+.workbuddy/*
+!.workbuddy/memory/
+.workbuddy/memory/*
+!.workbuddy/memory/MEMORY.md
+
+# 记账导出的净资产快照（含私人账户数据，绝不进仓库）
+净资产快照.json
 
 # 构建日志与 APK 产物
 build_log*.txt

@@ -3,8 +3,8 @@
     <!--
       media3-ui 的 dimens 覆写（app 资源优先于库资源，只影响播放器控制条布局）：
       原值 52dp 只够放下「进度条 + 底部时间/按钮行」。
-      改成 108dp 把进度条整体顶上去，给 exo_player_control_view.xml 里新增的
-      「片头/片尾跳过」配置行（marginBottom=60dp，高约 34dp）腾出位置。
+      改成 108dp 把进度条整体顶上去，给底部三层堆叠腾位置：
+      片头/片尾配置行 4~38dp → 时间/按钮行 40~100dp → 进度条 108dp。
       PlayerControlViewLayoutManager 每次尺寸变化都会按这个 dimen 重置进度条
       的 bottomMargin，所以必须在资源层改，改 XML 里的 margin 会被覆盖。
     -->

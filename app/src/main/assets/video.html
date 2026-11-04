@@ -1233,8 +1233,10 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
 }
 /** 原生播放器切集回调（上一集/下一集/自动连播）：爬虫源剧集需重新解析 */
 window.__playSpiderAt=function(i){
-  var e=(STATE.playEps||[])[i]; if(!e)return;
-  if(!STATE.detailSpider)return;
+  function fail(msg){ if(window.Android&&Android.onSpiderSwitchFailed)Android.onSpiderSwitchFailed(msg); else toast(msg); }
+  var e=(STATE.playEps||[])[i];
+  if(!e){ fail('没有找到第'+(i+1)+'集'); return; }
+  if(!STATE.detailSpider){ fail('爬虫源上下文已失效，请重新点选集'); return; }
   playSpiderEp(STATE.detailSpider,STATE.playFrom,e,i,STATE.playEpsJson,STATE.playSpJson,playMeta(e));
 };
 /** 打开播放历史页 */

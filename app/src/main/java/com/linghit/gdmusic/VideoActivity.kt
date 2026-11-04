@@ -323,6 +323,10 @@ class VideoActivity : AppCompatActivity() {
     private var epsList: List<EpItem> = emptyList()
     private var curIdx: Int = -1
     private var curReferer: String = ""
+    /** 切集防抖：ExoPlayer 切集异步（prepare→STATE_READY 要几秒），连点会连跳好几集 */
+    private var lastSwitchAtMs: Long = 0L
+    /** 403 时是否已经试过「去掉 Referer 重播」，防止无限重试 */
+    private var noRefererRetryDone = false
 
     // ===================== 播放历史（断点续播） =====================
     /** 当前播放记录 key（直连 "d:api|vod_id" / 爬虫 "s:key|vod_id"，由 JS 生成随 meta 带回） */
@@ -542,7 +546,7 @@ class VideoActivity : AppCompatActivity() {
             }
         }
         videoPrev.setOnClickListener {
-            if (curIdx <= 0) toast("已经是第一集") else playIndex(curIdx - 1)
+            if (curIdx <= 0) toast("已经是第一集（共 ${epsList.size} 集）") else playIndex(curIdx - 1)
         }
         videoNext.setOnClickListener { playNext() }
         // 返回键逐层回退：小窗→展开回全屏；播放中→关播放器(回到该视频详情页)；详情/搜索等浮层开着→交给页面关掉(回到搜索位置)；都没有才退出
@@ -626,6 +630,12 @@ class VideoActivity : AppCompatActivity() {
 
     // ===================== 原生能力桥 =====================
     private inner class VideoBridge {
+        /** 爬虫源切集失败由 JS 回调（原来 JS 里两个静默 return，用户点了没任何反应） */
+        @JavascriptInterface
+        fun onSpiderSwitchFailed(reason: String) {
+            runOnUiThread { toast("切集失败：$reason，请在选集页重新点一集") }
+        }
+
         /** 跨域 GET：结果用 base64 回传，避免转义问题。cbId 对应 JS 的 window.__videoCb */
         @JavascriptInterface
         fun httpGet(url: String, cbId: Int) {
@@ -1007,7 +1017,15 @@ class VideoActivity : AppCompatActivity() {
                             }
                             c = c.cause
                         }
-                        Log.w("VidPlay", "onPlayerError: $detail (${error.errorCodeName})")
+                        val epName = epsList.getOrNull(curIdx)?.name ?: "当前集"
+                        Log.w("VidPlay", "onPlayerError: $detail (${error.errorCodeName}) ep=$epName url=${curCastUrl.take(100)}")
+                        // 切集后 CDN 变了却沿用旧 Referer 常被判盗链 403：去掉 Referer 自动重试一次
+                        if (detail.startsWith("HTTP 403") && curReferer.isNotBlank() && !noRefererRetryDone) {
+                            noRefererRetryDone = true
+                            toast("「$epName」防盗链拒绝，正在去掉 Referer 重试一次")
+                            playMediaUrl(curCastUrl, "", isRetry = true)
+                            return
+                        }
                         val friendly = when {
                             detail.startsWith("HTTP 403") -> "该线路拒绝访问(403)，可能需登录/防盗链，请换其他线路/源"
                             detail.startsWith("HTTP 404") -> "该线路地址不存在(404)，请换其他线路/源"
@@ -1016,7 +1034,7 @@ class VideoActivity : AppCompatActivity() {
                         }
                         Toast.makeText(
                             this@VideoActivity,
-                            friendly,
+                            "「$epName」$friendly",
                             Toast.LENGTH_LONG
                         ).show()
                         videoBuffering.visibility = View.GONE
@@ -1569,8 +1587,13 @@ class VideoActivity : AppCompatActivity() {
     }
 
     /** 播放单条直链（Referer 很多 CDN 校验，不带 403） */
-    private fun playMediaUrl(url: String, referer: String) {
+    private fun playMediaUrl(url: String, referer: String, isRetry: Boolean = false) {
+        if (url.isBlank()) {
+            toast("这一集没有可用的播放地址，请在选集里换条线路/源")
+            return
+        }
         curCastUrl = url              // 投屏用：记住当前直链，随时可投/切回本地续投
+        if (!isRetry) noRefererRetryDone = false
         skipEndManual = false          // 换片：手动拖动越过片尾的豁免重置
         skipEndArmed = false           // 换片：等新 media STATE_READY 再武装，防旧进度误触发
         if (skipEndMs > 0) startSkipTick()
@@ -1701,8 +1724,28 @@ class VideoActivity : AppCompatActivity() {
     }
 
     /** 切到第 i 集：直链直接播；爬虫源回传 JS 经 playerContent 解析后再起播 */
-    private fun playIndex(i: Int) {        if (i < 0 || i >= epsList.size) return
+    private fun playIndex(i: Int) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastSwitchAtMs < 500L) return
+        lastSwitchAtMs = now
+        if (miniMode || isInPictureInPictureMode) {
+            toast("小窗播放时请展开后再切集")
+            return
+        }
+        if (i < 0 || i >= epsList.size) {
+            toast("剧集列表里没有第 ${i + 1} 集，请在选集页重新选")
+            return
+        }
         val ep = epsList[i]
+        Log.d(
+            "VidPlay",
+            "切集请求 i=$i/${epsList.size} name=${ep.name} spider=${ep.spider} " +
+                "url=${ep.url.take(80)} casting=$casting mini=$miniMode player=${player != null}"
+        )
+        if (!ep.spider && ep.url.isBlank()) {
+            toast("「${ep.name}」没有播放地址，请在选集页换条线路/源")
+            return
+        }
         curIdx = i
         // 投屏中切集：把新集重新推给电视（旧 URI 先 Stop 再 SetAVTransportURI）
         if (casting) {
@@ -1735,11 +1778,17 @@ class VideoActivity : AppCompatActivity() {
         }
         if (ep.spider) {
             Log.d("VidPlay", "切集(爬虫源) -> __playSpiderAt($i)")
-            safeEval("if(window.__playSpiderAt)window.__playSpiderAt($i)")
+            safeEval("if(window.__playSpiderAt)window.__playSpiderAt($i);" +
+                "else if(window.Android&&Android.onSpiderSwitchFailed)Android.onSpiderSwitchFailed('页面还没准备好')")
             return
         }
         Log.d("VidPlay", "切集 -> ${ep.name}")
-        playMediaUrl(ep.url, curReferer)
+        // 不同集常落在不同 CDN：沿用上一集的 Referer 会被判盗链 403。
+        // host 变了就不带 Referer；若仍 403，onPlayerError 会自动再去掉 Referer 重试一次。
+        val newHost = runCatching { android.net.Uri.parse(ep.url).host }.getOrNull()
+        val oldHost = runCatching { android.net.Uri.parse(curCastUrl).host }.getOrNull()
+        val ref = if (!newHost.isNullOrBlank() && !oldHost.isNullOrBlank() && newHost != oldHost) "" else curReferer
+        playMediaUrl(ep.url, ref)
         // 切集换标题：前缀（片名 · 线路）不动，只换集名；前缀为空就只显示集名
         // （爬虫源切集会经 __playSpiderAt 回传 startVideo，标题自动覆盖，不用这里管）
         curVideoTitle = if (curTitlePrefix.isNotBlank()) "${curTitlePrefix} · ${ep.name}" else ep.name
@@ -1750,9 +1799,12 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun playNext() {
-        if (epsList.isEmpty()) return
+        if (epsList.isEmpty()) {
+            toast("这一路没有剧集列表，请在选集页重新点一集后再切")
+            return
+        }
         if (curIdx + 1 < epsList.size) playIndex(curIdx + 1)
-        else toast("播放完毕，已是最后一集")
+        else toast("已是最后一集（共 ${epsList.size} 集）")
     }
 
     private fun parseEps(json: String): List<EpItem> {
@@ -1852,7 +1904,8 @@ class VideoActivity : AppCompatActivity() {
             lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
             lp.topMargin = 0
             lp.bottomMargin = 0
-            flp.bottomMargin = (70 * d).toInt()
+            // 配置行贴底后时间/按钮行上移到 40~100dp，全屏键抬到 112dp 避开
+            flp.bottomMargin = (112 * d).toInt()
         }
         lp.marginEnd = (12 * d).toInt()
         flp.marginEnd = (12 * d).toInt()
