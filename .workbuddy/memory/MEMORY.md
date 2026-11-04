@@ -6,6 +6,7 @@
 - ⚠️ **设备实装版本可能高于仓库 HEAD**：构建前 `adb shell dumpsys package com.linghit.gdmusic | grep -E "versionCode|versionName"` 对一下。当前仓库 versionCode=2 / 2.0，手机上曾装过 3 / 2.5（那是用户自己 reset 掉的分支产物）→ 装不上的话加 `adb install -r -d` 允许降级。
 - ⚠️ **用户会主动 `git reset --hard origin/main` 丢弃本地分支，这是刻意的对齐远端动作 —— 不要把被丢弃的提交复活**。11-04 我曾从 reflog 找回 f763c0c 并合入，用户明确否决（"本来我就是强制拉取覆盖本地的你又给我弄上去了"）。**正确做法：以 origin/main 为基线，只加当前需求要改的东西。**
 - 远程 github.com/chillaxor/music.git (main)。Windows schannel 对 GitHub 握手失败 → 仓库级已固化 `http.sslBackend openssl`；`git fetch` 可能假成功，先 `ls-remote`；本机 `timeout` 是 Windows 交互命令。
+- ⚠️ **GitHub push 二次坑（11-04）**：`git push` 报 `RPC failed; curl 7 CONNECT tunnel failed, response 502` / `send-pack unexpected disconnect` 或 `TLS connect error: unexpected eof while reading` 时，**openssl 不够**，HTTP/2 流被代理掐断 → 用 `git -c http.sslBackend=openssl -c http.version=HTTP/1.1 push origin main` 一次成功（实测）。`curl 502` 那次输出末尾还会假报 `Everything up-to-date`，**必须用 `git ls-remote origin HEAD` 对比本地 HEAD 验真**，别信那句话。`ls-remote` 本身偶发 TLS 抖动，重试一次即可。
 - worktree：`git branch -vv` 带 `+` = 被检出，删分支前 `git worktree remove`；删前查 status + 导 patch/stash 双保险 + 用 `-d`。
 - ⚠️ **同文件多条 Edit 禁止并行发**（并发写静默丢编辑），改完 grep 复核。
 
@@ -69,7 +70,7 @@ DEV="127.0.0.1:21503"
 
 ⑤ **归档 + 交付**：`cp app-debug.apk "从前慢-vX-说明-MMDD-HHMM.apk"`（根目录、带时间戳），`present_files` 给 APK；`.workbuddy/memory/YYYY-MM-DD.md` 追加当日日志。
 
-⑥ **推送到远程 git**（用户 2026-11-04 追加定案）：`git status --short` 先核清单 → **只 `git add` 本次相关文件，绝不 `git add -A`**（工作区常有未跟踪的私人文件，如 `净资产快照.json`）→ `git commit` → `git push origin main`。推送前 `git ls-remote origin HEAD` 确认远端可达（GitHub schannel 握手失败已用仓库级 `http.sslBackend openssl` 解决）。
+⑥ **推送到远程 git**（用户 2026-11-04 追加定案）：`git status --short` 先核清单 → **只 `git add` 本次相关文件，绝不 `git add -A`**（工作区常有未跟踪的私人文件，如 `净资产快照.json`）→ `git commit` → `git push origin main`。推送前 `git ls-remote origin HEAD` 确认远端可达（GitHub schannel 握手失败已用仓库级 `http.sslBackend openssl` 解决）；**push 报 502 / TLS EOF 时改用 `-c http.version=HTTP/1.1`，并用 ls-remote 验真，详见 §1**。
 - **记忆同步规则**：本仓库是 **public**，`.gitignore` 原本把整个 `.workbuddy/` 标为私有；现仅放行 `.workbuddy/memory/MEMORY.md`（长期技术基线 + 本 SOP，让其他进程 clone 后读得到），每日日志 `YYYY-MM-DD.md`、`净资产快照.json` 等私人数据继续忽略。⚠️ 推到公开仓库的内容会永久留痕，含个人数据的文件一律不要放行。
 
 ⑦ **汇报三段式**：改了什么 / 验到什么（贴实测数据、坐标、日志原文）/ **没验到什么**（如实标注，例如源不可播导致某显隐态没抓到），不要只报「完成」。
