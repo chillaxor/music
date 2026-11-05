@@ -1954,7 +1954,7 @@ class VideoActivity : AppCompatActivity() {
      * 上一集/下一集按钮容器 + 全屏键定位：
      *  - sideBtns 竖排靠右：内嵌态沉到右上（避开顶部标题/时钟），全屏态居中靠右；
      *  - 全屏键真正贴右下角（end 8dp / bottom 4dp）。底部「片头/片尾/投屏」配置行也贴底
-     *    4dp 且居中，右侧留白足够；时间/按钮行在 40~100dp，不会与贴底的全屏键重叠。
+     *    4dp 且居中，右侧留白足够；时间/按钮行已上移到 90~150dp，不会与贴底的全屏键重叠。
      *    旧值 54dp / 112dp 把按钮悬在半空，用户反馈「没有真的贴右下角」。
      */
     private fun positionSideBtns(inline: Boolean) {

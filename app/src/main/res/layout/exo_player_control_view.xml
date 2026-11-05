@@ -3,9 +3,12 @@
   media3 播放器控制条布局覆写（默认见 media3-ui 的 exo_player_control_view.xml）：
   原布局整体照抄，只在底部加一行「片头 / 片尾跳过」配置按钮（skipCfgRow）。
   进度条位置由 dimens 里 exo_styled_progress_margin_bottom 决定（见
-  values/media3_video_skip.xml 覆写为 108dp）。
-  ⚠️ 用户要求配置行贴到画面最底部：从底往上依次是
-     片头/片尾配置行 4~38dp → 时间与按钮行 40~100dp → 进度条 108dp。
+  values/media3_video_skip.xml 覆写为 42dp）。
+  ⚠️ 用户要求进度条下移到配置行正上方一点点，从底往上依次是：
+     片头/片尾/投屏配置行 4~38dp → 进度条占位 42~90dp → 时间/按钮行 90~150dp。
+  ⚠️ exo_bottom_bar 原带 media3 默认 #b0000000（70% 黑）背景，叠加全屏
+     exo_controls_background 的 60% 遮罩后，进度条下方会出现一条明显更黑的通栏。
+     按要求改为透明，文字可读性仍由全屏遮罩保证。
 -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -24,8 +27,8 @@
       android:layout_height="@dimen/exo_styled_bottom_bar_height"
       android:layout_marginTop="@dimen/exo_styled_bottom_bar_margin_top"
       android:layout_gravity="bottom"
-      android:layout_marginBottom="40dp"
-      android:background="@color/exo_bottom_bar_background"
+      android:layout_marginBottom="90dp"
+      android:background="@android:color/transparent"
       android:layoutDirection="ltr">
 
     <LinearLayout android:id="@id/exo_time"
@@ -104,11 +107,11 @@
       android:layout_gravity="bottom"
       android:layout_marginBottom="@dimen/exo_styled_progress_margin_bottom"/>
 
-  <!-- 片头 / 片尾跳过配置：贴在画面最底部（marginBottom=4dp），位于进度条与时间/按钮行下方。
+  <!-- 片头 / 片尾跳过配置：贴在画面最底部（marginBottom=4dp），进度条紧贴在它上方。
        配置按影片详情维度保存，对本影片所有剧集/线路生效，其他影片不受影响。
-       联动：exo_bottom_bar 上移 40dp、exo_minimal_controls 上移 44dp；
-       activity_video.xml 的全屏键与 positionSideBtns() 贴右下角 4dp/8dp
-       （配置行居中，右侧留白够，不与最右的时间/按钮行重叠）。 -->
+       联动：exo_bottom_bar 上移到 90dp、exo_minimal_controls 上移到 92dp，
+       给下移后的进度条让位；activity_video.xml 的全屏键与 positionSideBtns()
+       贴右下角 4dp/8dp（配置行居中，右侧留白够，不与时间/按钮行重叠）。 -->
   <LinearLayout
       android:id="@+id/skipCfgRow"
       android:layout_width="match_parent"
@@ -167,7 +170,7 @@
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_gravity="bottom|end"
-      android:layout_marginBottom="44dp"
+      android:layout_marginBottom="92dp"
       android:orientation="horizontal"
       android:gravity="center_vertical"
       android:layoutDirection="ltr">
