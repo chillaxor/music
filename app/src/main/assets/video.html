@@ -1178,6 +1178,12 @@ function playEp(from,eps,idx){
       console.log('SNIFF direct['+(STATE.detailSite&&STATE.detailSite.name||'')+'] '+url+' => '+(j&&j.ok?j.url:('fail:'+(j&&j.msg))));
       if(j&&j.ok&&j.url) finalUrl=j.url;
       else { toast('该线路解析失败，可换其他线路/源'); return; }
+      // 起播这集的真实直链回填进剧集列表：原生切走再切回来时不用重复嗅探
+      eps[idx].url=finalUrl;
+      epsJson=JSON.stringify(eps.map(function(x){
+        return {name:x.name,url:x.url,spider:!!spiderT};
+      }));
+      STATE.playEps=eps; STATE.playEpsJson=epsJson;
     }
     if(window.Android&&Android.playVideo) Android.playVideo(finalUrl,name,ref,epsJson,idx,spJson,meta);
     else toast('当前环境不支持播放');
@@ -1238,6 +1244,34 @@ window.__playSpiderAt=function(i){
   if(!e){ fail('没有找到第'+(i+1)+'集'); return; }
   if(!STATE.detailSpider){ fail('爬虫源上下文已失效，请重新点选集'); return; }
   playSpiderEp(STATE.detailSpider,STATE.playFrom,e,i,STATE.playEpsJson,STATE.playSpJson,playMeta(e));
+};
+/** 原生切集（上一集/下一集/自动连播）时，非直链剧集先在这里嗅探出真实地址再回传。
+ *  以前右侧切集按钮直接把播放页 HTML 丢给 ExoPlayer，会报「Source error」。
+ *  b64 是原生带过来的原始 url，页面上下文丢失（历史续播）时兜底用。
+ *  解析成功回填 STATE.playEps/playEpsJson，之后再切回同一集不用重复嗅探。 */
+window.__resolveDirectAt=function(i,b64){
+  function done(u,ref){
+    if(window.Android&&Android.onEpResolved)Android.onEpResolved(u,ref,i);
+    else if(window.Android&&Android.onSpiderSwitchFailed)Android.onSpiderSwitchFailed('解析桥不可用');
+  }
+  var e=(STATE.playEps||[])[i]||{};
+  var u=e.url||'';
+  if(!u&&b64){ try{ u=decodeB64(b64); }catch(err){} }
+  var ref='';
+  try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
+  if(!u){ done('',ref); return; }
+  if(isDirectMedia(u)){ done(u,ref); return; }
+  sniff(u,ref).then(function(j){
+    if(j&&j.ok&&j.url){
+      e.url=j.url;
+      try{
+        var arr=JSON.parse(STATE.playEpsJson||'[]');
+        if(arr[i])arr[i].url=j.url;
+        STATE.playEpsJson=JSON.stringify(arr);
+      }catch(err){}
+      done(j.url,ref);
+    }else done('',ref);
+  });
 };
 /** 打开播放历史页 */
 function openHistory(){

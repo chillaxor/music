@@ -327,6 +327,8 @@ class VideoActivity : AppCompatActivity() {
     private var lastSwitchAtMs: Long = 0L
     /** 403 时是否已经试过「去掉 Referer 重播」，防止无限重试 */
     private var noRefererRetryDone = false
+    /** 正在等 JS 嗅探直链的集下标（-1 表示没有）；回传时用它丢弃过期结果 */
+    private var pendingResolveIdx: Int = -1
 
     // ===================== 播放历史（断点续播） =====================
     /** 当前播放记录 key（直连 "d:api|vod_id" / 爬虫 "s:key|vod_id"，由 JS 生成随 meta 带回） */
@@ -634,6 +636,31 @@ class VideoActivity : AppCompatActivity() {
         @JavascriptInterface
         fun onSpiderSwitchFailed(reason: String) {
             runOnUiThread { toast("切集失败：$reason，请在选集页重新点一集") }
+        }
+
+        /**
+         * 切集时「播放页地址」经 JS 嗅探出真实直链后的回传桥。
+         * 只换播放地址 + 标题 + 历史，不重走 startVideo（否则会重建历史、重置内嵌布局）。
+         * 解析结果回填 epsList，之后再切回这一集不必重复嗅探。
+         */
+        @JavascriptInterface
+        fun onEpResolved(url: String, referer: String, idx: Int) {
+            runOnUiThread {
+                if (idx != pendingResolveIdx) {
+                    Log.d("VidPlay", "解析回传过期：idx=$idx pending=$pendingResolveIdx，丢弃")
+                    return@runOnUiThread
+                }
+                pendingResolveIdx = -1
+                val ep = epsList.getOrNull(idx)
+                if (url.isBlank() || ep == null) {
+                    toast("「${ep?.name ?: "这一集"}」解析失败，请在选集页换条线路/源")
+                    return@runOnUiThread
+                }
+                Log.d("VidPlay", "切集解析完成 -> ${ep.name} ${url.take(100)}")
+                epsList = epsList.toMutableList().also { it[idx] = it[idx].copy(url = url) }
+                curIdx = idx
+                finishSwitch(idx, url, referer)
+            }
         }
 
         /** 跨域 GET：结果用 base64 回传，避免转义问题。cbId 对应 JS 的 window.__videoCb */
@@ -1030,6 +1057,8 @@ class VideoActivity : AppCompatActivity() {
                             detail.startsWith("HTTP 403") -> "该线路拒绝访问(403)，可能需登录/防盗链，请换其他线路/源"
                             detail.startsWith("HTTP 404") -> "该线路地址不存在(404)，请换其他线路/源"
                             detail.startsWith("HTTP 502") || detail.startsWith("HTTP 503") -> "该线路源站故障($detail)，请换其他线路/源"
+                            detail.contains("Source error", true) ->
+                                "该集地址不是可直接播放的视频（多为已失效或仍是网页），请换线路/源或回选集页重选"
                             else -> "播放失败：$detail（可换其他线路/源）"
                         }
                         Toast.makeText(
@@ -1060,6 +1089,7 @@ class VideoActivity : AppCompatActivity() {
         inline: Boolean = true
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx | inline=$inline")
+        pendingResolveIdx = -1        // 新片起播：丢掉上一部可能还在飞嗅探的回传
         curCastTitle = title          // 投屏时作为 DIDL-Lite 标题展示在电视端
         // 播放层标题：JS 传的是「片名 · 线路 · 集名」，切集时只换集名那一截
         curVideoTitle = title
@@ -1723,10 +1753,17 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    /** 切到第 i 集：直链直接播；爬虫源回传 JS 经 playerContent 解析后再起播 */
+    /**
+     * 切到第 i 集：
+     *  - 爬虫源：回传 JS 经 playerContent 解析（原有逻辑）；
+     *  - 播放页地址（非直链，如量子 /share/<hash>）：先让 JS 嗅探出真实直链再播。
+     *    以前这里直接把播放页 HTML 丢给 ExoPlayer，就是用户看到的「Source error」；
+     *  - 媒体直链：直接播。
+     */
     private fun playIndex(i: Int) {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastSwitchAtMs < 500L) return
+        if (pendingResolveIdx == i) return          // 同一集正在嗅探，忽略连点
         lastSwitchAtMs = now
         if (miniMode || isInPictureInPictureMode) {
             toast("小窗播放时请展开后再切集")
@@ -1746,13 +1783,14 @@ class VideoActivity : AppCompatActivity() {
             toast("「${ep.name}」没有播放地址，请在选集页换条线路/源")
             return
         }
-        curIdx = i
+        pendingResolveIdx = -1
         // 投屏中切集：把新集重新推给电视（旧 URI 先 Stop 再 SetAVTransportURI）
         if (casting) {
-            if (ep.spider) {
-                toast("投屏中不能切换爬虫源的剧集，请先退出投屏")
+            if (ep.spider || !isPlayableUrl(ep.url)) {
+                toast("投屏中不能切换需要解析的剧集，请先退出投屏")
                 return
             }
+            curIdx = i
             Log.d("VidPlay", "投屏切集 -> ${ep.name}")
             curCastUrl = ep.url
             curCastTitle = ep.name
@@ -1777,25 +1815,52 @@ class VideoActivity : AppCompatActivity() {
             return
         }
         if (ep.spider) {
+            curIdx = i
             Log.d("VidPlay", "切集(爬虫源) -> __playSpiderAt($i)")
             safeEval("if(window.__playSpiderAt)window.__playSpiderAt($i);" +
                 "else if(window.Android&&Android.onSpiderSwitchFailed)Android.onSpiderSwitchFailed('页面还没准备好')")
             return
         }
+        if (!isPlayableUrl(ep.url)) {
+            pendingResolveIdx = i
+            Log.d("VidPlay", "切集(待解析) -> __resolveDirectAt($i) ${ep.url.take(80)}")
+            toast("正在解析「${ep.name}」播放地址…")
+            val b64 = Base64.encodeToString(ep.url.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+            safeEval("if(window.__resolveDirectAt)window.__resolveDirectAt($i,'$b64');" +
+                "else if(window.Android&&Android.onSpiderSwitchFailed)Android.onSpiderSwitchFailed('页面还没准备好')")
+            return
+        }
+        curIdx = i
+        finishSwitch(i, ep.url, "")
+    }
+
+    /** 看起来就是媒体直链（m3u8/mp4/mpd/flv/ts/mkv…），口径与 JS isDirectMedia 一致 */
+    private fun isPlayableUrl(u: String): Boolean {
+        val path = u.substringBefore('?').substringBefore('#').lowercase()
+        return arrayOf(".m3u8", ".mp4", ".mpd", ".flv", ".ts", ".mkv", ".mov", ".avi", ".webm")
+            .any { path.endsWith(it) } || path.contains("/index.m3u8")
+    }
+
+    /** 切集落定：播新直链、换标题、同步历史（直链集与嗅探后的集共用） */
+    private fun finishSwitch(i: Int, url: String, referer: String) {
+        val ep = epsList[i]
         Log.d("VidPlay", "切集 -> ${ep.name}")
         // 不同集常落在不同 CDN：沿用上一集的 Referer 会被判盗链 403。
         // host 变了就不带 Referer；若仍 403，onPlayerError 会自动再去掉 Referer 重试一次。
-        val newHost = runCatching { android.net.Uri.parse(ep.url).host }.getOrNull()
+        val newHost = runCatching { android.net.Uri.parse(url).host }.getOrNull()
         val oldHost = runCatching { android.net.Uri.parse(curCastUrl).host }.getOrNull()
-        val ref = if (!newHost.isNullOrBlank() && !oldHost.isNullOrBlank() && newHost != oldHost) "" else curReferer
-        playMediaUrl(ep.url, ref)
-        // 切集换标题：前缀（片名 · 线路）不动，只换集名；前缀为空就只显示集名
-        // （爬虫源切集会经 __playSpiderAt 回传 startVideo，标题自动覆盖，不用这里管）
+        val ref = when {
+            referer.isNotBlank() -> referer
+            !newHost.isNullOrBlank() && !oldHost.isNullOrBlank() && newHost != oldHost -> ""
+            else -> curReferer
+        }
+        playMediaUrl(url, ref)
+        // 前缀（片名 · 线路）不动，只换集名；前缀为空就只显示集名
         curVideoTitle = if (curTitlePrefix.isNotBlank()) "${curTitlePrefix} · ${ep.name}" else ep.name
         videoTitle.text = curVideoTitle
         // 切集同步历史：集名/下标/直链变，播放位置从头开始
-        VideoHistoryStore.updateEpisode(this, curHisKey, ep.name, i, ep.url)
-        curHisRec?.put("epName", ep.name)?.put("idx", i)?.put("url", ep.url)?.put("positionMs", 0)
+        VideoHistoryStore.updateEpisode(this, curHisKey, ep.name, i, url)
+        curHisRec?.put("epName", ep.name)?.put("idx", i)?.put("url", url)?.put("positionMs", 0)
     }
 
     private fun playNext() {
@@ -1886,10 +1951,11 @@ class VideoActivity : AppCompatActivity() {
     }
 
     /**
-     * 上一集/下一集按钮容器 + 全屏键定位（两者都靠右，纵向拉开避免误触）：
-     *  - 内嵌态（详情页顶部短条，仅 230dp 高）：sideBtns 竖排沉到右上方（top|end，避开顶部标题/时钟），
-     *    全屏键固定在右下角（XML bottom|end），两者纵向间隔约 12dp，不误触；
-     *  - 全屏态：sideBtns 竖排 center_vertical|end，全屏键仍右下角（bottomMargin 加大避开底部 exo 控制条）。
+     * 上一集/下一集按钮容器 + 全屏键定位：
+     *  - sideBtns 竖排靠右：内嵌态沉到右上（避开顶部标题/时钟），全屏态居中靠右；
+     *  - 全屏键真正贴右下角（end 8dp / bottom 4dp）。底部「片头/片尾/投屏」配置行也贴底
+     *    4dp 且居中，右侧留白足够；时间/按钮行在 40~100dp，不会与贴底的全屏键重叠。
+     *    旧值 54dp / 112dp 把按钮悬在半空，用户反馈「没有真的贴右下角」。
      */
     private fun positionSideBtns(inline: Boolean) {
         val d = resources.displayMetrics.density
@@ -1898,17 +1964,15 @@ class VideoActivity : AppCompatActivity() {
         if (inline) {
             lp.gravity = Gravity.TOP or Gravity.END
             lp.topMargin = (50 * d).toInt()
-            lp.bottomMargin = 0
-            flp.bottomMargin = (54 * d).toInt()
         } else {
             lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
             lp.topMargin = 0
-            lp.bottomMargin = 0
-            // 配置行贴底后时间/按钮行上移到 40~100dp，全屏键抬到 112dp 避开
-            flp.bottomMargin = (112 * d).toInt()
         }
-        lp.marginEnd = (12 * d).toInt()
-        flp.marginEnd = (12 * d).toInt()
+        lp.bottomMargin = 0
+        lp.marginEnd = (8 * d).toInt()
+        // 与 skipCfgRow（marginBottom=4dp）齐平，右端留 8dp
+        flp.bottomMargin = (4 * d).toInt()
+        flp.marginEnd = (8 * d).toInt()
         sideBtns.layoutParams = lp
         fullBtn.layoutParams = flp
     }

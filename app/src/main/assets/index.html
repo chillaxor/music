@@ -215,19 +215,23 @@
   /* 顶部收支汇总 + 支出拆分：同一个圆角容器里的上下两段，避免两块白卡叠在一起 */
   .flow-overview{background:var(--card);border:1px solid var(--line);border-radius:12px;
     box-shadow:var(--shadow);overflow:hidden;margin-bottom:12px}
-  .flowsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
-  .flowsum .card{position:relative;min-width:0;padding:10px 7px 9px;
-    background:transparent;border:none;border-right:1px solid var(--line);
-    border-radius:0;box-shadow:none}
-  .flowsum .card:last-child{border-right:none}
+  /* 4 个指标改上下两排、每排 2 个：可用宽度翻倍，长金额不再被省略号吃掉。
+     标签与数字同一行、每格 padding 压到 6px，两行总高和原来单行基本持平。 */
+  .flowsum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
+  .flowsum .card{position:relative;min-width:0;padding:6px 10px;
+    display:flex;align-items:baseline;justify-content:space-between;gap:6px;
+    background:transparent;border:none;border-radius:0;box-shadow:none}
+  .flowsum .card:nth-child(odd){border-right:1px solid var(--line)}
+  .flowsum .card:nth-child(-n+2){border-bottom:1px solid var(--line)}
   .flowsum .card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--sub)}
   .flowsum .card:nth-child(1)::before{background:var(--profit)}
   .flowsum .card:nth-child(2)::before{background:var(--loss)}
   .flowsum .card:nth-child(4)::before{background:var(--accent)}
-  .flowsum .card .lbl{font-size:10.5px;color:var(--sub);margin-bottom:5px;font-weight:600;
-    line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .flowsum .card:nth-child(n+3)::before{display:none} /* 下排靠细分隔线，不再叠色条 */
+  .flowsum .card .lbl{font-size:10.5px;color:var(--sub);margin-bottom:0;font-weight:600;
+    line-height:1.2;white-space:nowrap;flex:0 0 auto}
   .flowsum .card .val{font-size:14px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 支出拆分贴在指标带下方，用一条细线分隔 */
   .who-inline{border-top:1px solid var(--line);padding:10px 11px 12px}
   .who-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -1388,6 +1392,13 @@ function renderFlowSummary(){
   if(li)li.textContent="收入";
   if(lt)lt.textContent="转账";
   if(ln)ln.textContent="净额";
+  // 长金额按字符数收字号，配合 2×2 的半屏宽度，整串数字都能显示而不是被截成省略号
+  [e,i,t,n].forEach(el=>{
+    if(!el)return;
+    const len=(el.textContent||"").length;
+    el.style.fontSize=len>20?"10px":len>17?"11px":len>14?"12px":len>11?"13px":"14px";
+    el.title=el.textContent||"";
+  });
 }
 function renderFlowBreak(){
   const box=document.getElementById("flowBreak");

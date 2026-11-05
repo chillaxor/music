@@ -106,8 +106,9 @@
 
   <!-- 片头 / 片尾跳过配置：贴在画面最底部（marginBottom=4dp），位于进度条与时间/按钮行下方。
        配置按影片详情维度保存，对本影片所有剧集/线路生效，其他影片不受影响。
-       联动：exo_bottom_bar 上移 40dp、exo_minimal_controls 上移 44dp、
-       activity_video.xml 的全屏键与 positionSideBtns() 上移到 112dp。 -->
+       联动：exo_bottom_bar 上移 40dp、exo_minimal_controls 上移 44dp；
+       activity_video.xml 的全屏键与 positionSideBtns() 贴右下角 4dp/8dp
+       （配置行居中，右侧留白够，不与最右的时间/按钮行重叠）。 -->
   <LinearLayout
       android:id="@+id/skipCfgRow"
       android:layout_width="match_parent"

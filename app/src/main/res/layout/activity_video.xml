@@ -41,14 +41,16 @@
             android:textColor="#ffffff"
             android:visibility="gone" />
 
-        <!-- 全屏切换按钮：固定在右下角（两种布局态都如此），避开顶部与右侧中部的上一/下一集按钮，消除误触 -->
+        <!-- 全屏切换按钮：真正贴右下角（与底部 skipCfgRow 同一水平带、右端留 8dp）。
+             底部配置行居中，右侧留白充足；时间/按钮行在 40~100dp，不会重叠。
+             VideoActivity.positionSideBtns() 会按内嵌/全屏态覆写同样的 margin。 -->
         <ImageButton
             android:id="@+id/videoFull"
             android:layout_width="34dp"
             android:layout_height="34dp"
             android:layout_gravity="bottom|end"
-            android:layout_marginEnd="12dp"
-            android:layout_marginBottom="112dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="4dp"
             android:background="@drawable/bg_pill_glass"
             android:scaleType="fitCenter"
             android:padding="6dp"
