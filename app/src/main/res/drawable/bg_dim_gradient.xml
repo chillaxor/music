@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 蒙层：linear 渐变，顶部/底部各约 36% 黑（保证白字可读），中间 50% 完全透明（图最通透）。
-     angle=270 从上到下：start(顶)暗 → center(中)透明 → end(底)暗。 -->
+<!--
+  全通透试验版（2026-11-05）：按需求去掉「两端渐变压暗、中部通透」，整层不绘制任何像素。
+  dimOverlay 仍保留在 FrameLayout 层级里，但 background 全透明 → 视觉上等于没有蒙层，
+  每日一图 / 主题渐变原色直接透出；白字可读性改由玻璃卡 ② #5A1C1A18 兜底。
+  ⚠️ 亮色壁纸上顶部 logo / 问候行 / 快捷位名称等「裸白字」会偏虚，这是本试验版的预期代价。
+  恢复原版：把本文件改回三色标 linear 渐变
+    angle=270, startColor=#5C000000, centerColor=#00000000, endColor=#5C000000, centerY=0.5
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#5C000000"
-        android:centerColor="#00000000"
-        android:endColor="#5C000000"
-        android:centerY="0.5"
-        android:type="linear" />
+    <solid android:color="#00000000"/>
 </shape>

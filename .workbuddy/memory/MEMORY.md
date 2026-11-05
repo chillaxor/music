@@ -16,7 +16,8 @@
 纪律：内容型需求先 curl 实测再写进推荐，标注「✅实测/❌已死」；别把「内容 API 死了」泛化成「什么都本地做」。
 
 ## 3. UI 版式基线
-- 首页（activity_main.xml，**画 mockup 前必读**）：暗色玻璃拟态，每日一图 + bg_dim_gradient + bg_liquid_glass 白边玻璃卡 + 白字。顶栏 → 玻璃页签 → NestedScrollView{问候行 → 2 排双列信息卡 92dp → 工具卡 shortcutRow FlowLayout perRow=6} → playerBar 在滚动区外钉底。固定入口 6 个（记账/看片/收藏/播客/下载/问一句）。
+- 首页（activity_main.xml，**画 mockup 前必读**）：暗色玻璃拟态，每日一图 + bg_dim_gradient + bg_liquid_glass 白边玻璃卡 + 白字。顶栏 → 玻璃页签 → NestedScrollView{问候行 → 2 排双列信息卡 92dp → 工具卡 shortcutRow FlowLayout perRow=6} → playerBar 在滚动区外钉底。固定入口 **7 个**（记账/看片/收藏/播客/下载/问一句/水印）。
+- 蒙层 `dimOverlay`（`activity_main.xml:44-48`）：常驻全屏 View，无 visibility/alpha、Kotlin 零引用，**不随有无每日一图切换**。原版 `bg_dim_gradient.xml` 三色标 linear（顶/底 `#5C000000`≈36% 黑、正中 `#00000000`、centerY 0.5）；⚠️ 三色标是线性插值 → 完全透明只有正中一条线，25% 高度处仍压 18%、全屏平均 ≈18%，注释「中间 50% 完全透明」是错的。**11-05 试验版已改纯透明 solid `#00000000`（零渐变、全通透）**，恢复方法写在该文件头注释里。玻璃卡 `bg_liquid_glass` 三层：`#A8→#33→#08FFFFFF` 亮边 18dp / `#5A1C1A18`(35%) 本体 16.8dp 四边 inset 1.2dp / `#2B→#0A→#00` 高光 centerY 0.45；`bg_glass_card.xml` 全项目 0 引用，改它无效。
 - 主题：12 套纯色+渐变，`ThemePrefs.PACKS` + `theme_idx`；`applyTheme(this)` 必须早于 setContentView；渐变在 `MainActivity.applyThemeColors()` 用 GradientDrawable 画、换 header 后补底部 24dp 圆角。⚠️ 用户明确不要暗色/形状/质感维度。
 - 快捷位拖动：拖动中不 remove/add view，只 translation + highlightSlot 预览，松口才改序；`HomeShortcutStore.Item` 无 equals → 必须比 `id()`；超过 touchSlop 才算 dragging；shortcutRow 需 clipChildren/Padding=false。
 - launcher 图标 = 用户圆形书法徽章，脚本 tools/make_launcher_icon.py 按内切圆裁切。
@@ -67,7 +68,7 @@ DEV="127.0.0.1:21503"
 - 启动冒烟：`am force-stop` + `am start -n com.linghit.gdmusic/.SplashActivity` → `dumpsys window | grep mCurrentFocus` → logcat 扫 `FATAL EXCEPTION`。
 - WebView 页（记账等 `assets/*.html`）逻辑：Node `vm` 抽函数造样本数据单测（月份边界、收支口径），比手点可靠。
 - ⭐ **WebView 多数据态实测（11-04 新增，比导入私人快照安全）**：debug 包 `BuildConfig.DEBUG` 开了 `WebView.setWebContentsDebuggingEnabled(true)`，`/proc/net/unix` 里有 `@webview_devtools_remote_<pid>` → `adb forward tcp:9222 localabstract:<socket>` → `http://127.0.0.1:9222/json/list` 取 `webSocketDebuggerUrl` → 本机无 `ws` 库，用 Python `socket+base64+os+struct` 手写 WS 客户端（握手后发 masked text frame）调 `Runtime.evaluate`，注入 `data.flows=样本; renderFlowList()`，再用 `getBoundingClientRect()` 拿精确 CSS 坐标。**只改内存、不调 `save()`，`am force-stop` 重启即恢复**，可安全造多对象/跨月数据验版式。
-- 布局：`uiautomator dump --compressed /sdcard/w.xml` + `pull`，Python 正则解析 `bounds` 验控件坐标。⚠️ 这台逍遥模拟器 `screencap` 恒返回纯白 PNG（约 9KB），`exec-out screencap -p > file` 在 Git Bash 下也拿不到图，**别靠截图目检**；dump 在 WebView + 视频 Surface 混合时偶发被系统 SIGKILL，重试一次即可，不是连接问题。
+- 布局：`uiautomator dump --compressed /sdcard/w.xml` + `pull`，Python 正则解析 `bounds` 验控件坐标。⚠️ 这台逍遥模拟器 `screencap` **绝大多数返回 9KB 纯白 PNG**，11-05 实测 8 次里只 1 次拿到 249KB 真图（900×1600）；与页面内容/蒙层无关（同一 app 渐变蒙层版与全透明版都白），别误判成「蒙层导致白屏」。可行取图法是 `shell screencap -p /sdcard/x.png` + `pull`（**不是** `exec-out ... > file`），多试 + 等页面稳定能碰运气，**仍不能把截图当常规验收手段**；dump 在 WebView + 视频 Surface 混合时偶发被系统 SIGKILL，重试一次即可，不是连接问题。
 - 交互：`logcat -c` → 按 dump 出的坐标 `input tap` → `logcat -d -t 500 | grep` 看业务日志。报错要自己上模拟器复现，不凭代码猜、不来回问用户。
 
 ⑤ **归档 + 交付**：`cp app-debug.apk "从前慢-vX-说明-MMDD-HHMM.apk"`（根目录、带时间戳），`present_files` 给 APK；`.workbuddy/memory/YYYY-MM-DD.md` 追加当日日志。
