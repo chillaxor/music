@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  搜索结果卡 / 队列卡 / 下载卡共用的歌曲行。
+  2026-11-06 A+D 配色：底色从暖棕 #B31C1A18 换成同色相冷灰 #B3161B21
+  （保持 70% 不透明 —— 列表在滚动，比首页玻璃卡需要更实的底），
+  文字与操作图标从暖白/暖灰/橙色统一为冷白 + 主题色，跟首页玻璃卡同一套色系。
+-->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -9,7 +15,7 @@
     android:layout_marginBottom="10dp"
     app:cardCornerRadius="14dp"
     app:cardElevation="2dp"
-    app:cardBackgroundColor="#B31C1A18"
+    app:cardBackgroundColor="#B3161B21"
     app:strokeColor="#33FFFFFF"
     app:strokeWidth="1dp">
 
@@ -36,7 +42,7 @@
                 android:layout_height="wrap_content"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="@color/on_dark"
+                android:textColor="#F2F3F5"
                 android:maxLines="1"
                 android:ellipsize="end"/>
 
@@ -45,7 +51,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textSize="13sp"
-                android:textColor="@color/on_dark_dim"
+                android:textColor="#AEB7C2"
                 android:paddingTop="3dp"
                 android:maxLines="1"
                 android:ellipsize="end"/>
@@ -66,7 +72,7 @@
             android:gravity="center"
             android:textSize="20sp"
             android:text="⏫"
-            android:textColor="@color/primary"
+            android:textColor="?attr/colorPrimary"
             android:contentDescription="插入播放列表最前面并播放"/>
 
         <TextView
@@ -76,7 +82,7 @@
             android:gravity="center"
             android:textSize="22sp"
             android:text="⬇"
-            android:textColor="@color/star_off"/>
+            android:textColor="#AEB7C2"/>
 
         <TextView
             android:id="@+id/favBtn"
@@ -85,6 +91,6 @@
             android:gravity="center"
             android:textSize="24sp"
             android:text="☆"
-            android:textColor="@color/star_off"/>
+            android:textColor="#AEB7C2"/>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  全通透试验版（2026-11-05）：按需求去掉「两端渐变压暗、中部通透」，整层不绘制任何像素。
-  dimOverlay 仍保留在 FrameLayout 层级里，但 background 全透明 → 视觉上等于没有蒙层，
-  每日一图 / 主题渐变原色直接透出；白字可读性改由玻璃卡 ② #5A1C1A18 兜底。
-  ⚠️ 亮色壁纸上顶部 logo / 问候行 / 快捷位名称等「裸白字」会偏虚，这是本试验版的预期代价。
-  恢复原版：把本文件改回三色标 linear 渐变
+  2026-11-06 A+D 配色：从「全通透」改成 8% 均匀轻蒙层。
+  11-05 曾按需求去掉两端压暗、改成 #00000000 全透明，结果亮色每日一图上
+  顶部 logo / 问候行 / 快捷位名称这些「裸白字」发虚。
+  D 方案补一层极轻的均匀黑（#14 = 8%），不破坏图片观感，只给白字垫一点底；
+  配合 bg_liquid_glass ② 从 19% 提到 27%，卡片内外的字都不会糊。
+  恢复全通透：把 solid 改回 #00000000。
+  恢复旧版两端渐变压暗：改成三色标 linear
     angle=270, startColor=#5C000000, centerColor=#00000000, endColor=#5C000000, centerY=0.5
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#00000000"/>
+    <solid android:color="#14000000"/>
 </shape>

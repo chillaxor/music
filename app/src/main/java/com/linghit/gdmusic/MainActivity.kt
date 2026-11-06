@@ -673,23 +673,42 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 渐变套：兜底底色与播放圈走 primary → primaryEnd 的斜向渐变；纯色套：primary → primaryDark。
      * 全屏沉浸版式下兜底底色是通幅的（不再有头部底部圆弧，圆弧只属于旧版式）。
      */
+    /** 把 tint 按 ratio 混进 base：给中性兜底底图留一点主题色识别，但不铺满屏高饱和渐变 */
+    private fun mixColor(base: Int, tint: Int, ratio: Float): Int {
+        val r = (android.graphics.Color.red(base) * (1 - ratio) + android.graphics.Color.red(tint) * ratio).toInt()
+        val g = (android.graphics.Color.green(base) * (1 - ratio) + android.graphics.Color.green(tint) * ratio).toInt()
+        val b = (android.graphics.Color.blue(base) * (1 - ratio) + android.graphics.Color.blue(tint) * ratio).toInt()
+        return android.graphics.Color.rgb(r, g, b)
+    }
+
     private fun applyThemeColors() {
         val pack = ThemePrefs.currentPack(this)
         val end = pack.primaryEnd
+        // A+D 冷灰统一补漏（2026-11-06）：兜底底图不再铺满屏主题色。
+        // 没配每日一图时 themeFallbackBg 就是整屏底色；原先直接用 primary→primaryDark
+        // 画满屏渐变（如抹茶绿），27% 半透明玻璃卡会把绿透上来，播放条被染成一整条灰绿，
+        // 再叠 ① 白亮边 + ③ 白高光就成了「上半发白、下半透绿」的两块色叠加感。
+        // 现在改为中性冷灰深底 + 8% 极淡主题染；主题色只留细字强调，不再铺大块实色。
+        val baseA = 0xFF161B21.toInt()
+        val baseB = 0xFF232A31.toInt()
+        val tintA = mixColor(baseA, pack.primary, 0.08f)
+        val tintB = mixColor(baseB, end ?: pack.primaryDark, 0.08f)
         fallbackBg.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            if (end != null) intArrayOf(pack.primary, end) else intArrayOf(pack.primary, pack.primaryDark)
+            intArrayOf(tintA, tintB)
         )
+        // A+D 续（2026-11-06）：播放圆按钮原本用 pack.primary 实色，抹茶绿主题下是
+        // 播放条里唯一剩下的亮绿块。改中性冷灰渐变，白色播放图标不变。
+        val btnA = 0xFF46525E.toInt()
+        val btnB = 0xFF2E3842.toInt()
         playPauseBtn.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            if (end != null) {
-                colors = intArrayOf(pack.primary, end)
-                orientation = GradientDrawable.Orientation.TL_BR
-            } else {
-                setColor(pack.primary)
-            }
+            colors = intArrayOf(btnA, btnB)
+            orientation = GradientDrawable.Orientation.TL_BR
         }
-        Log.i("ThemeStyle", "pack=${pack.name} primary=${pack.primary} end=$end")
+        Log.i("ThemeStyle", "pack=${pack.name} primary=${pack.primary} end=$end " +
+                "fallback=${Integer.toHexString(tintA)}/${Integer.toHexString(tintB)} " +
+                "playBtn=${Integer.toHexString(btnA)}/${Integer.toHexString(btnB)}")
     }
 
     /**
@@ -1579,7 +1598,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         for (i in 0 until chartTabs.childCount) {
             val tv = chartTabs.getChildAt(i) as? TextView ?: continue
             val on = i == selected
-            tv.setBackgroundResource(if (on) R.drawable.bg_pill_purple else R.drawable.bg_pill_glass)
+            tv.setBackgroundResource(if (on) R.drawable.bg_pill_active else R.drawable.bg_pill_glass)
             tv.setTextColor(
                 if (on) android.graphics.Color.WHITE
                 else android.graphics.Color.parseColor("#B8FFFFFF")

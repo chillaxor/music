@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- A+D 续（2026-11-06）：榜单 chip 选中态不再用 ?attr/colorPrimary 实色。
+     抹茶绿主题下它是一整块高饱和绿，和冷灰玻璃卡打架；改中性冷灰实底 + 细白描边，
+     与未选中态（bg_pill_glass 10% 白）靠明度和描边区分，不依赖主题色。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="?attr/colorPrimary" />
+    <solid android:color="#FF46525E" />
     <corners android:radius="18dp" />
+    <stroke android:width="0.5dp" android:color="#66FFFFFF" />
 </shape>

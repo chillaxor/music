@@ -10,16 +10,16 @@ package com.linghit.gdmusic
  */
 object ShortcutBadge {
 
-    /** 徽章配色：白字压在饱和色上。按 item.id() 哈希取色，同色相邻概率低 */
+    /** 徽章配色：白字压在低饱和冷灰阶梯上。A+D 统一为冷灰调，按 item.id() 哈希取色保持可区分 */
     val PALETTE = intArrayOf(
-        0xFFE5534B.toInt(), // 红
-        0xFFE8862E.toInt(), // 橙
-        0xFFC9A227.toInt(), // 金
-        0xFF3FA45B.toInt(), // 绿
-        0xFF12A594.toInt(), // 青
-        0xFF4B8BE5.toInt(), // 蓝
-        0xFF7B61E5.toInt(), // 紫
-        0xFFD96BA8.toInt()  // 粉
+        0xFF7D6E6C.toInt(), // 灰红
+        0xFF847666.toInt(), // 灰橙
+        0xFF7E7A62.toInt(), // 灰金
+        0xFF668274.toInt(), // 灰绿
+        0xFF5B817D.toInt(), // 灰青
+        0xFF63788F.toInt(), // 灰蓝
+        0xFF736E90.toInt(), // 灰紫
+        0xFF877080.toInt()  // 灰粉
     )
 
     /** 域名关键词 → emoji（url 小写子串匹配） */
