@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 搜索输入框底（2026-11-06）：单层均匀冷灰蓝，无亮边 / 无高光 / 无描边。
+     与播放条近透明实底 #1F2B3641 同色相，alpha 略高（16%）让输入区有可点的边界。
+     刻意不复用 bg_liquid_glass —— 它的白亮边 + 白高光正是「卡里又扣一个框」的观感来源。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#2A2B3641"/>
+    <corners android:radius="12dp"/>
+</shape>
