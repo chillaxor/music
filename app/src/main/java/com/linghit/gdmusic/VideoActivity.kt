@@ -216,6 +216,12 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var skipEndBtn: TextView
     /** 控制条上的投屏入口 */
     private lateinit var castBtn: TextView
+    /** 控制条上的倍速 chip：显示当前档位，点开选档（长按临时 3× 松手后回到该档位） */
+    private lateinit var speedBtn: TextView
+    /** 用户选定的播放倍速（换集 / 重建 ExoPlayer 后仍保持） */
+    private var playbackSpeed = 1f
+    /** 可选倍速档位 */
+    private val speedOptions = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f)
     /** 用户手动把进度拖过结束时间：本次播放不再自动跳（换片/重新起播后重置） */
     private var skipEndManual = false
     /**
@@ -424,6 +430,11 @@ class VideoActivity : AppCompatActivity() {
         // 投屏按钮（控制条进度条下方第三个 chip）
         castBtn = playerView.findViewById(R.id.castBtn)
         castBtn.setOnClickListener { showCastDevices() }
+        // 倍数 chip：常驻可见入口（原先只有长按临时 3× 的隐藏手势，用户找不到倍数）
+        // 点它就地在按钮旁弹出选档菜单，不弹屏幕居中的对话框
+        speedBtn = playerView.findViewById(R.id.speedBtn)
+        speedBtn.setOnClickListener { showSpeedMenu() }
+        updateSpeedChip()
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
             controlsVisible = visibility == View.VISIBLE
@@ -975,6 +986,10 @@ class VideoActivity : AppCompatActivity() {
         if (player == null) {
             player = ExoPlayer.Builder(this).build().also {
                 playerView.player = it
+                // 播放器可能被释放后重建（返回/小窗/换片），重新套用用户选定的倍速
+                it.setPlaybackParameters(
+                    androidx.media3.common.PlaybackParameters(playbackSpeed, it.playbackParameters.pitch)
+                )
                 it.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         videoBuffering.visibility =
@@ -1342,7 +1357,8 @@ class VideoActivity : AppCompatActivity() {
                     takeOver = idle && !onBar
                     // 长按屏幕 = 3 倍速：按下后若一直按住不动（未超过 slop），到点切 3 倍速
                     longPressActive = false
-                    origSpeed = 1f
+                    // 起点档位 = 用户在倍速 chip 上选的档，长按松手后回到它（不再是死值 1.0×）
+                    origSpeed = playbackSpeed
                     longPressTimer?.cancel()
                     longPressTimer = object : android.os.CountDownTimer(LP_TRIGGER_MS, LP_TRIGGER_MS) {
                         override fun onTick(millisUntilFinished: Long) {}
@@ -1359,6 +1375,7 @@ class VideoActivity : AppCompatActivity() {
                             )
                             speedInd.visibility = View.VISIBLE
                             speedInd.text = "3.0×"
+                            Log.d("VidPlay", "长按倍速进入 3.0×（松手回到 ${fmtSpeed(origSpeed)}×）")
                         }
                     }.apply { start() }
                     takeOver // 消费 DOWN 才能稳定收到后续 MOVE/UP
@@ -1444,7 +1461,9 @@ class VideoActivity : AppCompatActivity() {
                     longPressActive = false
                     when {
                         wasLong -> {
-                            // 长按 3 倍速：松手恢复原始倍速
+                            // 长按 3 倍速：松手恢复原始倍速（日志必须在 restore 前打，
+                            // 上面已把 longPressActive 置回 false，restore 内部判不到它）
+                            Log.d("VidPlay", "长按倍速结束，恢复 -> ${fmtSpeed(origSpeed)}×")
                             restoreLongPressSpeed()
                         }
                         wasBright -> mainHandler.postDelayed(brightHide, BRIGHT_HIDE_DELAY)
@@ -1496,6 +1515,48 @@ class VideoActivity : AppCompatActivity() {
                 androidx.media3.common.PlaybackParameters(origSpeed, p.playbackParameters.pitch)
             )
         }
+    }
+
+    /** 倍速数字格式化：1f→"1.0"、0.5f→"0.5"、1.25f→"1.25"，整数补一位、其余去尾零 */
+    private fun fmtSpeed(s: Float): String {
+        val raw = String.format(Locale.getDefault(), "%.2f", s).trimEnd('0').trimEnd('.')
+        return if ('.' in raw) raw else "$raw.0"
+    }
+
+    /** 同步倍数 chip 文案，例如「倍数 2.0×」 */
+    private fun updateSpeedChip() {
+        if (::speedBtn.isInitialized) speedBtn.text = "倍数 ${fmtSpeed(playbackSpeed)}×"
+    }
+
+    /** 应用倍速：改 ExoPlayer 的同时记住档位，换集 / 重建 player 后重新套用 */
+    private fun applyPlaybackSpeed(speed: Float) {
+        playbackSpeed = speed
+        updateSpeedChip()
+        runCatching {
+            player?.let { p ->
+                p.setPlaybackParameters(
+                    androidx.media3.common.PlaybackParameters(speed, p.playbackParameters.pitch)
+                )
+            }
+        }
+        Log.d("VidPlay", "倍速 -> ${fmtSpeed(speed)}×")
+    }
+
+    /** 点倍数 chip：菜单就贴在按钮旁弹出（不遮挡整幅画面），当前档打勾。
+     *  长按屏幕仍可临时 3×，松手回到这里设的档 */
+    private fun showSpeedMenu() {
+        if (casting) { toast("投屏中不能调整倍数"); return }
+        val popup = android.widget.PopupMenu(this, speedBtn, Gravity.END)
+        speedOptions.forEachIndexed { i, s ->
+            val label = "${fmtSpeed(s)}×"
+            val mark = if (abs(s - playbackSpeed) < 0.001f) "✓ " else "   "
+            popup.menu.add(0, i, i, mark + label)
+        }
+        popup.setOnMenuItemClickListener { item ->
+            applyPlaybackSpeed(speedOptions[item.itemId])
+            true
+        }
+        popup.show()
     }
 
     /** 轻点视频区域 = 切换控制条显隐 */
@@ -1646,6 +1707,11 @@ class VideoActivity : AppCompatActivity() {
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
         val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
         player?.apply {
+            // 换集 / 换线路都保持用户选定的倍速（setMediaSource 不会重置 PlaybackParameters，
+            // 但重建 player 会，所以这里统一再套一次）
+            setPlaybackParameters(
+                androidx.media3.common.PlaybackParameters(playbackSpeed, playbackParameters.pitch)
+            )
             setMediaSource(mediaSource)
             prepare()
             playWhenReady = true

@@ -164,6 +164,23 @@
         android:textSize="13sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="投屏到电视" />
+
+    <!-- 播放倍数：常驻可见的第 4 个 chip，按钮上显示当前档位。点它就地弹出选档菜单
+         （PopupMenu 锚定本按钮，不遮挡整幅画面）；原先只有「长按屏幕临时 3×」的隐藏手势，
+         长按松手后回到本菜单所选档位。 -->
+    <TextView
+        android:id="@+id/speedBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="34dp"
+        android:layout_marginStart="10dp"
+        android:background="#40000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:gravity="center"
+        android:text="倍数 1.0×"
+        android:textSize="13sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="播放倍数" />
   </LinearLayout>
 
   <LinearLayout android:id="@id/exo_minimal_controls"
