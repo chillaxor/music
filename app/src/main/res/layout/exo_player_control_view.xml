@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   media3 播放器控制条布局覆写（默认见 media3-ui 的 exo_player_control_view.xml）：
-  原布局整体照抄，只在底部加一行「片头 / 片尾跳过」配置按钮（skipCfgRow）。
-  进度条位置由 dimens 里 exo_styled_progress_margin_bottom 决定（见
-  values/media3_video_skip.xml 覆写为 42dp）。
-  ⚠️ 用户要求进度条下移到配置行正上方一点点，从底往上依次是：
-     片头/片尾/投屏配置行 4~38dp → 进度条占位 42~90dp → 时间/按钮行 90~150dp。
+  原布局整体照抄，底部加一行「片头 / 片尾 / 投屏 / 倍数」配置按钮（skipCfgRow），
+  并把时间行（当前时间 / 视频总时长）从 exo_bottom_bar 里提出来，单独贴在进度条上沿。
+
+  ⚠️ 2026-11-09 用户要求：播放视频时进度条要在「设置开始时间 / 设置结束时间 /
+     设置速率」这一行（skipCfgRow）的上边，并且要看得见该视频的总时长。
+     从屏幕底部往上依次是：
+       配置行 4~38dp → 进度条占位 42~90dp → 时间行 92~120dp（左侧）
+       右侧按钮行仍 90~150dp（与时间行左右分离，不重叠）
+     进度条位置由 dimens 的 exo_styled_progress_margin_bottom=42dp 决定
+     （PlayerControlViewLayoutManager 会按这个 dimen 重置 bottomMargin，改 XML margin 无效）。
+     42/90/92 这组值是 11-05「进度条下移贴配置行」的定案，本次不移动进度条，
+     只把总时长从远处（原 exo_bottom_bar 内、70% 灰白、minimal 模式随整条隐藏）
+     提到进度条正上方并改成纯白加粗，保证稳定可见。
+     media3 PlayerControlView 只按 id 给 exo_position / exo_duration setText，
+     不会改父容器可见性，所以把 exo_time 移到 merge 顶层是安全的。
   ⚠️ exo_bottom_bar 原带 media3 默认 #b0000000（70% 黑）背景，叠加全屏
      exo_controls_background 的 60% 遮罩后，进度条下方会出现一条明显更黑的通栏。
      按要求改为透明，文字可读性仍由全屏遮罩保证。
@@ -31,26 +41,8 @@
       android:background="@android:color/transparent"
       android:layoutDirection="ltr">
 
-    <LinearLayout android:id="@id/exo_time"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:paddingStart="@dimen/exo_styled_bottom_bar_time_padding"
-        android:paddingEnd="@dimen/exo_styled_bottom_bar_time_padding"
-        android:paddingLeft="@dimen/exo_styled_bottom_bar_time_padding"
-        android:paddingRight="@dimen/exo_styled_bottom_bar_time_padding"
-        android:layout_gravity="center_vertical|start"
-        android:layoutDirection="ltr">
-
-      <TextView android:id="@id/exo_position"
-          style="@style/ExoStyledControls.TimeText.Position"/>
-
-      <TextView
-          style="@style/ExoStyledControls.TimeText.Separator"/>
-
-      <TextView android:id="@id/exo_duration"
-          style="@style/ExoStyledControls.TimeText.Duration"/>
-
-    </LinearLayout>
+    <!-- 时间行 exo_time 已移到 merge 顶层，贴在进度条上沿显示 当前时间 / 总时长。
+         这里只保留右侧的设置/全屏等按钮，避免与时间行抢左侧空间。 -->
 
     <LinearLayout android:id="@id/exo_basic_controls"
         android:layout_width="wrap_content"
@@ -106,6 +98,42 @@
       android:layout_height="@dimen/exo_styled_progress_layout_height"
       android:layout_gravity="bottom"
       android:layout_marginBottom="@dimen/exo_styled_progress_margin_bottom"/>
+
+  <!-- 时间行：紧贴进度条上沿（进度条占位 42~90dp，本行 marginBottom=92dp），左侧。
+       格式「当前时间 / 视频总时长」；总时长纯白加粗放大，一眼能看到这片子多长。
+       ID 沿用 exo_position / exo_duration，media3 PlayerControlView 每次进度刷新时
+       会照常 setText，不需要在 Kotlin 里重复维护一份计时逻辑。
+       独立放在 merge 顶层后，即使 minimal 模式把 exo_bottom_bar 整条隐藏，时长仍在。 -->
+  <LinearLayout android:id="@id/exo_time"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:paddingStart="@dimen/exo_styled_bottom_bar_time_padding"
+      android:paddingEnd="@dimen/exo_styled_bottom_bar_time_padding"
+      android:paddingLeft="@dimen/exo_styled_bottom_bar_time_padding"
+      android:paddingRight="@dimen/exo_styled_bottom_bar_time_padding"
+      android:layout_gravity="bottom|start"
+      android:layout_marginBottom="92dp"
+      android:layoutDirection="ltr">
+
+    <TextView android:id="@id/exo_position"
+        style="@style/ExoStyledControls.TimeText.Position"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp" />
+
+    <TextView
+        style="@style/ExoStyledControls.TimeText.Separator"
+        android:text="/"
+        android:textColor="#B3FFFFFF"
+        android:textSize="15sp" />
+
+    <TextView android:id="@id/exo_duration"
+        style="@style/ExoStyledControls.TimeText.Duration"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:contentDescription="视频总时长" />
+
+  </LinearLayout>
 
   <!-- 片头 / 片尾跳过配置：贴在画面最底部（marginBottom=4dp），进度条紧贴在它上方。
        配置按影片详情维度保存，对本影片所有剧集/线路生效，其他影片不受影响。

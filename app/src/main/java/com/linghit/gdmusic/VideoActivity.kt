@@ -407,6 +407,29 @@ class VideoActivity : AppCompatActivity() {
         webView = findViewById(R.id.videoWebView)
         overlay = findViewById(R.id.videoOverlay)
         playerView = findViewById(R.id.videoPlayerView)
+        // ⚠️ media3 PlayerControlViewLayoutManager 在「minimal 模式」（详情页内嵌小播放器）
+        //    会把 exo_progress 的 bottomMargin 强制改成 0 —— 进度条贴到画面最底部，
+        //    正好压住片头/片尾/投屏/倍数配置行，用户看到的就成了「进度条在设置按钮下边」。
+        //    这里在每次绘制前把它纠正回 dimen 的 42dp，让内嵌态和全屏态共用同一套
+        //    从底往上的层次：配置行 4~38dp → 进度条 42~90dp → 时间行 92~120dp。
+        //    全屏态 layout manager 本来就设成 42dp，检测到相等就不会动它。
+        //    同时 exo_time 已提到 merge 顶层，minimal 模式隐藏 exo_bottom_bar 时时长仍在。
+        runCatching {
+            val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+            if (progressBar != null) {
+                val targetMargin = resources.getDimensionPixelSize(
+                    androidx.media3.ui.R.dimen.exo_styled_progress_margin_bottom
+                )
+                playerView.viewTreeObserver.addOnPreDrawListener {
+                    val lp = progressBar.layoutParams
+                    if (lp is FrameLayout.LayoutParams && lp.bottomMargin != targetMargin) {
+                        lp.bottomMargin = targetMargin
+                        progressBar.layoutParams = lp
+                    }
+                    true
+                }
+            }
+        }
         fullBtn = findViewById(R.id.videoFull)
         videoPip = findViewById(R.id.videoPip)
         videoTitle = findViewById(R.id.videoTitle)
