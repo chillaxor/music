@@ -43,8 +43,11 @@ import kotlin.math.sqrt
  *    命中按「相对球心的方位角差最小」判扇区（气泡只有 40dp，矩形 contains 太容易判空），
  *    命中的气泡放大 + 换主题色 + 轻震动。菜单已展开时再按住主球也能直接滑选，
  *    此时原地抬手（没移动）仍按老行为收起菜单；点气泡也照旧可用。
+ *    硬约束：**菜单只要展开，MOVE 一律是瞄准，绝不收起气泡、绝不拖动球**——
+ *    不依赖 aiming 状态位（ROM 提前发 ACTION_CANCEL / 窗口重建都可能清掉它），
+ *    CANCEL 也只清高亮不收菜单，避免退化成「气泡一缩、球跟着手指跑」。
  *    再点主球 / 点气泡 / 5 秒无操作自动收起
- *  - 拖动：仅在**未展开 / 未进入瞄准态**时生效，位移超过 touchSlop 算拖动，
+ *  - 拖动：仅在**菜单收起且未进入瞄准态**时生效，位移超过 touchSlop 算拖动，
  *    松手写回坐标（和首页 chip 拖拽同一套阈值逻辑）；
  *    拖到左右边缘附近松手会**贴边半隐藏**（整球滑出屏外只露一条边），
  *    摸一下露出的小条即滑回可见位（本手势不再触发点击，再点一下才是主动作）
@@ -375,12 +378,22 @@ class FloatButtonService : Service() {
                         mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MS)
                     }
                 }
+                Log.d(TAG, "手势 DOWN expanded=$expanded suppress=$suppressClick aiming=$aiming")
                 true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = ev.rawX - downRawX
                 val dy = ev.rawY - downRawY
-                if (aiming) {
+                // 菜单只要还展开，滑手就只能是「瞄准」，不依赖 aiming 这个状态位。
+                // 旧代码在这里放了「展开态滑手 → collapseBubbles + 拖球」，一旦 aiming
+                // 被任何意外路径清掉（ROM 提前发 CANCEL、窗口重建、状态残留），就会
+                // 退化成「气泡一缩、球跟着手指跑」。这里做硬约束并自愈。
+                if (expanded || aiming) {
+                    if (!aiming) {
+                        Log.w(TAG, "手势 MOVE 瞄准态自愈 expanded=$expanded dragged=$dragged")
+                        aiming = true
+                        dragged = false
+                    }
                     // DOWN 定归属后，整串 MOVE 仍派给主球这个窗口，即使已滑出 52dp 边界；
                     // rawX/rawY 是屏幕绝对坐标，直接拿来算命中。此处绝不移动球、绝不收起菜单。
                     if (abs(dx) > touchSlop || abs(dy) > touchSlop) aimMoved = true
@@ -390,12 +403,6 @@ class FloatButtonService : Service() {
                 if (!dragged && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     dragged = true
                     mainHandler.removeCallbacks(longPressRunnable)
-                    // 收起态下的拖动照旧展开态按到球会直接进 aiming，这里只兜底异常路径
-                    if (expanded) {
-                        collapseBubbles()
-                        suppressClick = true
-                        return true
-                    }
                 }
                 if (dragged) {
                     val p = params ?: return true
@@ -410,26 +417,29 @@ class FloatButtonService : Service() {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 mainHandler.removeCallbacks(longPressRunnable)
+                Log.d(
+                    TAG, "手势 ${if (ev.actionMasked == MotionEvent.ACTION_UP) "UP" else "CANCEL"} " +
+                        "aiming=$aiming expanded=$expanded dragged=$dragged " +
+                        "moved=$aimMoved target=$hoveredIndex"
+                )
                 if (aiming) {
                     // 必须放在最前面：longPressed=true 会让下面原有的 UP 分支整段跳过，
                     // 而 dragged=true 会误触发写坐标 + 贴边半隐藏
                     val target = hoveredIndex
                     val moved = aimMoved
                     val tapCollapse = allowTapCollapse
-                    aiming = false
+                    val isCancel = ev.actionMasked == MotionEvent.ACTION_CANCEL
+                    // CANCEL 不清 aiming：部分 ROM 会在手指划出 52dp 小球窗时提前掐断
+                    // 手势并补发事件，清掉状态会让下一串 MOVE 退化成拖球。
+                    if (!isCancel) aiming = false
                     hoveredIndex = -1
                     when {
-                        ev.actionMasked == MotionEvent.ACTION_UP && target >= 0 ->
-                            performBubbleClick(target) // 内部已 collapseBubbles()
-                        ev.actionMasked == MotionEvent.ACTION_UP && !moved && tapCollapse ->
-                            collapseBubbles()         // 菜单展开时点一下球 = 收起
-                        ev.actionMasked == MotionEvent.ACTION_CANCEL -> {
-                            clearHoverVisual()
-                            collapseBubbles()
-                        }
+                        !isCancel && target >= 0 -> performBubbleClick(target) // 内部已 collapseBubbles()
+                        !isCancel && !moved && tapCollapse -> collapseBubbles() // 点一下球 = 收起
                         else -> {
+                            // CANCEL / 没命中：只清高亮，菜单保持展开等重新按住或点选
                             clearHoverVisual()
-                            scheduleAutoCollapse()    // 没命中：保持菜单等点选
+                            scheduleAutoCollapse()
                         }
                     }
                     return true
@@ -454,13 +464,16 @@ class FloatButtonService : Service() {
     private val longPressRunnable = Runnable {
         longPressed = true
         if (expanded) {
-            collapseBubbles()
+            // 菜单已被别处展开：不要收起它，直接进瞄准态，否则「长按反而把气泡关了」
+            aiming = true
+            Log.w(TAG, "手势 长按时菜单已展开 → 直接瞄准")
         } else {
             aiming = true
             hoveredIndex = -1
             expandBubbles()
             if (!expanded) aiming = false // 没配气泡，别留在瞄准态
         }
+        Log.d(TAG, "手势 长按 → aiming=$aiming expanded=$expanded")
     }
 
     // ==================== 贴边半隐藏 ====================
