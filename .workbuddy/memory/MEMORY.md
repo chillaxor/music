@@ -3,7 +3,7 @@
 
 ## 1. 构建 / git 铁律
 - 构建：`"C:\Users\linghit\.jdks\jbr-17.0.14\bin\java.exe" -cp "gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain assembleDebug --console=plain`（要新包加 `clean`，约 2m21s）。必须带 `dangerouslyDisableSandbox`（gradle 锁）；**不要管道到 tail**（沙箱失败会假成功），只以 APK 时间戳验真。`cmd //c gradlew.bat` 假执行、`bash gradlew` 被拦；PATH 无 java。
-- 设备实装版本可能高于仓库 HEAD：构建前 `dumpsys package com.linghit.gdmusic | grep -E "versionCode|versionName"` 对一下；装不上加 `adb install -r -d`。
+- 设备实装版本可能高于仓库 HEAD：构建前 `dumpsys package com.linghit.gdmusic | grep -E "versionCode|versionName"` 对一下；装不上加 `adb install -r -d`。⚠️ 大包(58MB)流式 install 偶发 SIGTERM / `connection reset`，改用 `adb install -r -d -t --no-streaming`（push + pm install 两步）一次成功；设备掉线先 `adb connect 127.0.0.1:21503`。
 - ⚠️ **用户会主动 `git reset --hard origin/main` 丢弃本地分支，是刻意对齐 —— 不要从 reflog 复活被丢提交**（11-04 被明确否决）。以远端 main 为基线，只加当前需求。
 - 远程 github.com/chillaxor/music.git (main)，`http.sslBackend openssl` 已固化；`git fetch` 可能假成功，先 `ls-remote`。push 报 `curl 7 ...502` / `unexpected disconnect` / `TLS unexpected eof` → `git -c http.sslBackend=openssl -c http.version=HTTP/1.1 push origin main`；curl 502 会假报 `Everything up-to-date`，**必须 `git ls-remote origin HEAD` 验真**。
 - worktree：`git branch -vv` 带 `+` = 被检出，删前 `git worktree remove` + status/patch/stash 双保险 + `-d`。⚠️ **同文件多条 Edit 禁止并行发**（并发写静默丢），改完 grep 复核。
@@ -18,6 +18,7 @@
 - 下载按钮 `videoDownload`：**当前仓库没有**（曾随 f763c0c 引入被 reset）。日后重做：ACTION_VIEW + URL + extra_filename 甩系统选择器，IDM+/ADM，m3u8/mpd 也支持；Manifest `<queries>` 声明下载器包名 + VIEW intent（targetSdk 34）；Referer 403 手动补。
 - 小窗：`inlineMode` 只表示「从详情页内嵌起播」，展开全屏后仍 true → 用 `isCompactInline = inlineMode && !inlineExpanded` 判形态；`applyPlayerLayout()` 末尾统一 `updatePipButton()`；进小窗前 `clearInlineDock()` 撤 230px 占位。11-04 去 🖼 emoji 与黑直角块，改「小窗」文字 + `@drawable/bg_glass_pill`。
 - 耳机断开停播：`App.onCreate` 注册 ACTION_AUDIO_BECOMING_NOISY → PlayerManager.stop() + VideoFloatState.player?.pause()；VideoActivity 另注册覆盖前台（投屏中不暂停）。⚠️ AudioFocus 全项目 0 命中：PlayerManager:133 / VideoActivity:929 裸 `ExoPlayer.Builder().build()`，音乐视频会抢声音。
+- ⚠️ **11-09 定案「影视仓全量源包内置」**：`assets/tvbox/` 42 文件/9.95MiB = 订阅 91 站(`subs/box.json`) + 10 个 dex jar + 25 个 QuickJS `js/lib` + 2 外链 js + 3 py + `manifest.json`（来源 URL/内容 md5/爬虫类/对应站点）。jar 文件名 = `md5(jarUrl)`，内容 md5 与订阅 `;md5;` 声明 10/10 一致，660 类覆盖 39 个 `csp_` api 的 37 个。接线四处：`SpiderEngine.ensureJar()` 内置优先（跳过联网下载与 md5 校验，**修好 `csp_Jpys`**）；`VideoActivity.httpGet` 支持 `asset://`；`video.html` 在线订阅失败回退内置配置、`collectSpiderSites()` 改用站点自带 `s.jar`（47 站）并让带 jar 的 XBPQ/AppGet 豁免 `SPIDER_DENY`。⚠️ `.js`/`.py` 源仍未接 QuickJS/Chaquopy，只是二期素材；`./js/…`、`./py/…` 相对路径脚本订阅服务器 404 且影视仓也没缓存，未打包；摸鱼仓 `jar?id=index` 死链未内置；APK +8.8MB，第三方 jar 进 **public 仓库** 永久留痕。
 
 ## 3. UI 版式 / 主题
 - 首页 activity_main.xml（画 mockup 前必读）：暗色玻璃拟态 + 每日一图 + 白字。顶栏 → 玻璃页签 → NestedScrollView{问候行 → 2 排双列信息卡 92dp → 工具卡 shortcutRow FlowLayout perRow=6} → playerBar 滚动区外钉底。固定入口 7 个（记账/看片/收藏/播客/下载/问一句/水印）。
