@@ -706,6 +706,24 @@ class VideoActivity : AppCompatActivity() {
                 }
                 return
             }
+            // 内置源包：asset://tvbox/<path> 直接读 APK assets，订阅服务器挂了也能
+            // 拿到完整 sites/spider/parses 配置（见 assets/tvbox/manifest.json）。
+            if (url.startsWith("asset://")) {
+                val path = url.removePrefix("asset://")
+                val body = runCatching {
+                    this@VideoActivity.assets.open(path)
+                        .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                }.getOrDefault("")
+                val ok = body.isNotEmpty()
+                val b64 = Base64.encodeToString(
+                    body.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP
+                )
+                Log.d("VidHttp", "ASSET $path -> ${if (ok) 200 else 404} len=${body.length}")
+                runOnUiThread {
+                    safeEval("window.__videoCb($cbId,$ok,'$b64',${if (ok) 200 else 404})")
+                }
+                return
+            }
             val req = Request.Builder().url(url).header("User-Agent", UA)
                 .header("Accept", "*/*").build()
             Log.d("VidHttp", "GET $url")

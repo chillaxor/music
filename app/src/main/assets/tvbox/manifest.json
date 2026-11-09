@@ -1,0 +1,529 @@
+{
+  "schema": 1,
+  "generated": "2026-11-09",
+  "source_app": {
+    "package": "com.hlyt.gamehlythz.yscsp",
+    "version": "3.1.5",
+    "note": "从运行中的影视仓设备缓存 + APK assets 导出"
+  },
+  "subscription": {
+    "url": "https://盒子迷.top/禁止贩卖",
+    "file": "subs/box.json",
+    "bytes": 44175,
+    "sites": 91,
+    "parses": 15,
+    "lives": 10,
+    "flags": 35,
+    "rules": 25,
+    "ads": 61,
+    "site_own_jar_sites": 47,
+    "jar_urls_total": 12,
+    "jar_urls_bundled": 10
+  },
+  "jars": [
+    {
+      "file": "jar/57279dba8fe33629815adf7d31bbd8a2.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0416/12/9c6f4eee384d4e9184f7a751c4d10b16.png",
+      "declared_md5": "690CD77AEB20B09A8DD8E01DCBE660B6",
+      "content_md5": "690cd77aeb20b09a8dd8e01dcbe660b6",
+      "bytes": 1630474,
+      "spider_classes": 171,
+      "top_classes": [
+        "Ali",
+        "Alist",
+        "Alist$1",
+        "Alist$2",
+        "Alist$Job",
+        "AmuBiliV2",
+        "AppFox",
+        "AppFox$1",
+        "AppFox$2",
+        "AppFox$3",
+        "AppGet",
+        "AppLY"
+      ],
+      "used_by": [
+        "茉莉/csp_AppGet",
+        "荐片/csp_JianPian",
+        "csp_XYQHiker_动漫巴士/csp_XYQHiker",
+        "csp_XYQHiker_路漫漫/csp_XYQHiker",
+        "csp_XYQHiker_番茶/csp_XYQHiker",
+        "csp_XYQHiker_age动漫/csp_XYQHiker",
+        "方舟动漫/csp_AppGet",
+        "曼波动漫/csp_AppGet",
+        "咕咕动漫/csp_AppGet"
+      ],
+      "used_by_count": 9
+    },
+    {
+      "file": "jar/25ea29358857d1f6793593de00a5e766.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0622/18/bb6ee1729c28414496add334ea3ea00a.png",
+      "declared_md5": "2C09761B17B36A3C58291EB6436C3542",
+      "content_md5": "2c09761b17b36a3c58291eb6436c3542",
+      "bytes": 1482766,
+      "spider_classes": 119,
+      "top_classes": [
+        "AList",
+        "AList$Job",
+        "AppGet",
+        "AppGet$1",
+        "AppGet$2",
+        "AppGetOld",
+        "AppGetOld$1",
+        "AppGetOld$2",
+        "AppGetOld$3",
+        "AppMuou",
+        "AppMuou$1",
+        "AppNox"
+      ],
+      "used_by": [
+        "csp_Guazi/csp_Guazi",
+        "csp_GuaziSport/csp_GuaziSport",
+        "csp_JuheSport/csp_JuheSport"
+      ],
+      "used_by_count": 3
+    },
+    {
+      "file": "jar/2e956c70544b1bba71a08ba881c60729.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0601/11/ed8614953ca843e592f6c388b476f02e.png",
+      "declared_md5": "25001E924EEFF507A008BEF78BFE0F1C",
+      "content_md5": "25001e924eeff507a008bef78bfe0f1c",
+      "bytes": 1304032,
+      "spider_classes": 88,
+      "top_classes": [
+        "AList",
+        "AList$Job",
+        "AppGet",
+        "AppGet$1",
+        "AppGet$2",
+        "AppGetOld",
+        "AppGetOld$1",
+        "AppGetOld$2",
+        "AppGetOld$3",
+        "AppMuou",
+        "AppMuou$1",
+        "AppNox"
+      ],
+      "used_by": [
+        "csp_xq/csp_Lyxq"
+      ],
+      "used_by_count": 1
+    },
+    {
+      "file": "jar/9427c8c85eeeeedb2f9d354f52e5c7fc.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0508/10/56d0b667615145949789418bff9f22a5.png",
+      "declared_md5": "B63A0EB8852BB7AB06500C424CCC3DAE",
+      "content_md5": "b63a0eb8852bb7ab06500c424ccc3dae",
+      "bytes": 901390,
+      "spider_classes": 82,
+      "top_classes": [
+        "A",
+        "AList",
+        "AList$Job",
+        "Ali",
+        "AppYsV2",
+        "B",
+        "Baidu",
+        "Bili",
+        "Bili$Loader",
+        "Bili2",
+        "Bili2$Loader",
+        "C"
+      ],
+      "used_by": [
+        "(仓级 spider)"
+      ],
+      "used_by_count": 1
+    },
+    {
+      "file": "jar/3885d11d27e2203084ff77836a1c9c2c.jar",
+      "url": "https://ncstatic-file.clewm.net/rsrc/2026/0416/20/1fe667cd217a0c314b8ca59310dbf45d.jpg",
+      "declared_md5": "a4f403a000bc5e4ebdd9da27fcb05852",
+      "content_md5": "a4f403a000bc5e4ebdd9da27fcb05852",
+      "bytes": 876820,
+      "spider_classes": 78,
+      "top_classes": [
+        "AiWan",
+        "AppGet",
+        "AppQi",
+        "AppRJ",
+        "AppV2P1",
+        "AppV6",
+        "Bili",
+        "BiliLive",
+        "BiliPGC",
+        "Cloud",
+        "Cloud$LineItem",
+        "CntvSpider"
+      ],
+      "used_by": [
+        "免扫4K/csp_AppV6"
+      ],
+      "used_by_count": 1
+    },
+    {
+      "file": "jar/b3de3b835ff81e06444dce8179d71ea1.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0501/23/d064709f380b4075ac3a4ec302d4244d.png",
+      "declared_md5": "FD3CEFC7302F3A39A442682F802B11E5",
+      "content_md5": "fd3cefc7302f3a39a442682f802b11e5",
+      "bytes": 635660,
+      "spider_classes": 92,
+      "top_classes": [
+        "AliPS",
+        "Alist",
+        "Alist$1",
+        "Alist$Job",
+        "AppYs",
+        "AppYsV2",
+        "BLSGod",
+        "Bdys",
+        "Bdys$1",
+        "Bdys$2",
+        "Bdys$3",
+        "Bili"
+      ],
+      "used_by": [
+        "韩剧看看/csp_XBPQ",
+        "韩剧在线/csp_XBPQ",
+        "七味影院/csp_XBPQ"
+      ],
+      "used_by_count": 3
+    },
+    {
+      "file": "jar/42b822f99f9755aed311512b0bcceca9.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0418/17/1d9136626610437ab0cac0dbe262d1ed.png",
+      "declared_md5": "4D860D06EC233DBCB891B76055F099D5",
+      "content_md5": "4d860d06ec233dbcb891b76055f099d5",
+      "bytes": 435070,
+      "spider_classes": 6,
+      "top_classes": [
+        "AppYs",
+        "AppYsV2",
+        "Init",
+        "Proxy",
+        "PushAgent",
+        "XBPQ"
+      ],
+      "used_by": [
+        "养生堂/csp_XBPQ",
+        "农民/csp_XBPQ",
+        "狐狸电影/csp_XBPQ",
+        "SVIP影视/csp_XBPQ",
+        "永乐XBPQ/csp_XBPQ",
+        "xiaozhen/csp_XBPQ",
+        "水滴视频/csp_XBPQ",
+        "啊哈DJ/csp_XBPQ"
+      ],
+      "used_by_count": 8
+    },
+    {
+      "file": "jar/05303a6418d7a04afe98fae13d924350.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2025/0725/20/318ccef14687421637f5aa0ba1021e33.png",
+      "declared_md5": "939FFBC2941A28CA533F2653FA4B449E",
+      "content_md5": "939ffbc2941a28ca533f2653fa4b449e",
+      "bytes": 385294,
+      "spider_classes": 87,
+      "top_classes": [
+        "AI",
+        "AI2",
+        "APPTT",
+        "AppYsV2",
+        "Auete",
+        "Auete$1",
+        "Bdys01",
+        "Bdys01$1",
+        "Bili",
+        "Czsapp",
+        "Czsapp$1",
+        "Czsapp$2"
+      ],
+      "used_by": [
+        "柠檬/csp_Nmvod",
+        "天天/csp_TTian",
+        "nangua/csp_NanGua",
+        "橘皮/csp_Jpys",
+        "剧评/csp_Jpys",
+        "ZXZJ/csp_Zxzj",
+        "Lib/csp_Lib"
+      ],
+      "used_by_count": 7
+    },
+    {
+      "file": "jar/2174ca118a3d56397521925550379a4f.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0604/20/4f195a9210254fbbb6ade0cb28fd8e17.png",
+      "declared_md5": "C4448A598C63BA1ABD49034C25B70EE4",
+      "content_md5": "c4448a598c63ba1abd49034c25b70ee4",
+      "bytes": 254287,
+      "spider_classes": 13,
+      "top_classes": [
+        "Bili",
+        "BookTing",
+        "DouBan",
+        "Init",
+        "Init$Loader",
+        "Music",
+        "Notice",
+        "Notice$1",
+        "Proxy",
+        "Web608",
+        "WebNM",
+        "WebTVB"
+      ],
+      "used_by": [
+        "csp_Bili/csp_Bili",
+        "csp_Biliyy/csp_Bili",
+        "csp_mtv/csp_Bili",
+        "csp_bilirt/csp_Bili",
+        "csp_bilims/csp_Bili",
+        "哔哩健身/csp_Bili",
+        "哔哩幼儿/csp_Bili",
+        "哔哩少儿/csp_Bili",
+        "哔哩小学/csp_Bili",
+        "哔哩初中/csp_Bili",
+        "哔哩高中/csp_Bili"
+      ],
+      "used_by_count": 11
+    },
+    {
+      "file": "jar/bb65ae95601cb1ef4e69002fad84dcfa.jar",
+      "url": "https://ncstatic.clewm.net/rsrc/2026/0606/11/213bbb9695e34a42a8fb0d2deff41a89.png",
+      "declared_md5": "38F2621478442352EC0417E3D660B8D8",
+      "content_md5": "38f2621478442352ec0417e3d660b8d8",
+      "bytes": 201754,
+      "spider_classes": 199,
+      "top_classes": [
+        "AList",
+        "AList$Job",
+        "Bili",
+        "DanmakuApiSource",
+        "DanmakuApiSource$ParsedEntry",
+        "DanmakuConfig",
+        "DanmakuConfigManager",
+        "DanmakuManager",
+        "DanmakuScanner",
+        "DanmakuScanner$$ExternalSyntheticLambda1",
+        "DanmakuScanner$$ExternalSyntheticLambda2",
+        "DanmakuScanner$1"
+      ],
+      "used_by": [
+        "leo弹幕/csp_DanmakuSpider"
+      ],
+      "used_by_count": 1
+    }
+  ],
+  "jars_missing": [
+    {
+      "url": "https://pan.szfx.top/down.php/14fce8ef9e7e8a40719c801ec3077b8c.jar",
+      "md5_url": "4c6a4691d55359a23a24333ad6610205",
+      "used_by": [
+        "哔哩弹幕/csp_Bilimd"
+      ]
+    },
+    {
+      "url": "https://oss4liview.moji.com/thd_file/2026/03/16/91b25da2d5952845f799d4dda97ae065.jpg",
+      "md5_url": "fa991dada590bb4588993f3f35bfc5d8",
+      "used_by": [
+        "88js/csp_Sir88Guard"
+      ]
+    }
+  ],
+  "js_lib": {
+    "dir": "js/lib/",
+    "count": 25,
+    "bytes": 2172437,
+    "note": "影视仓 APK assets/js/lib 原样导出，QuickJS 运行时（cat.js/drpy2/cheerio/http.js/spider.js 等）。本 App 当前未接 QuickJS 引擎，仅作二期素材。 中文文件名统一改为 ASCII（原名见 original_name），避免 APK/公开仓库编码问题。",
+    "files": [
+      {
+        "name": "cat.js",
+        "bytes": 486451,
+        "md5": "ce5c0ecf92f7507c3b65c1ecbc167f95"
+      },
+      {
+        "name": "cheerio.min.js",
+        "bytes": 356592,
+        "md5": "f4f72962fb5d6e15d4e32b39c02056f0"
+      },
+      {
+        "name": "crypto-hiker.js",
+        "bytes": 184911,
+        "md5": "bc38453f78414e62b95b48b2ffd6ac0b"
+      },
+      {
+        "name": "crypto-js.js",
+        "bytes": 198120,
+        "md5": "0290d675a485e70ff76879e17ecec46a"
+      },
+      {
+        "name": "dayjs.min.js",
+        "bytes": 6570,
+        "md5": "a6bd3bb59f36e342d78886485bd335c0"
+      },
+      {
+        "name": "drpy.min.js",
+        "bytes": 46102,
+        "md5": "67b81fcab627549f9812649c87ff6d3b"
+      },
+      {
+        "name": "drpy2.js",
+        "bytes": 149971,
+        "md5": "07406368291a81a53e6f0f6e71c93007"
+      },
+      {
+        "name": "drpy2.min.js",
+        "bytes": 67332,
+        "md5": "3f2473a58cfaee763c37ab154f665cf6"
+      },
+      {
+        "name": "gbk.js",
+        "bytes": 56203,
+        "md5": "d5a05799eeeceb81cadd77e80f2807c8"
+      },
+      {
+        "name": "http.js",
+        "bytes": 469,
+        "md5": "3912be6252576ac6eb0ee66199d9d353"
+      },
+      {
+        "name": "jinja.js",
+        "bytes": 22130,
+        "md5": "304dab0db9beba0e6a726c7178fbec82"
+      },
+      {
+        "name": "jsencrypt.js",
+        "bytes": 217159,
+        "md5": "c095897a1f843b3b9ccc2ae2fecc6c6e"
+      },
+      {
+        "name": "json5.js",
+        "bytes": 58694,
+        "md5": "f0746f07c7a6dfe72b0f926ec6be54fb"
+      },
+      {
+        "name": "live2cms.js",
+        "bytes": 13751,
+        "md5": "452ebd734307101095b76b7bc665054f"
+      },
+      {
+        "name": "mod.js",
+        "bytes": 3668,
+        "md5": "77d66757016f05ee976830e1688b7e3f"
+      },
+      {
+        "name": "net.js",
+        "bytes": 470,
+        "md5": "08ef1553aafe3b0ab9d0ea2dc257465a"
+      },
+      {
+        "name": "node-rsa.js",
+        "bytes": 167480,
+        "md5": "e8be46c62e6be1b3cd17a01ba17e3d4f"
+      },
+      {
+        "name": "pako.min.js",
+        "bytes": 46858,
+        "md5": "93ab7e44d8b5245b2242085f04acdcca"
+      },
+      {
+        "name": "similarity.js",
+        "bytes": 2264,
+        "md5": "e5f3fe2ba5423aa0598508e2f6968dd4"
+      },
+      {
+        "name": "sortName.js",
+        "bytes": 32688,
+        "md5": "f044deb529cbc16f782a806b5ed64042"
+      },
+      {
+        "name": "spider.js",
+        "bytes": 333,
+        "md5": "36ac57a8f42dea81bb3428b850e3d2da"
+      },
+      {
+        "name": "underscore-esm-min.js",
+        "bytes": 25696,
+        "md5": "b449d953d6804f8bfe78739bd56f8a03"
+      },
+      {
+        "name": "uri.min.js",
+        "bytes": 6011,
+        "md5": "004f50a204cf40a29bb8e2c28c53c856"
+      },
+      {
+        "name": "utils.js",
+        "bytes": 2892,
+        "md5": "f54f389d2161e0ebf5534f0f87966d3f"
+      },
+      {
+        "name": "template.js",
+        "bytes": 19622,
+        "md5": "1ad9ccab749a1c5a72b7769f9acc1211",
+        "original_name": "模板.js"
+      }
+    ]
+  },
+  "js_sources": {
+    "dir": "js/",
+    "count": 2,
+    "bytes": 69749,
+    "note": "影视仓运行时下载到 cache/js 的外链脚本 中文文件名统一改为 ASCII（原名见 original_name），避免 APK/公开仓库编码问题。",
+    "files": [
+      {
+        "name": "get.js",
+        "bytes": 29343,
+        "md5": "5cc128bbc74b5128877bc1b626efe81c"
+      },
+      {
+        "name": "jiying.js",
+        "bytes": 40406,
+        "md5": "3149e9bcc5bcf54714b33ed05efb9278",
+        "original_name": "极影.js"
+      }
+    ]
+  },
+  "py_sources": {
+    "dir": "py/",
+    "count": 3,
+    "bytes": 23736,
+    "note": "影视仓运行时下载到 cache/py 的外链 Python 脚本；本 App 未接 Chaquopy，仅作素材 中文文件名统一改为 ASCII（原名见 original_name），避免 APK/公开仓库编码问题。",
+    "files": [
+      {
+        "name": "56ac2028f2dd8336dccad017927cbef1.py",
+        "bytes": 7266,
+        "md5": "56ac2028f2dd8336dccad017927cbef1"
+      },
+      {
+        "name": "Acfun.py",
+        "bytes": 16324,
+        "md5": "ce2e8e6c9acedd15f2f99873fe78c3c9"
+      },
+      {
+        "name": "muxi.py",
+        "bytes": 146,
+        "md5": "9fe3cb2b7313dc79bb477bc8fde184a7",
+        "original_name": "木兮.py"
+      }
+    ]
+  },
+  "not_loaded": {
+    "relative_js": [
+      "./js/drpy2.min.js",
+      "./js/咖啡直播.js",
+      "./js/聚合短剧.js"
+    ],
+    "relative_py": [
+      "./py/hgdj.py",
+      "./py/央视.py",
+      "./py/文才.py",
+      "./py/枫叶.py",
+      "./py/界.py"
+    ],
+    "reason": "订阅相对路径脚本在订阅服务器返回 404，影视仓设备缓存中也无对应文件，说明这些站点从未被成功加载；未打包。"
+  },
+  "runtime_support": {
+    "csp_jar": "✅ SpiderEngine(DexClassLoader)，本次起优先命中内置 jar",
+    "cms_direct": "✅ video.html 直连",
+    "js": "❌ 未接 QuickJS，js/lib 与外链 js 仅为素材",
+    "py": "❌ 未接 Chaquopy(体积代价)，py 仅为素材"
+  },
+  "encoding_note": "源包内所有文件名均为 ASCII；影视仓原始中文名记录在 original_name 字段。"
+}

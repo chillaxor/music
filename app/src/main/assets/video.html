@@ -415,6 +415,8 @@ function deniedSpider(api){
   return SPIDER_DENY.indexOf(k)>=0;
 }
 function norm(u){
+  // 内置源包用自定义 scheme，交给原生桥读 assets，不能过 new URL()（会被重写）
+  if(/^asset:\/\//i.test(u)) return u;
   // new URL() 会同时做两件事：中文主机转 punycode、中文路径转百分号编码。
   // 绝不能再 encodeURIComponent 一遍——% 会变成 %25 造成双重编码，
   // 服务器收到不存在的路径返回 404 HTML，表现为「接口不是合法 JSON」。
@@ -495,14 +497,22 @@ function closeSrcDrawer(){$('srcDrawer').classList.remove('show');}
 function switchToMusic(){ if(window.Android&&Android.openMusic) Android.openMusic(); }
 
 /* ============ 选源 → 拉配置 → 拉分类 ============ */
-/** 拉取单个订阅源的 sites 列表，缓存到 STATE.srcSites[i] */
+/** 解析订阅响应，失败返回 null（404 HTML、半截 JSON 都算失败） */
+function parseSubResp(r){
+  if(!r||!r.ok||!r.text)return null;
+  try{var c=JSON.parse(r.text);return (c&&(c.sites||c.class||c.list))?c:null;}catch(e){return null;}
+}
+/** 拉取单个订阅源的 sites 列表，缓存到 STATE.srcSites[i]；在线挂了回退内置源包 */
 async function loadOneSource(i){
   var s=STATE.sources[i]; if(!s)return [];
-  var r=await get(norm(s.url));
-  if(!r.ok){console.log('loadOneSource FAIL: src='+i+' code='+r.code);STATE.srcSites[i]=[];return [];}
-  var cfg; try{cfg=JSON.parse(r.text);}catch(e){
-    console.log('loadOneSource NOT JSON: src='+i+' head='+r.text.slice(0,80));STATE.srcSites[i]=[];return [];
+  var cfg=parseSubResp(await get(norm(s.url)));
+  if(!cfg){
+    // 订阅服务器 502 / 返回错误页 / 半截 JSON：改用随 APK 打包的完整配置，
+    // 91 个站点与各自 jar 字段都还在，离线也能搜（见 assets/tvbox/manifest.json）。
+    console.log('loadOneSource: src='+i+' 在线订阅不可用，回退内置源包');
+    cfg=parseSubResp(await get('asset://tvbox/subs/box.json'));
   }
+  if(!cfg){console.log('loadOneSource FAIL: src='+i+' 内置源包也不可用');STATE.srcSites[i]=[];return [];}
   var all=(cfg.sites||[]).filter(function(x){return x&&x.api;});
   var sites=all.filter(function(x){return !needsLogin(x);});
   var dropped=all.length-sites.length;
@@ -906,16 +916,21 @@ function collectDirectSites(){
   });
   return out;
 }
-/** 汇总所有订阅源里的 jar 爬虫站点 [{ri,si,name,api,ext,jar,key}] */
+/** 汇总所有订阅源里的 jar 爬虫站点 [{ri,si,name,api,ext,jar,key}]
+ *  站点自带 jar 优先：多仓里 47 个站点各自带 jar（指向 10 个不同 dex jar），
+ *  旧逻辑一律用仓级 spider，导致 csp_Jpys 这类只在自带 jar 里的类永远找不到。 */
 function collectSpiderSites(){
   var out=[];
   (STATE.srcSites||[]).forEach(function(sites,ri){
     var jar=(STATE.srcJars&&STATE.srcJars[ri])||'';
     (sites||[]).forEach(function(s,si){
-      if(s&&s.api&&String(s.api).indexOf('csp_')===0&&!deniedSpider(s.api)){
+      var ownJar=(s&&typeof s.jar==='string'&&s.jar)?s.jar:'';
+      // SPIDER_DENY 原意是跳过没有 jar 的 JS 框架源；带自有 jar 的
+      // XBPQ/AppGet 等其实是 DexClassLoader 爬虫，不该被误伤。
+      if(s&&s.api&&String(s.api).indexOf('csp_')===0&&(!deniedSpider(s.api)||ownJar)){
         out.push({ri:ri,si:si,name:s.name||s.key||('站点'+(si+1)),api:s.api,
           ext:s.ext?(typeof s.ext==='string'?s.ext:JSON.stringify(s.ext)):'',
-          jar:jar,key:s.key||s.name||('site'+ri+'_'+si)});
+          jar:ownJar||jar,key:s.key||s.name||('site'+ri+'_'+si)});
       }
     });
   });

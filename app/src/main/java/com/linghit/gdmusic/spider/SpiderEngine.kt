@@ -24,7 +24,9 @@ import java.util.concurrent.TimeUnit
  * 覆盖范围（实测）：jar 内含 Bili/Mogg/Push/Ddys/Dyyj/Wogg/Xb6v/Xydj/Zxzj/Czzy/Kwps/
  * Ddyy/Guazi/Kugou/Living/Market/NongMin/Jinpai/Jianpian/FirstAid/TianTian/Tgsou/
  * HaiYin/PanSearch/Douban/Bili2 等具名爬虫，两仓约 67 个站点可用。
- * XBPQ/AppGet/XYQHiker 等 JS 框架源与 .py 源不在本引擎范围（二期）。
+ * 2026-11-09：内置影视仓同款 10 个 dex jar（assets/tvbox/jar/<md5(jarUrl)>.jar，
+ * 见 manifest.json），带自有 jar 的 XBPQ/AppGet 等站点也可用 DexClassLoader 加载；
+ * 外链 .js 与 .py 源仍需二期 QuickJS / Chaquopy，本引擎不处理。
  *
  * 用法（全部异步，结果回调在 watchdog 线程，调用方自行切 UI 线程）：
  *   SpiderEngine.get(ctx).searchAsync(jar, api, ext, key, wd) { json -> }
@@ -217,8 +219,21 @@ class SpiderEngine private constructor(private val appCtx: Context) {
         val file = File(dir, "${md5(url)}.jar")
         if (file.exists() && file.length() > 0) {
             if (expectMd5 == null || fileMd5(file).equals(expectMd5, true)) return file
-            Log.w(TAG, "jar md5 不符，重新下载: $url")
+            Log.w(TAG, "jar md5 不符，改用内置源包: $url")
             file.delete()
+        }
+        // 内置源包优先：影视仓实机缓存的 10 个 dex jar 已随 APK 打包到
+        // assets/tvbox/jar/<md5(url)>.jar。文件名就是订阅 jar URL 的 md5，
+        // 内容 md5 已逐个核对与订阅 ;md5; 声明一致（见 assets/tvbox/manifest.json）。
+        // 命中即离线落盘，跳过网络下载：订阅 CDN 偶发返回错误页/被换内容，
+        // 旧逻辑会因 md5 校验失败直接丢弃（csp_Jpys 此前就死在这一步）。
+        val builtIn = runCatching {
+            appCtx.assets.open("tvbox/jar/${md5(url)}.jar").use { it.readBytes() }
+        }.getOrNull()
+        if (builtIn != null && builtIn.isNotEmpty()) {
+            file.writeBytes(builtIn)
+            Log.d(TAG, "内置 jar 命中: ${file.name} (${file.length()}B)")
+            return file
         }
         return try {
             Log.d(TAG, "下载 jar: $url")
