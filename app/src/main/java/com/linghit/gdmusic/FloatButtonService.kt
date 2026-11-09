@@ -27,8 +27,10 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * 常驻悬浮按钮：一个可拖动的圆形悬浮球，浮在**所有页面之上**（App 内任意页 /
@@ -36,9 +38,14 @@ import kotlin.math.sin
  *
  *  - 点击：执行配置好的主动作（默认「记一笔」，见 [FloatButtonStore.action]）
  *  - 长按 0.5s：以主球为圆心**放射展开气泡菜单**，每个气泡是一个可配入口
- *    （默认影视仓 / 首页，见 [FloatButtonStore.bubbles]）；点气泡直达，
+ *    （默认影视仓 / 首页，见 [FloatButtonStore.bubbles]）
+ *  - 滑选：长按展开后**手指不要松开**，直接滑到某颗气泡上再抬手即执行；
+ *    命中按「相对球心的方位角差最小」判扇区（气泡只有 40dp，矩形 contains 太容易判空），
+ *    命中的气泡放大 + 换主题色 + 轻震动。菜单已展开时再按住主球也能直接滑选，
+ *    此时原地抬手（没移动）仍按老行为收起菜单；点气泡也照旧可用。
  *    再点主球 / 点气泡 / 5 秒无操作自动收起
- *  - 拖动：位移超过 touchSlop 算拖动，松手写回坐标（和首页 chip 拖拽同一套阈值逻辑）；
+ *  - 拖动：仅在**未展开 / 未进入瞄准态**时生效，位移超过 touchSlop 算拖动，
+ *    松手写回坐标（和首页 chip 拖拽同一套阈值逻辑）；
  *    拖到左右边缘附近松手会**贴边半隐藏**（整球滑出屏外只露一条边），
  *    摸一下露出的小条即滑回可见位（本手势不再触发点击，再点一下才是主动作）
  *
@@ -106,6 +113,22 @@ class FloatButtonService : Service() {
     private var ballX = 0
     private var ballY = 0
     private var expanded = false
+
+    // ---- 长按滑选（放射菜单瞄准态） ----
+    /** 手指还没抬起，MOVE 一律解释为「瞄准气泡」，不拖球、不收起菜单 */
+    private var aiming = false
+    /** 当前手指落在哪颗气泡的扇区；-1 = 没命中 */
+    private var hoveredIndex = -1
+    /** aiming 期间手指是否明显移动过（用来区分「点球收起」和「滑出去没选中」） */
+    private var aimMoved = false
+    /** 本次手势开始时菜单就已经展开 → 原地抬手按「点球收起」处理 */
+    private var allowTapCollapse = false
+    /** 展开时缓存每颗气泡的方位角（度），hitTestBubble 按角度差选扇区 */
+    private val bubbleAngles = mutableListOf<Double>()
+    private var aimCx = 0f
+    private var aimCy = 0f
+    /** 单个扇区允许的半宽，展开时按气泡数量算 */
+    private var aimSectorHalf = 90.0
 
     // ---- 贴边半隐藏 ----
     /** 当前半隐藏边：HIDDEN_NONE / HIDDEN_LEFT / HIDDEN_RIGHT */
@@ -179,7 +202,7 @@ class FloatButtonService : Service() {
         val n = FloatButtonStore.bubbles(this).size
         val noti = Notification.Builder(this, CH_ID)
             .setContentTitle("悬浮按钮运行中")
-            .setContentText("点击：${action.label} · 长按展开 ${n} 个气泡")
+            .setContentText("点击：${action.label} · 长按展开 ${n} 个气泡，滑到气泡上松手选中")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pi)
             .build()
@@ -330,23 +353,44 @@ class FloatButtonService : Service() {
         return when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 mainHandler.removeCallbacks(xAnimRunnable)
+                // 手势期间先摘掉自动收起，抬手时按结果重挂，避免瞄到一半菜单消失
+                mainHandler.removeCallbacks(autoCollapseRunnable)
                 downRawX = ev.rawX; downRawY = ev.rawY
                 dragged = false
                 longPressed = false
+                aiming = false
+                hoveredIndex = -1
+                aimMoved = false
                 // 半隐藏态被摸到：立刻滑回可见位，本手势不再算点击/长按
                 // （否则用户点小条想唤出球，顺手就把主动作触发了）
                 suppressClick = restoreFromEdge()
                 downX = ballX; downY = ballY
-                if (!suppressClick) mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MS)
+                // 菜单在本次手势之前就展开了 → 原地抬手仍按「点球收起」处理
+                allowTapCollapse = expanded && !suppressClick
+                if (!suppressClick) {
+                    if (expanded) {
+                        // 菜单已展开：不用再等 500ms，按住主球即可直接滑选
+                        aiming = true
+                    } else {
+                        mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MS)
+                    }
+                }
                 true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = ev.rawX - downRawX
                 val dy = ev.rawY - downRawY
+                if (aiming) {
+                    // DOWN 定归属后，整串 MOVE 仍派给主球这个窗口，即使已滑出 52dp 边界；
+                    // rawX/rawY 是屏幕绝对坐标，直接拿来算命中。此处绝不移动球、绝不收起菜单。
+                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) aimMoved = true
+                    setHovered(hitTestBubble(ev.rawX, ev.rawY))
+                    return true
+                }
                 if (!dragged && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                     dragged = true
                     mainHandler.removeCallbacks(longPressRunnable)
-                    // 展开态下划手：直接收起，本次手势不再当点击
+                    // 收起态下的拖动照旧展开态按到球会直接进 aiming，这里只兜底异常路径
                     if (expanded) {
                         collapseBubbles()
                         suppressClick = true
@@ -366,6 +410,30 @@ class FloatButtonService : Service() {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 mainHandler.removeCallbacks(longPressRunnable)
+                if (aiming) {
+                    // 必须放在最前面：longPressed=true 会让下面原有的 UP 分支整段跳过，
+                    // 而 dragged=true 会误触发写坐标 + 贴边半隐藏
+                    val target = hoveredIndex
+                    val moved = aimMoved
+                    val tapCollapse = allowTapCollapse
+                    aiming = false
+                    hoveredIndex = -1
+                    when {
+                        ev.actionMasked == MotionEvent.ACTION_UP && target >= 0 ->
+                            performBubbleClick(target) // 内部已 collapseBubbles()
+                        ev.actionMasked == MotionEvent.ACTION_UP && !moved && tapCollapse ->
+                            collapseBubbles()         // 菜单展开时点一下球 = 收起
+                        ev.actionMasked == MotionEvent.ACTION_CANCEL -> {
+                            clearHoverVisual()
+                            collapseBubbles()
+                        }
+                        else -> {
+                            clearHoverVisual()
+                            scheduleAutoCollapse()    // 没命中：保持菜单等点选
+                        }
+                    }
+                    return true
+                }
                 if (dragged) {
                     FloatButtonStore.setPosition(this, ballX, ballY)
                     // 贴边吸附半隐藏：松手时离左/右缘够近 → 整球滑出屏外只露一条边
@@ -385,7 +453,14 @@ class FloatButtonService : Service() {
 
     private val longPressRunnable = Runnable {
         longPressed = true
-        if (expanded) collapseBubbles() else expandBubbles()
+        if (expanded) {
+            collapseBubbles()
+        } else {
+            aiming = true
+            hoveredIndex = -1
+            expandBubbles()
+            if (!expanded) aiming = false // 没配气泡，别留在瞄准态
+        }
     }
 
     // ==================== 贴边半隐藏 ====================
@@ -443,6 +518,70 @@ class FloatButtonService : Service() {
 
     private val autoCollapseRunnable = Runnable { collapseBubbles() }
 
+    /** 只在没有手势瞄准的时候挂自动收起；抬手未命中时调用重挂 */
+    private fun scheduleAutoCollapse() {
+        mainHandler.removeCallbacks(autoCollapseRunnable)
+        if (expanded) mainHandler.postDelayed(autoCollapseRunnable, AUTO_COLLAPSE_MS)
+    }
+
+    /**
+     * 手指 → 气泡：按「相对球心的方位角差最小」选扇区，不做矩形 contains。
+     * 气泡只有 40dp、扇区之间空隙大，矩形判定会频繁判空；扇区判定滑过空隙也能选中最靠近的一颗。
+     * 半径门槛：离球心太近算还在球上，太远算滑出菜单，都不选中。
+     */
+    private fun hitTestBubble(rawX: Float, rawY: Float): Int {
+        if (!expanded || bubbleAngles.isEmpty()) return -1
+        val dx = rawX - aimCx
+        val dy = rawY - aimCy
+        val dist = sqrt(dx * dx + dy * dy)
+        if (dist < dp(24) || dist > fanRadius + bubbleSize) return -1
+        val deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble()))
+        var best = -1
+        var bestDiff = Double.MAX_VALUE
+        for (i in bubbleAngles.indices) {
+            val diff = abs(((deg - bubbleAngles[i] + 540.0) % 360.0) - 180.0)
+            if (diff < bestDiff) { bestDiff = diff; best = i }
+        }
+        return if (bestDiff <= aimSectorHalf) best else -1
+    }
+
+    /** 命中变化才刷新高亮：主题色实心圆 + 放大，配一次轻震动 */
+    private fun setHovered(i: Int) {
+        if (hoveredIndex == i) return
+        val prev = hoveredIndex
+        hoveredIndex = i
+        if (prev >= 0) bubbleViews.getOrNull(prev)?.let { restoreBubbleVisual(it) }
+        if (i >= 0) bubbleViews.getOrNull(i)?.let { v ->
+            v.animate().cancel()
+            v.background = highlightedBubbleBg()
+            v.animate().scaleX(1.22f).scaleY(1.22f).setDuration(90L).start()
+            vibrate(10L)
+        }
+    }
+
+    private fun restoreBubbleVisual(v: View) {
+        v.animate().cancel()
+        v.background = bubbleBg()
+        v.animate().scaleX(1f).scaleY(1f).setDuration(90L).start()
+    }
+
+    /** 清掉所有高亮；直接赋值不用动画，避免收起时动画把 scale 又改回 1 */
+    private fun clearHoverVisual() {
+        bubbleViews.forEach { v ->
+            if (v.visibility == View.VISIBLE) {
+                v.animate().cancel()
+                v.scaleX = 1f; v.scaleY = 1f
+                v.background = bubbleBg()
+            }
+        }
+    }
+
+    private fun highlightedBubbleBg(): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(ThemePrefs.currentPack(this@FloatButtonService).primary)
+        setStroke(dp(2), 0xFFFFFFFF.toInt())
+    }
+
     /** 长按 → 放射展开气泡；扇区方向与边缘全部自适应，气泡不出屏 */
     /**
      * 展开气泡：每颗气泡各自 addView 成一个 40dp 的独立悬浮小窗。
@@ -468,16 +607,32 @@ class FloatButtonService : Service() {
         // 顶部放不下整个扇形且下方更宽 → 向下；球心离左/右缘太近 → 整体偏 45°。
         val cx = ballX + ballSize / 2f
         val cy = ballY + ballSize / 2f
+        // 命中判定必须用「真实屏幕坐标」做原点：WindowManager 的 lp.y 与窗口实际 frame
+        // 之间可能差一个状态栏偏移（逍遥实测 +45px）。球与气泡同属 overlay、偏移一致，
+        // 相对角度不受影响；但原点不对齐会让整组扇区上移，手指停在视觉气泡上会选偏。
+        val loc = IntArray(2)
+        root?.getLocationOnScreen(loc)
+        if (loc[0] != 0 || loc[1] != 0) {
+            aimCx = loc[0] + ballSize / 2f
+            aimCy = loc[1] + ballSize / 2f
+        } else {
+            aimCx = cx; aimCy = cy
+        }
+        bubbleAngles.clear()
         val need = fanRadius + bubbleSize / 2 + dp(6)
         var center = if (cy < need && dm.heightPixels - cy > cy) 90.0 else -90.0
         if (cx < need) center += 45.0
         else if (dm.widthPixels - cx < need) center -= 45.0
         val half = when (n) { 1 -> 0.0; 2 -> 42.0; 3 -> 58.0; 4 -> 68.0; else -> 75.0 }
+        // 扇区半宽 = 相邻气泡角距的一半 + 10° 余量，让气泡之间的空隙也能选中最靠近的一颗
+        aimSectorHalf = if (n > 1) half / (n - 1) + 10.0 else 90.0
 
         // 以主球中心为原点算每颗气泡的圆心偏移
         for (i in 0 until n) {
             val v = bubbleViews[i]
-            val ang = Math.toRadians(center + if (n > 1) half * (1.0 - 2.0 * i / (n - 1)) else 0.0)
+            val deg = center + if (n > 1) half * (1.0 - 2.0 * i / (n - 1)) else 0.0
+            val ang = Math.toRadians(deg)
+            bubbleAngles.add(deg)
             val dx = (fanRadius * cos(ang)).toFloat()
             val dy = (fanRadius * sin(ang)).toFloat()
             // 气泡圆心 = 主球中心 + 偏移；窗口左上角 = 圆心 - 半径
@@ -496,9 +651,11 @@ class FloatButtonService : Service() {
         // 配置变少的那几颗：直接隐掉（窗口仍挂着，下次展开再摆位）
         for (i in n until bubbleViews.size) bubbleViews[i].visibility = View.GONE
 
-        mainHandler.postDelayed(autoCollapseRunnable, AUTO_COLLAPSE_MS)
+        // aiming 期间先不挂自动收起：抬手没命中时由 onBallTouch 重挂，
+        // 否则慢慢瞄准到一半气泡会自己消失
+        if (!aiming) scheduleAutoCollapse()
         vibrate()
-        Log.d(TAG, "气泡展开 n=$n center=$center ball=(${ballX},${ballY})")
+        Log.d(TAG, "气泡展开 n=$n center=$center aiming=$aiming ball=(${ballX},${ballY}) aim=(${aimCx.toInt()},${aimCy.toInt()})")
     }
 
     /**
@@ -506,6 +663,10 @@ class FloatButtonService : Service() {
      * 主球那个窗从头到尾没被碰过，所以收起也不会有任何位移动画。
      */
     private fun collapseBubbles() {
+        aiming = false
+        hoveredIndex = -1
+        bubbleAngles.clear()
+        clearHoverVisual()
         if (!expanded) return
         expanded = false
         mainHandler.removeCallbacks(autoCollapseRunnable)
@@ -561,7 +722,7 @@ class FloatButtonService : Service() {
             emojiHost?.text = a.emoji.ifBlank { "✏️" }
             emojiHost?.visibility = View.VISIBLE
         }
-        ballHost?.contentDescription = "悬浮按钮：${a.label}（点击进入，长按展开气泡）"
+        ballHost?.contentDescription = "悬浮按钮：${a.label}（点击进入；长按展开气泡，滑到气泡上松手选中）"
 
         bubbleViews.forEach { it.background = bubbleBg() }
     }
@@ -572,7 +733,7 @@ class FloatButtonService : Service() {
         for (i in bubbleLabels.indices) {
             if (i < items.size) {
                 bubbleLabels[i].text = items[i].emoji.ifBlank { "•" }
-                bubbleViews[i].contentDescription = "${items[i].label}，点击进入"
+                bubbleViews[i].contentDescription = "${items[i].label}，点击进入，或长按主球滑到这里松手选中"
                 bubbleViews[i].setOnClickListener { performBubbleClick(i) }
             } else {
                 bubbleViews[i].visibility = View.GONE
@@ -594,13 +755,13 @@ class FloatButtonService : Service() {
         ShortcutRouter.open(this, a)
     }
 
-    private fun vibrate() {
+    private fun vibrate(ms: Long = 20L) {
         runCatching {
             val v = getSystemService(Vibrator::class.java) ?: return
             if (Build.VERSION.SDK_INT >= 26) {
-                v.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+                v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
-                @Suppress("DEPRECATION") v.vibrate(20)
+                @Suppress("DEPRECATION") v.vibrate(ms)
             }
         }
     }
