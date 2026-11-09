@@ -76,6 +76,7 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     /** jar key + siteKey → 爬虫实例（init 有成本，缓存复用） */
     private val spiders = ConcurrentHashMap<String, Spider>()
     private val jarLocks = ConcurrentHashMap<String, Any>()
+    @Volatile private var builtInLoaded = false
 
     // ===================== 对外异步 API =====================
 
@@ -122,8 +123,37 @@ class SpiderEngine private constructor(private val appCtx: Context) {
         }, 0, TimeUnit.MILLISECONDS)
     }
 
+    /** 冷启动把 assets/tvbox/jar 全部装进 loaders，建立全局类表。
+     *  影视仓是切线路时一次性 oat 编译全部 jar、任意 csp_ 都能全局找类；
+     *  旧逻辑的跨 jar 回退只遍历「本次会话已经加载过的」jar，Qiyou 这类
+     *  只在另一份 jar 里的类冷启动永远找不到。 */
+    private fun ensureBuiltInLoaders() {
+        if (builtInLoaded) return
+        synchronized(this) {
+            if (builtInLoaded) return
+            val dir = File(appCtx.filesDir, "spider").apply { mkdirs() }
+            val odex = File(dir, "odex").apply { mkdirs() }
+            val names = runCatching { appCtx.assets.list("tvbox/jar") }.getOrNull() ?: emptyArray()
+            names.filter { it.endsWith(".jar") }.forEach { n ->
+                val key = n.removeSuffix(".jar")
+                if (loaders.containsKey(key)) return@forEach
+                val f = File(dir, n)
+                runCatching {
+                    if (!f.exists() || f.length() == 0L) {
+                        appCtx.assets.open("tvbox/jar/$n").use { f.writeBytes(it.readBytes()) }
+                    }
+                    f.setReadOnly()
+                    loaders[key] = DexClassLoader(f.absolutePath, odex.absolutePath, null, appCtx.classLoader)
+                }.onFailure { Log.w(TAG, "内置 jar 预加载失败 $n: ${it.message}") }
+            }
+            builtInLoaded = true
+            Log.d(TAG, "内置 jar 预加载完成，全局类表 ${loaders.size} 个 loader")
+        }
+    }
+
     /** 取（或创建）爬虫实例：先用自己的 jar，失败时跨 jar 回退 */
     private fun spider(jarSpec: String, api: String, ext: String, siteKey: String): Spider? {
+        ensureBuiltInLoaders()
         val cacheKey = md5(jarSpec) + "|" + siteKey
         spiders[cacheKey]?.let { return it }
         val name = api.removePrefix("csp_")
@@ -218,9 +248,13 @@ class SpiderEngine private constructor(private val appCtx: Context) {
         val dir = File(appCtx.filesDir, "spider").apply { mkdirs() }
         val file = File(dir, "${md5(url)}.jar")
         if (file.exists() && file.length() > 0) {
-            if (expectMd5 == null || fileMd5(file).equals(expectMd5, true)) return file
-            Log.w(TAG, "jar md5 不符，改用内置源包: $url")
-            file.delete()
+            // 影视仓行为：订阅声明的 ;md5; 常与 CDN 实际内容不符（jar?id=index 会 302
+            // 到另一份 jar，内容 md5 39556ad1… ≠ 声明 b8ccf689…），它照样加载。
+            // 旧逻辑一不符就 delete，导致 csp_Jpys / 整条摸鱼线路直接失效。
+            if (expectMd5 != null && !fileMd5(file).equals(expectMd5, true)) {
+                Log.w(TAG, "jar md5 与订阅声明不符（按影视仓行为继续使用）: $url")
+            }
+            return file
         }
         // 内置源包优先：影视仓实机缓存的 10 个 dex jar 已随 APK 打包到
         // assets/tvbox/jar/<md5(url)>.jar。文件名就是订阅 jar URL 的 md5，
@@ -249,9 +283,8 @@ class SpiderEngine private constructor(private val appCtx: Context) {
                 file.writeBytes(bytes)
             }
             if (expectMd5 != null && !fileMd5(file).equals(expectMd5, true)) {
-                Log.w(TAG, "jar md5 校验失败: $url")
-                file.delete()
-                return null
+                // 只告警不删：订阅里的 md5 常滞后于 CDN 实际内容，删掉等于自断一条线路
+                Log.w(TAG, "jar md5 与订阅声明不符（继续使用）: $url")
             }
             Log.d(TAG, "jar 就绪: ${file.name} (${file.length()}B)")
             file

@@ -523,7 +523,36 @@
     "csp_jar": "✅ SpiderEngine(DexClassLoader)，本次起优先命中内置 jar",
     "cms_direct": "✅ video.html 直连",
     "js": "❌ 未接 QuickJS，js/lib 与外链 js 仅为素材",
-    "py": "❌ 未接 Chaquopy(体积代价)，py 仅为素材"
+    "py": "❌ 未接 Chaquopy(体积代价)，py 仅为素材",
+    "parses_channel": "video.html resolveViaParses + VideoActivity.httpGetEx/webSniff：parse:1 走订阅 parses(13)，type0 离屏 WebView 嗅探、type1/2 在线解析接口",
+    "play_headers": "playResolvedEx 全量透传 playerContent 的 header（过滤 hop-by-hop）"
   },
-  "encoding_note": "源包内所有文件名均为 ASCII；影视仓原始中文名记录在 original_name 字段。"
+  "encoding_note": "源包内所有文件名均为 ASCII；影视仓原始中文名记录在 original_name 字段。",
+  "subscription_moyu": {
+    "url": "https://盒子迷.top/摸鱼",
+    "file": "subs/moyu.json",
+    "bytes": 49941,
+    "sites": 108,
+    "parses": 13,
+    "flags": 33,
+    "rules": 7,
+    "lives": 1,
+    "spider": "http://jar.yy.xn--dkw.xn--6qq986b3xl/m/jar?id=index;md5;b8ccf68972d12e3983a93b35b4024345",
+    "note": "第二条默认线路的完整副本；在线订阅失败时按 URL 关键字回退到这份，不再退回 box.json"
+  },
+  "moyu_index_jar": {
+    "file": "jar/1861792de3f8ed3ee255244bca11fd47.jar",
+    "url": "http://jar.yy.xn--dkw.xn--6qq986b3xl/m/jar?id=index",
+    "note": "文件名=md5(订阅原始 jar URL)，ensureJar 直接命中；该 URL 302 到 1347876B 有效 jar，内容 md5 39556ad1… 与订阅声明 b8ccf689… 不符，按影视仓行为只告警不删",
+    "bytes": 1347876,
+    "content_md5": "39556ad1be6c357d54117d576ca90dae",
+    "spider_classes": 123,
+    "contains": [
+      "SaoHuo",
+      "Jpys"
+    ],
+    "not_contains": [
+      "Qiyou"
+    ]
+  }
 }

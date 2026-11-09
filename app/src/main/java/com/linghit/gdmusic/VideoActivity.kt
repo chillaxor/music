@@ -22,6 +22,7 @@ import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -329,6 +330,8 @@ class VideoActivity : AppCompatActivity() {
     private var epsList: List<EpItem> = emptyList()
     private var curIdx: Int = -1
     private var curReferer: String = ""
+    /** 当前播放直链要带的完整请求头（playerContent 的 header 全量透传，旧版只带 Referer） */
+    private var curHeaders: Map<String, String> = emptyMap()
     /** 切集防抖：ExoPlayer 切集异步（prepare→STATE_READY 要几秒），连点会连跳好几集 */
     private var lastSwitchAtMs: Long = 0L
     /** 403 时是否已经试过「去掉 Referer 重播」，防止无限重试 */
@@ -388,6 +391,13 @@ class VideoActivity : AppCompatActivity() {
         /** 嗅探播放页用的浏览器 UA：很多播放页对 okhttp UA 直接返回空/跳登录 */
         private const val SNIFF_UA =
             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+        /** hop-by-hop 头交给 OkHttp/ExoPlayer 自己管；手动塞 Range 会打断分片请求 */
+        private val HOP_BY_HOP = setOf(
+            "host", "connection", "content-length", "transfer-encoding",
+            "accept-encoding", "range", "upgrade", "proxy-connection", "keep-alive", "te"
+        )
+        /** WebView 嗅探只认媒体后缀，避免把页面 js/css 当成直链 */
+        private val MEDIA_URL_RE = Regex("""\.(?:m3u8|mp4|flv|mpd)(?:[?#&]|$)""", RegexOption.IGNORE_CASE)
         // 首次进入给的默认接口，用户可在应用内增删（多个入口）。
         // 用中文原样保存，JS 的 new URL() 会自动把主机做 IDN/punycode、路径做百分号编码。
         // 盒子迷两个路径都有效：/禁止贩卖（91 站综合仓）/摸鱼（301→/摸鱼/，108 站动漫仓）。
@@ -791,6 +801,53 @@ class VideoActivity : AppCompatActivity() {
             runOnUiThread { startVideo(url, title, referer, epsJson, idx, spiderJson, metaJson, inline = true) }
         }
 
+        /** 爬虫源解析完成后的起播桥（新）：headerJson 全量透传，不再只给 Referer。
+         *  Jpys 这类 parse:0 直链源要求 UA + Origin + Referer 三件套，缺一个就 403。 */
+        @JavascriptInterface
+        fun playResolvedEx(
+            url: String, title: String, headerJson: String,
+            idx: Int, epsJson: String, spiderJson: String, metaJson: String
+        ) {
+            val h = parseHeaders(headerJson)
+            val ref = h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: ""
+            Log.d("VidPlay", "playResolvedEx headers=${h.keys} url=${url.take(90)}")
+            runOnUiThread {
+                startVideo(url, title, ref, epsJson, idx, spiderJson, metaJson, inline = true, headers = h)
+            }
+        }
+
+        /** 带自定义请求头的 GET：在线解析接口常校验 UA/Referer，订阅用的 okhttp UA 会被拒 */
+        @JavascriptInterface
+        fun httpGetEx(url: String, headersJson: String, cbId: Int) {
+            val h = parseHeaders(headersJson)
+            val rb = Request.Builder().url(url).header("Accept", "*/*")
+            if (h.keys.none { it.equals("User-Agent", true) }) rb.header("User-Agent", SNIFF_UA)
+            h.forEach { (k, v) -> if (!HOP_BY_HOP.contains(k.lowercase())) rb.header(k, v) }
+            Log.d("VidHttp", "GETEX $url headers=${h.keys}")
+            client.newCall(rb.build()).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    runOnUiThread { safeEval("window.__videoCb($cbId,false,'',0)") }
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    val body = if (response.isSuccessful)
+                        runCatching { response.body?.string() ?: "" }.getOrDefault("") else ""
+                    val b64 = Base64.encodeToString(body.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+                    runOnUiThread { safeEval("window.__videoCb($cbId,${response.isSuccessful},'$b64',${response.code})") }
+                }
+            })
+        }
+
+        /** 解析通道 type:0：离屏 WebView 真正渲染播放页，拦截媒体请求拿直链 */
+        @JavascriptInterface
+        fun webSniff(url: String, headersJson: String, scriptsJson: String, cbId: Int) {
+            val h = parseHeaders(headersJson)
+            val scripts = runCatching {
+                val a = JSONArray(if (scriptsJson.isBlank()) "[]" else scriptsJson)
+                (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotBlank() } }
+            }.getOrDefault(emptyList())
+            runOnUiThread { startWebSniff(url, h, scripts, cbId) }
+        }
+
         /** 经典全屏起播（历史续播用）：铺满横屏 + 沉浸式，不进内嵌态 */
         @JavascriptInterface
         fun playVideoFull(
@@ -881,11 +938,14 @@ class VideoActivity : AppCompatActivity() {
          */
         @JavascriptInterface
         fun sniff(url: String, referer: String, cbId: Int) {
-            Log.d("VidPlay", "sniff: $url referer=$referer")
+            // 第二参兼容两种形态：旧调用传 Referer 字符串，新调用传完整 header JSON
+            val h = parseHeaders(referer)
+            val ref = h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: ""
+            Log.d("VidPlay", "sniff: $url headers=${h.keys} ref=$ref")
             val result = try {
                 val rb = Request.Builder().url(url)
-                    .header("User-Agent", SNIFF_UA)
-                if (referer.isNotBlank()) rb.header("Referer", referer)
+                if (h.keys.none { it.equals("User-Agent", true) }) rb.header("User-Agent", SNIFF_UA)
+                h.forEach { (k, v) -> if (!HOP_BY_HOP.contains(k.lowercase())) rb.header(k, v) }
                 client.newCall(rb.build()).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         """{"ok":false,"msg":"HTTP ${resp.code}"}"""
@@ -1022,6 +1082,67 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
+    /** 把 JS 传来的 header 参数解析成 map：支持 JSON 对象，也兼容旧的「Referer 字符串」 */
+    private fun parseHeaders(raw: String): Map<String, String> {
+        if (raw.isBlank()) return emptyMap()
+        if (!raw.trimStart().startsWith("{")) return mapOf("Referer" to raw)
+        return runCatching {
+            val o = JSONObject(raw)
+            val m = LinkedHashMap<String, String>()
+            o.keys().forEach { k -> m[k] = o.optString(k, "") }
+            m.filterValues { it.isNotBlank() }
+        }.getOrDefault(emptyMap())
+    }
+
+    /** 离屏 WebView 嗅探：影视仓 parses type:0 的等价实现。
+     *  真正渲染播放页（执行 JS、跟 iframe、跑 rules 点击脚本），
+     *  在 shouldInterceptRequest 里拦截 m3u8/mp4 请求拿直链，
+     *  比旧版「一次静态 GET + 4 条正则」多覆盖全部 iframe/JS 拼接型播放页。 */
+    private val sniffViews = mutableSetOf<WebView>()
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun startWebSniff(url: String, headers: Map<String, String>, scripts: List<String>, cbId: Int) {
+        val wv = WebView(this)
+        sniffViews.add(wv)
+        wv.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            javaScriptCanOpenWindowsAutomatically = true
+            userAgentString = headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value
+                ?: SNIFF_UA
+        }
+        var done = false
+        fun emit(found: String?) {
+            if (done) return
+            done = true
+            sniffViews.remove(wv)
+            runCatching { wv.stopLoading(); wv.destroy() }
+            val result = if (found != null)
+                """{"ok":true,"url":${JSONObject.quote(found)}}"""
+            else """{"ok":false,"msg":"WebView 未嗅探到直链"}"""
+            val b64 = Base64.encodeToString(result.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+            safeEval("window.__sniffCb($cbId,true,'$b64')")
+            Log.d("VidPlay", "webSniff => ${found ?: "未命中"} url=${url.take(100)}")
+        }
+        wv.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val u = request.url.toString()
+                if (MEDIA_URL_RE.containsMatchIn(u)) {
+                    Log.d("VidPlay", "webSniff 拦截: ${u.take(160)}")
+                    Handler(Looper.getMainLooper()).post { emit(u) }
+                }
+                return null
+            }
+            override fun onPageFinished(view: WebView, page: String) {
+                scripts.forEach { runCatching { view.evaluateJavascript(it, null) } }
+            }
+        }
+        val extra = headers.filterKeys { !HOP_BY_HOP.contains(it.lowercase()) }
+        runCatching { wv.loadUrl(url, extra) }.onFailure { emit(null) }
+        Handler(Looper.getMainLooper()).postDelayed({ emit(null) }, 13_000)
+    }
+
     // ===================== 视频播放 =====================
     private fun ensurePlayer() {
         if (player == null) {
@@ -1142,9 +1263,16 @@ class VideoActivity : AppCompatActivity() {
         idx: Int = -1,
         spiderJson: String = "",
         metaJson: String = "",
-        inline: Boolean = true
+        inline: Boolean = true,
+        headers: Map<String, String>? = null
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx | inline=$inline")
+        // 只有 playResolvedEx 会带完整 header；历史续播/旧桥没有这份信息，必须清掉，
+        // 否则会把上一部片的 UA/Origin 沿用到新片上，反而被判 403。
+        curHeaders = headers ?: emptyMap()
+        curReferer = if (headers != null) {
+            headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: referer
+        } else referer
         pendingResolveIdx = -1        // 新片起播：丢掉上一部可能还在飞嗅探的回传
         curCastTitle = title          // 投屏时作为 DIDL-Lite 标题展示在电视端
         // 播放层标题：JS 传的是「片名 · 线路 · 集名」，切集时只换集名那一截
@@ -1739,9 +1867,16 @@ class VideoActivity : AppCompatActivity() {
             url.contains(".mp4", true) -> itemBuilder.setMimeType(MimeTypes.VIDEO_MP4)
         }
         val item = itemBuilder.build()
-        val headers = buildMap {
-            if (referer.isNotBlank()) put("Referer", referer)
+        val headers = LinkedHashMap<String, String>()
+        // playerContent 的 header 全量透传（UA/Origin/Referer/Cookie…），
+        // 但 hop-by-hop 头交给播放器自己管；403 去 Referer 重试时要把这份也去掉。
+        curHeaders.forEach { (k, v) ->
+            if (v.isNotBlank() && !HOP_BY_HOP.contains(k.lowercase())) headers[k] = v
         }
+        if (headers.keys.none { it.equals("Referer", true) } && referer.isNotBlank())
+            headers["Referer"] = referer
+        if (isRetry) headers.keys.firstOrNull { it.equals("Referer", true) }?.let { headers.remove(it) }
+        Log.d("VidPlay", "playMediaUrl headers=${headers.keys} url=${url.take(100)}")
         val httpFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
             .setAllowCrossProtocolRedirects(true)
@@ -1961,6 +2096,11 @@ class VideoActivity : AppCompatActivity() {
             !newHost.isNullOrBlank() && !oldHost.isNullOrBlank() && newHost != oldHost -> ""
             else -> curReferer
         }
+        // 切集同步 header：host 变了就去掉 Referer，其余（UA/Origin）沿用上一集
+        val next = LinkedHashMap(curHeaders)
+        next.keys.firstOrNull { it.equals("Referer", true) }?.let { next.remove(it) }
+        if (ref.isNotBlank()) next["Referer"] = ref
+        curHeaders = next
         playMediaUrl(url, ref)
         // 前缀（片名 · 线路）不动，只换集名；前缀为空就只显示集名
         curVideoTitle = if (curTitlePrefix.isNotBlank()) "${curTitlePrefix} · ${ep.name}" else ep.name

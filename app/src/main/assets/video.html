@@ -252,6 +252,7 @@ var STATE={
   sources:[],cur:0,          // 订阅源列表 / 当前源
   srcSites:[],               // 每个订阅源缓存的 sites（预加载，全网搜索用）
   srcJars:[],                // 每个订阅源的 spider jar 地址（配置的 spider 字段，可带 ;md5;）
+  srcCfg:[],                 // 每条线路的完整订阅对象（parses/flags/rules/ijk/hosts 都在这里）
   sites:[],siteIdx:0,        // 当前源的站点 / 当前落地站点
   site:null,classes:[],t:0,pg:1,wd:"",loading:false,detail:null,
   detailSite:null,           // 直连站详情所属站点（播放 Referer 用）
@@ -321,7 +322,7 @@ function spiderSearch(t,w){return withTimeout(function(){
     var id=SCBID++; SCB[id]=res;
     Android.spiderSearch(t.jar||'',t.api||'',t.ext||'',t.key||t.name,w,id);
   });
-}, 12000, 'spiderSearch');}
+}, 20000, 'spiderSearch');}
 /** 爬虫源详情 */
 function spiderDetail(t,id){return withTimeout(function(){
   return new Promise(function(res){
@@ -338,20 +339,42 @@ function spiderPlay(t,flag,id){return withTimeout(function(){
     Android.spiderPlay(t.jar||'',t.api||'',t.ext||'',t.key||t.name,flag,id,cid);
   });
 }, 35000, 'spiderPlay');}
-/** 轻量解析/嗅探：抓播放页 HTML 抠真实直链（覆盖 /share/ 页、parse=1 播放页） */
+/** 轻量解析/嗅探：抓播放页 HTML 抠真实直链。第二参可传 Referer 字符串，
+ *  也可传完整 header 对象（原生按 JSON 解析，UA/Origin/Referer 一起发）。 */
 var NCB={}; var NCBID=1;
 window.__sniffCb=function(id,ok,b64){
   var f=NCB[id]; if(!f)return; delete NCB[id];
   var j={ok:false}; if(ok&&b64){ try{ j=JSON.parse(decodeB64(b64)); }catch(e){} }
   f(j);
 };
-function sniff(url,ref){return withTimeout(function(){
+function hdrArg(h){
+  if(!h)return '';
+  return (typeof h==='string')?h:(JSON.stringify(h)||'');
+}
+function sniff(url,h){return withTimeout(function(){
   return new Promise(function(res){
     if(!(window.Android&&Android.sniff)){res({ok:false,msg:'no bridge'});return;}
     var id=NCBID++; NCB[id]=res;
-    Android.sniff(url, ref||'', id);
+    Android.sniff(url, hdrArg(h), id);
   });
 }, 30000, 'sniff');}
+/** WebView 嗅探：解析通道 type:0 用。原生离屏 WebView 真正渲染播放页、
+ *  执行 rules 脚本点击，并拦截网络请求里的 m3u8/mp4 直链。 */
+function webSniff(url,headers,scripts){return withTimeout(function(){
+  return new Promise(function(res){
+    if(!(window.Android&&Android.webSniff)){res({ok:false,msg:'no webSniff'});return;}
+    var id=NCBID++; NCB[id]=res;
+    Android.webSniff(url, hdrArg(headers), scripts?JSON.stringify(scripts):'', id);
+  });
+}, 20000, 'webSniff');}
+/** 带自定义请求头的 GET（在线解析接口常校验 UA/Referer） */
+function getEx(url,headers){return withTimeout(function(){
+  return new Promise(function(res){
+    var id=CBID++; CB[id]=function(ok,txt,code){res({ok:ok,text:txt,code:code|0});};
+    if(window.Android&&Android.httpGetEx) Android.httpGetEx(norm(url),hdrArg(headers),id);
+    else res({ok:false,text:'',code:0});
+  });
+}, 25000, 'httpGetEx');}
 /** 是否看起来就是直链媒体（m3u8/mp4/mpd/flv/ts/mkv…），是则无需解析 */
 function isDirectMedia(u){
   return /\.(m3u8|mp4|mpd|flv|ts|mkv|mov|avi|webm)(\?|#|$)/i.test(u||'') || /\/index\.m3u8/i.test(u||'');
@@ -502,17 +525,26 @@ function parseSubResp(r){
   if(!r||!r.ok||!r.text)return null;
   try{var c=JSON.parse(r.text);return (c&&(c.sites||c.class||c.list))?c:null;}catch(e){return null;}
 }
+/** 在线订阅挂了时按线路选内置副本：摸鱼(108 站)与多仓(91 站)是两份不同配置，
+ *  一律回退 box.json 会让第二条线路变成第一条的副本，摸鱼独有源全缺席。
+ *  URL 里的中文路径经 norm() 会被百分号编码，这里先 decode 再判。 */
+function builtinSubFor(u){
+  var raw=String(u||'');
+  try{raw=decodeURIComponent(raw);}catch(e){}
+  return /摸鱼|moyu/i.test(raw)?'asset://tvbox/subs/moyu.json':'asset://tvbox/subs/box.json';
+}
 /** 拉取单个订阅源的 sites 列表，缓存到 STATE.srcSites[i]；在线挂了回退内置源包 */
 async function loadOneSource(i){
   var s=STATE.sources[i]; if(!s)return [];
   var cfg=parseSubResp(await get(norm(s.url)));
   if(!cfg){
-    // 订阅服务器 502 / 返回错误页 / 半截 JSON：改用随 APK 打包的完整配置，
-    // 91 个站点与各自 jar 字段都还在，离线也能搜（见 assets/tvbox/manifest.json）。
-    console.log('loadOneSource: src='+i+' 在线订阅不可用，回退内置源包');
-    cfg=parseSubResp(await get('asset://tvbox/subs/box.json'));
+    var fb=builtinSubFor(s.url);
+    console.log('loadOneSource: src='+i+' ('+s.name+') 在线订阅不可用，回退 '+fb);
+    cfg=parseSubResp(await get(fb));
   }
-  if(!cfg){console.log('loadOneSource FAIL: src='+i+' 内置源包也不可用');STATE.srcSites[i]=[];return [];}
+  if(!cfg){console.log('loadOneSource FAIL: src='+i+' 内置源包也不可用');STATE.srcSites[i]=[];STATE.srcCfg[i]=null;return [];}
+  // 整份配置留着：parses/flags/rules/ijk/hosts 是播放解析链路要用的（影视仓就是这么干的）
+  STATE.srcCfg[i]=cfg;
   var all=(cfg.sites||[]).filter(function(x){return x&&x.api;});
   var sites=all.filter(function(x){return !needsLogin(x);});
   var dropped=all.length-sites.length;
@@ -522,12 +554,12 @@ async function loadOneSource(i){
   }
   STATE.srcSites[i]=sites;
   var direct=sites.filter(isDirect).length;
-  console.log('loadOneSource: src='+i+' ('+s.name+') 站点',sites.length,'个, 直连',direct,'个'+(dropped?'（已隐藏需登录/Cookie源 '+dropped+' 个）':''));
+  console.log('loadOneSource: src='+i+' ('+s.name+') 站点',sites.length,'个, 直连',direct,'个, parses',(cfg.parses||[]).length,'个'+(dropped?'（已隐藏需登录/Cookie源 '+dropped+' 个）':''));
   return sites;
 }
 /** 启动时并发预加载所有订阅源（失败不影响当前源渲染） */
 async function preloadAllSources(){
-  STATE.srcSites=[];
+  STATE.srcSites=[]; STATE.srcCfg=[]; STATE.srcJars=[];
   await Promise.all(STATE.sources.map(function(_,i){return loadOneSource(i);}));
 }
 async function selectSource(){
@@ -1217,10 +1249,91 @@ function playMeta(e){
     from:STATE.playFrom||''
   });
 }
+/* ============ 影视仓 parses 解析通道 ============
+ * playerContent 返回 parse:1 时给的是 iframe 播放页，不是直链。影视仓靠订阅
+ * parses（在线解析接口）+ WebView 嗅探 + rules 点击脚本把播放页变成 m3u8；
+ * 旧实现只做一次静态 GET + 4 条正则，iframe 页里根本没有直链，必然失败。 */
+function cfgOf(t){
+  var i=(t&&typeof t.ri==='number')?t.ri:STATE.cur;
+  var c=STATE.srcCfg[i];
+  if(!c){
+    for(var k=0;k<STATE.srcCfg.length;k++){
+      if(STATE.srcCfg[k]&&(STATE.srcCfg[k].parses||[]).length){c=STATE.srcCfg[k];break;}
+    }
+  }
+  return c||{};
+}
+function mergeHeaders(a,b){
+  var o={};
+  function put(m){
+    if(!m||typeof m!=='object')return;
+    Object.keys(m).forEach(function(k){ if(m[k]!=null&&String(m[k]).trim()) o[k]=String(m[k]); });
+  }
+  put(a); put(b); return o;
+}
+/** 解析接口返回可能是 {url} / {data:{url}} / 纯文本里塞 m3u8 */
+function pickStream(text){
+  if(!text)return '';
+  try{
+    var j=JSON.parse(text), c=[j.url,j.playUrl,j.data&&j.data.url,j.data&&j.data.playUrl,j.result&&j.result.url];
+    for(var i=0;i<c.length;i++){ if(c[i]&&typeof c[i]==='string'&&/^https?:/i.test(c[i]))return c[i]; }
+  }catch(e){}
+  var m=String(text).match(/https?:\/\/[^"'\s\\]+\.(?:m3u8|mp4|flv|mpd)[^"'\s\\]*/i);
+  return m?m[0]:'';
+}
+/** 按播放页 host 取 rules 里的自动点击脚本（饭团/毛驴这类要 JS 点一下才出地址） */
+function scriptsFor(t,url){
+  var c=cfgOf(t), out=[];
+  (c.rules||[]).forEach(function(r){
+    var hs=r.hosts||[];
+    if(hs.length&&!hs.some(function(h){return url.indexOf(String(h).replace(/\*/g,''))>=0;}))return;
+    (r.script||[]).forEach(function(s){out.push(s);});
+  });
+  return out;
+}
+/** 依次尝试订阅里的 parses，拿到第一个直链就返回 {url,headers,by} */
+async function resolveViaParses(url,headers,t){
+  var ps=cfgOf(t).parses||[];
+  console.log('PARSEDBG parses='+ps.length+' url='+String(url).slice(0,120));
+  for(var i=0;i<ps.length;i++){
+    var p=ps[i]; if(!p||!p.url||p.url==='Demo')continue;
+    var type=parseInt(p.type,10); if(type===3)continue; // 聚合占位，不是真接口
+    // 解析接口自身可能带中文域名/中文参数（欧歌解析、公众号装歌APP），过 norm 做 IDN + 百分号编码
+    var full=norm(p.url+encodeURIComponent(url));
+    var h=mergeHeaders(headers,p.ext&&p.ext.header);
+    try{
+      if(type===0){
+        var w=await webSniff(full,h,scriptsFor(t,full));
+        if(w&&w.ok&&w.url){
+          console.log('PARSEDBG WebView 命中 '+(p.name||i)+' => '+w.url.slice(0,140));
+          return {url:w.url,headers:h,by:p.name||('parse'+i)};
+        }
+      }else{
+        var r=await getEx(full,h);
+        if(r&&r.ok){
+          var u=pickStream(r.text);
+          if(u){
+            console.log('PARSEDBG 接口命中 '+(p.name||i)+' => '+u.slice(0,140));
+            return {url:u,headers:h,by:p.name||('parse'+i)};
+          }
+        }
+      }
+    }catch(e){ console.log('PARSEDBG 失败 '+(p.name||i)+': '+e); }
+  }
+  return null;
+}
 /** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器。
- *  epsJson/spJson/idx/meta 一并回传，原生侧才能维护整条播放列表和历史记录。 */
-function playResolved(url,name,ref,idx,epsJson,spJson,meta){
-  if(window.Android&&Android.playResolved) Android.playResolved(url,name,ref,idx,epsJson,spJson,meta);
+ *  headers 可以是 Referer 字符串，也可以是完整请求头对象——后者走新桥全量透传。 */
+function playResolved(url,name,headers,idx,epsJson,spJson,meta){
+  var hj='', ref='';
+  if(headers&&typeof headers==='object'){
+    hj=JSON.stringify(headers);
+    ref=headers.Referer||headers.referer||'';
+  }else{
+    ref=String(headers||''); hj=JSON.stringify(ref?{Referer:ref}:{});
+  }
+  if(window.Android&&Android.playResolvedEx) Android.playResolvedEx(url,name,hj,idx,epsJson,spJson,meta);
+  else if(window.Android&&Android.playResolved) Android.playResolved(url,name,ref,idx,epsJson,spJson,meta);
   else if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson,meta);
   else toast('当前环境不支持播放');
 }
@@ -1228,28 +1341,46 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
   toast('正在解析播放地址…');
   var txt=await spiderPlay(t,flag,e.url);
   var j=null; try{j=JSON.parse(txt);}catch(err){}
-  console.log('SPIDERDBG['+(t.key||t.name||t.api)+'] resolve => '+(txt?String(txt).slice(0,220):'(empty/timeout)'));
+  var tag=t.key||t.name||t.api;
+  console.log('SPIDERDBG['+tag+'] resolve => '+(txt?String(txt).slice(0,220):'(empty/timeout)'));
   if(!j){toast('该线路解析失败，可换其他线路/源');return;}
-  var url=j.url||'';
+  var url=j.url||j.playUrl||'';
   var parse=(j.parse===1||j.parse==='1');
-  var ref='';
-  try{ if(j.header&&j.header.Referer) ref=j.header.Referer; }catch(err){}
+  var headers={};
+  try{ if(j.header&&typeof j.header==='object') headers=j.header; }catch(err){}
   var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
-  // 已是直链媒体 → 直接播
+  // 已是直链媒体 → 直接播（header 全量透传，Jpys 这类要 UA+Origin+Referer）
   if(url && !parse && isDirectMedia(url)){
-    console.log('SPIDERDBG['+(t.key||t.name)+'] DIRECT '+url.slice(0,140));
-    playResolved(url,name,ref,idx,epsJson,spJson,meta);
+    console.log('SPIDERDBG['+tag+'] DIRECT '+url.slice(0,140));
+    playResolved(url,name,headers,idx,epsJson,spJson,meta);
     return;
   }
-  // parse=1 或非直链 → 抓播放页 HTML 嗅探真实直链（旺旺 mac_url、量子 var main 等）
   if(url && /^https?:/i.test(url)){
-    toast('正在解析播放地址…');
-    var s=await sniff(url, ref);
-    console.log('SPIDERDBG['+(t.key||t.name)+'] SNIFF '+(s&&s.ok?('OK '+s.url.slice(0,140)):('fail:'+(s&&s.msg))));
-    if(s&&s.ok&&s.url){ playResolved(s.url,name,ref,idx,epsJson,spJson,meta); return; }
-    toast('该线路解析失败，可换其他线路/源'); return;
+    var finalUrl='', finalHeaders=headers;
+    // parse=1 → 先走订阅 parses 解析通道（影视仓能播、旧版不能播的关键差异）
+    if(parse){
+      var r=await resolveViaParses(url,headers,t);
+      if(r&&r.url){ finalUrl=r.url; finalHeaders=mergeHeaders(headers,r.headers); }
+    }
+    // 解析通道没结果 → 回退静态嗅探（旺旺 mac_url、量子 var main 这类老页面仍能用）
+    if(!finalUrl){
+      var s=await sniff(url,headers);
+      console.log('SPIDERDBG['+tag+'] SNIFF '+(s&&s.ok?('OK '+s.url.slice(0,140)):('fail:'+(s&&s.msg))));
+      if(s&&s.ok&&s.url) finalUrl=s.url;
+    }
+    if(!finalUrl){ toast('该线路解析失败，可换其他线路/源'); return; }
+    // 真实直链回填进剧集列表：原生切集再切回来不用重复解析
+    e.url=finalUrl;
+    try{
+      var arr=JSON.parse(epsJson||'[]');
+      if(arr[idx])arr[idx].url=finalUrl;
+      epsJson=JSON.stringify(arr); STATE.playEpsJson=epsJson;
+    }catch(err){}
+    console.log('SPIDERDBG['+tag+'] FINAL '+finalUrl.slice(0,140));
+    playResolved(finalUrl,name,finalHeaders,idx,epsJson,spJson,meta);
+    return;
   }
-  console.log('SPIDERDBG['+(t.key||t.name)+'] NO_URL msg='+(j.msg||''));
+  console.log('SPIDERDBG['+tag+'] NO_URL msg='+(j.msg||''));
   toast('未获取到播放地址，可换其他线路');
 }
 /** 原生播放器切集回调（上一集/下一集/自动连播）：爬虫源剧集需重新解析 */
