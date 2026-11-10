@@ -730,6 +730,7 @@ function setLoad(t){var a=$('sload');if(a)a.textContent=t;syncStat();}
 
 /* ============ 全网搜索结果页（左源 tab + 右结果） ============ */
 var SRC_TAB_IDX=-1; // 当前选中的分组下标
+var SRC_TAB_USER_PICKED=false; // 用户是否手动点过左侧源 tab（点过就不再自动跳组，免得打断阅读）
 var LOADING_MORE=false; // 翻页防并发：一次只拉一页，避免快速滚动/自动补满时叠发请求
 function openSearchPage(){
   console.log('openSearchPage: 组数='+STATE.groups.length);
@@ -759,7 +760,7 @@ function refreshSrcTabs(){
     n++;
     var t=document.createElement('div'); t.className='srcTab'+(i===SRC_TAB_IDX?' active':'');
     t.innerHTML='<div class="tn">'+esc((g.spider?'🕷 ':'▣ ')+g.name)+'</div><div class="tc">'+g.items.length+' 条</div>';
-    t.onclick=function(){SRC_TAB_IDX=i;refreshSrcTabs();renderSrcResults();};
+    t.onclick=function(){SRC_TAB_IDX=i;SRC_TAB_USER_PICKED=true;refreshSrcTabs();renderSrcResults();};
     box.appendChild(t);
   });
   // 选中失效（搜索重置/首条刚到）：落到第一个有结果的分组
@@ -974,7 +975,7 @@ async function searchSpiderAll(w){
   if(!w)return empty;
   var targets=collectSpiderSites();
   if(!targets.length)return empty;
-  var done=0,hit=0,cnt=0;
+  var done=0,hit=0,cnt=0,autoSwitched=false;
   var queue=targets.slice();
   var CONC=6;
   async function worker(){
@@ -987,9 +988,16 @@ async function searchSpiderAll(w){
         items.forEach(function(v){v._spider=t;});
         STATE.groups.push({ri:t.ri,si:t.si,name:t.name,api:t.api,spider:true,items:items,pg:1,noMore:true});
         hit++;cnt+=items.length;
+        // 旧逻辑只在 SRC_TAB_IDX===groups.length-1 时重绘，而直连阶段已把
+        // SRC_TAB_IDX 锁成 0，条件恒 false：结果只进左 tab、右侧永远停在第一个
+        // 直连源，用户等一分钟也看不到影视仓那批源。这里首个爬虫结果到达就
+        // 切过去重绘；之后只增 tab 不重画，避免打断用户滚动。
+        var draw=false;
+        if(!SRC_TAB_USER_PICKED && !autoSwitched){
+          SRC_TAB_IDX=STATE.groups.length-1; autoSwitched=true; draw=true;
+        }
         refreshSrcTabs(); // 有结果的爬虫源实时出现在左侧 tab
-        // 正看着这个源的话，结果实时画出来（别的源不重画，免得打断滚动）
-        if(SRC_TAB_IDX===STATE.groups.length-1) renderSrcResults();
+        if(draw) renderSrcResults();
       }
       done++;
       setState('正在搜索爬虫源… '+done+'/'+targets.length+'（'+hit+' 个源有结果）');
@@ -1002,11 +1010,11 @@ async function searchSpiderAll(w){
 }
 async function searchAll(w){
   var targets=collectDirectSites();
-  if(!targets.length){
-    // 一个直连站都没有：退回当前源搜索（可能是单源没预加载成功）
+  if(!targets.length && !collectSpiderSites().length){
+    // 一个直连站、一个爬虫源都没有：退回当前源搜索（可能是单源没预加载成功）
     STATE.wd=w;STATE.pg=1;$('grid').innerHTML='';renderClassChips();loadList();return;
   }
-  STATE.wd=w; STATE.pg=1; STATE.groups=[];
+  STATE.wd=w; STATE.pg=1; STATE.groups=[]; SRC_TAB_USER_PICKED=false;
   renderClassChips();
   // 结果进新开的结果页（左源 tab + 右结果），主页浏览列表原样留在背后
   openSearchPage();
@@ -1041,11 +1049,23 @@ async function searchAll(w){
   setState(STATE.groups.length
     ? ('全网搜索：直连 '+hit+'/'+targets.length+' · 共 '+cnt+' 条')
     : ('直连源无结果（已搜 '+targets.length+' 个）'));
+  if(!STATE.spiderOn){
+    // 爬虫源关着时明确告知，否则用户只看到几个采集站，会以为「搜不出影视仓那批源」
+    setLoad('只搜了直连站 · 点顶栏 🕷 可加搜 '+collectSpiderSites().length+' 个爬虫源');
+  }
   // 爬虫源默认关闭；用户手动开了才后台搜，结果陆续进左侧 tab（不卡前台）
   if(STATE.spiderOn){
     var spiderTotal=collectSpiderSites().length;
     setState('直连 '+cnt+' 条到手 · 正在后台搜 '+spiderTotal+' 个爬虫源…');
     searchSpiderAll(STATE.wd).then(function(sp){
+      // 收尾保险：整轮没自动切过、用户也没手点过时，落到第一个有结果的爬虫组
+      if(!SRC_TAB_USER_PICKED && sp.sites>0){
+        var cur=STATE.groups[SRC_TAB_IDX];
+        if(!cur||!cur.spider){
+          var firstSp=STATE.groups.findIndex(function(g){return g.spider&&g.items.length;});
+          if(firstSp>=0) SRC_TAB_IDX=firstSp;
+        }
+      }
       refreshSrcTabs(); renderSrcResults();
       console.log('searchAll done: 直连 '+hit+'/'+targets.length+' · 爬虫 '+sp.sites+'/'+spiderTotal+' · 共 '+(cnt+sp.items)+' 条');
       setState(STATE.groups.length
@@ -1057,7 +1077,10 @@ async function searchAll(w){
 /** 全网搜索结果按来源分组渲染 */
 function doSearch(){
   var w=$('kw').value.trim();
-  if(!STATE.sites||!STATE.sites.length){toast('请先选接口源');return;}
+  // 订阅预加载是异步的，冷启动早期 STATE.sites 可能还没落地。旧逻辑一句
+  // 「请先选接口源」直接 return，表现为点搜索毫无反应；改按 srcSites 判断。
+  var srcReady=(STATE.srcSites||[]).some(function(x){return x&&x.length;});
+  if((!STATE.sites||!STATE.sites.length)&&!srcReady){toast('接口还在加载，请稍候再搜');return;}
   if(!w){ // 清空搜索：全网模式刷新推荐流（进结果页），本站模式回推荐列表
     STATE.groups=[];
     if(STATE.searchScope==='all'){

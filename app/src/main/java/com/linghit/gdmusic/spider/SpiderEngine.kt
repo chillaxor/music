@@ -1,5 +1,6 @@
 package com.linghit.gdmusic.spider
 
+import android.app.Application
 import android.content.Context
 import android.util.Log
 import com.github.catvod.crawler.Spider
@@ -7,6 +8,7 @@ import dalvik.system.DexClassLoader
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.lang.reflect.Modifier
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -84,8 +86,12 @@ class SpiderEngine private constructor(private val appCtx: Context) {
         submit(15_000, cb) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
             // 多数爬虫实现 2 参重载；为空再试 3 参（带页码）
-            var r = runCatching { sp.searchContent(wd, false) }.getOrNull()
-            if (r.isNullOrEmpty()) r = runCatching { sp.searchContent(wd, false, "1") }.getOrNull()
+            var r = runCatching { sp.searchContent(wd, false) }
+                .onFailure { Log.w(TAG, "searchContent 失败[$key/$api]: ${it.javaClass.simpleName}: ${it.message}") }
+                .getOrNull()
+            if (r.isNullOrEmpty()) r = runCatching { sp.searchContent(wd, false, "1") }
+                .onFailure { Log.w(TAG, "searchContent(3参) 失败[$key/$api]: ${it.javaClass.simpleName}: ${it.message}") }
+                .getOrNull()
             r
         }
     }
@@ -93,15 +99,28 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     fun detailAsync(jar: String, api: String, ext: String, key: String, ids: String, cb: (String?) -> Unit) {
         submit(12_000, cb) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
-            val idList = ids.split(',', '#', '$').filter { it.isNotBlank() }
-            runCatching { sp.detailContent(idList) }.getOrNull()
+            // TVBox 标准：detailContent 收的是 List<String>，多数 jar 只取 [0]=vod_id。
+            // 旧逻辑按 ',' '#' '$' 一刀切，把 Ikanbot 的 "id$$$名称$$$封面" 与
+            // SP360 的 JSON 型 id 拆成一堆碎片，jar 取 [1]/[2] 越界 → 详情恒为 null。
+            // 先整体传，失败再按 "$$$" 还原成 TVBox 的 [id,name,pic] 三段。
+            var r = runCatching { sp.detailContent(listOf(ids)) }
+                .onFailure { Log.w(TAG, "detailContent 失败[$key/$api] 整体: ${it.javaClass.simpleName}: ${it.message}") }
+                .getOrNull()
+            if (r.isNullOrEmpty() && ids.contains("$$$")) {
+                r = runCatching { sp.detailContent(ids.split("$$$")) }
+                    .onFailure { Log.w(TAG, "detailContent 失败[$key/$api] 三段: ${it.javaClass.simpleName}: ${it.message}") }
+                    .getOrNull()
+            }
+            r
         }
     }
 
     fun playAsync(jar: String, api: String, ext: String, key: String, flag: String, id: String, cb: (String?) -> Unit) {
         submit(15_000, cb) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
-            val r = runCatching { sp.playerContent(flag, id, emptyList()) }.getOrNull()
+            val r = runCatching { sp.playerContent(flag, id, emptyList()) }
+                .onFailure { Log.w(TAG, "playerContent 失败[$key/$api]: ${it.javaClass.simpleName}: ${it.message}") }
+                .getOrNull()
             Log.d(TAG, "playAsync[$key] flag=$flag id=${id.take(40)} => ${r?.take(300)}")
             r
         }
@@ -117,7 +136,8 @@ class SpiderEngine private constructor(private val appCtx: Context) {
                 cb(future.get(timeoutMs, TimeUnit.MILLISECONDS))
             } catch (e: Throwable) {
                 future.cancel(true)
-                Log.w(TAG, "调用超时或失败(${timeoutMs}ms): ${e.javaClass.simpleName} ${e.message}")
+                val cause = e.cause ?: e
+                Log.w(TAG, "调用超时或失败(${timeoutMs}ms): ${e.javaClass.simpleName} ${e.message} / cause=${cause.javaClass.simpleName}: ${cause.message}", cause)
                 cb(null)
             }
         }, 0, TimeUnit.MILLISECONDS)
@@ -143,12 +163,55 @@ class SpiderEngine private constructor(private val appCtx: Context) {
                         appCtx.assets.open("tvbox/jar/$n").use { f.writeBytes(it.readBytes()) }
                     }
                     f.setReadOnly()
-                    loaders[key] = DexClassLoader(f.absolutePath, odex.absolutePath, null, appCtx.classLoader)
+                    val loader = DexClassLoader(f.absolutePath, odex.absolutePath, null, appCtx.classLoader)
+                    injectContext(loader)
+                    loaders[key] = loader
                 }.onFailure { Log.w(TAG, "内置 jar 预加载失败 $n: ${it.message}") }
             }
             builtInLoaded = true
             Log.d(TAG, "内置 jar 预加载完成，全局类表 ${loaders.size} 个 loader")
         }
+    }
+
+    /**
+     * TVBox 标准由 Init.init(ctx) 注册全局 Application；但那个方法还会启动 Go 代理、
+     * 悬浮球、拉起多个后台线程（详见 11-10 排查）。这里只做 init() 的第一条指令：
+     * 把宿主 Application 写进 jar 的 Init Context 字段，其余副作用一概不碰。
+     *
+     * 没有这一步，jar 的 detailContent → saveName() → KV 存储会取到 null Context 抛 NPE，
+     * 被 runCatching 吞成 null，表现为「搜得到、点进去详情加载失败」。
+     * 各 jar 混淆不同（新摸鱼 jar 是实例字段 c，老 box jar 是静态字段 C），
+     * 故按字段类型查找，不按名字硬编码。
+     */
+    private fun injectContext(loader: DexClassLoader) {
+        val clz = runCatching { loader.loadClass("com.github.catvod.spider.Init") }.getOrNull() ?: return
+        val app = appCtx.applicationContext
+        val fields = runCatching { clz.declaredFields }.getOrNull() ?: emptyArray()
+        val field = fields.firstOrNull { it.type == Application::class.java }
+            ?: fields.firstOrNull { it.type == Context::class.java }
+        if (field == null) {
+            // 兜底：走标准 init，仅极少数没有可识别字段的 jar 会到这里
+            runCatching { clz.getDeclaredMethod("init", Context::class.java).invoke(null, app) }
+                .onFailure { Log.w(TAG, "Init.init 降级失败: ${it.javaClass.simpleName}: ${it.message}") }
+            return
+        }
+        val isStatic = Modifier.isStatic(field.modifiers)
+        val holder = if (isStatic) null else runCatching {
+            val getter = runCatching { clz.getDeclaredMethod("get") }.getOrNull()
+                ?: clz.declaredMethods.firstOrNull {
+                    Modifier.isStatic(it.modifiers) && it.parameterCount == 0 && it.returnType == clz
+                }
+            getter?.apply { isAccessible = true }?.invoke(null)
+        }.getOrNull()
+        if (!isStatic && holder == null) {
+            Log.w(TAG, "Init 单例获取失败，跳过 Context 注入 (${field.name})")
+            return
+        }
+        runCatching {
+            field.isAccessible = true
+            if (field.get(holder) == null) field.set(holder, app)
+            Log.d(TAG, "Init Context 注入成功: ${if (isStatic) "static" else "singleton"}.${field.name}")
+        }.onFailure { Log.w(TAG, "Init Context 注入失败: ${it.javaClass.simpleName}: ${it.message}") }
     }
 
     /** 取（或创建）爬虫实例：先用自己的 jar，失败时跨 jar 回退 */
@@ -198,6 +261,15 @@ class SpiderEngine private constructor(private val appCtx: Context) {
             Log.w(TAG, "loadClass $name 失败: ${e.message}")
             return null
         }
+        // 带 native 反调试壳的爬虫（Sir88Guard 等）构造时会调 DexNative.getSpider()，
+        // 在 x86/houdini 上 JNI CheckJNI 检测到 null ClassLoader 直接 SIGABRT，
+        // Java 层 runCatching 根本拦不住，必须在实例化前跳过。实测 11-10 全网搜索
+        // 跑到 csp_Sir88Guard 时整个进程被杀回首页。
+        val superName = runCatching { clz.superclass?.name }.getOrNull().orEmpty()
+        if (name.endsWith("Guard", true) || superName.contains("SpiderGuard", true)) {
+            Log.w(TAG, "跳过 native Guard 爬虫: $name (super=$superName)")
+            return null
+        }
         return try {
             val obj = clz.getDeclaredConstructor().newInstance() as Spider
             obj.siteKey = siteKey
@@ -223,13 +295,10 @@ class SpiderEngine private constructor(private val appCtx: Context) {
                 file.setReadOnly()
                 val odex = File(appCtx.filesDir, "spider/odex").apply { mkdirs() }
                 val loader = DexClassLoader(file.absolutePath, odex.absolutePath, null, appCtx.classLoader)
-                // 注意：这里【不再】调用 jar 的 com.github.catvod.spider.Init.init(appCtx)。
-                // 那些 jar 的 Init.init 在加载时会尝试启动一个 Go 语言写的本地代理（goproxy），
-                // 我们 APK 没打包那个 Go 原生二进制，它起不来就弹「go代理启动失败」Toast。
-                // 而本宿主提供的 Spider 基类静态初始化本就是空实现（见 Spider.java），
-                // spider 真正需要的上下文已由每个实例的 obj.init(appCtx, ext) 提供，
-                // 因此跳过 jar 的 Init.init 既能彻底消掉弹窗，又不会丢失任何功能
-                // （那个 Go 代理在本地本就跑不起来，只会弹窗、不干事）。
+                // 只补 Init 的全局 Application 字段，不调 Init.init()：后者会去下载并
+                // 启动 Go 代理（2.68MB 二进制）、悬浮球和多个后台线程。jar 内部写 KV
+                // （detailContent→saveName）依赖 Init.context()，缺了它详情必挂。
+                injectContext(loader)
                 loaders[key] = loader
                 loader
             } catch (e: Throwable) {
