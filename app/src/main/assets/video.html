@@ -1314,35 +1314,68 @@ function scriptsFor(t,url){
   });
   return out;
 }
-/** 依次尝试订阅里的 parses，拿到第一个直链就返回 {url,headers,by} */
+/** 分批并发尝试订阅里的 parses，拿到第一个直链就返回 {url,headers,by}。
+ *  11-10 实测：12 个接口串行最坏 94191ms 且全失败（type0 每个 WebView 13s）。
+ *  改为 HTTP 型优先 + 每批 3 个并发 + 命中即停，最坏约 3 批。 */
 async function resolveViaParses(url,headers,t){
   var ps=cfgOf(t).parses||[];
   console.log('PARSEDBG parses='+ps.length+' url='+String(url).slice(0,120));
+  var jobs=[];
   for(var i=0;i<ps.length;i++){
     var p=ps[i]; if(!p||!p.url||p.url==='Demo')continue;
-    var type=parseInt(p.type,10); if(type===3)continue; // 聚合占位，不是真接口
+    var type=parseInt(p.type,10); if(isNaN(type))type=1;
+    if(type===3)continue; // 聚合占位，不是真接口
+    jobs.push({i:i,p:p,type:type});
+  }
+  // 便宜的 HTTP 型先跑；命中时就不必再开离屏 WebView
+  jobs.sort(function(a,b){return (a.type===0?1:0)-(b.type===0?1:0);});
+  async function runOne(job){
+    var p=job.p, nm=p.name||('parse'+job.i), s=Date.now();
     // 解析接口自身可能带中文域名/中文参数（欧歌解析、公众号装歌APP），过 norm 做 IDN + 百分号编码
     var full=norm(p.url+encodeURIComponent(url));
     var h=mergeHeaders(headers,p.ext&&p.ext.header);
     try{
-      if(type===0){
+      if(job.type===0){
         var w=await webSniff(full,h,scriptsFor(t,full));
         if(w&&w.ok&&w.url){
-          console.log('PARSEDBG WebView 命中 '+(p.name||i)+' => '+w.url.slice(0,140));
-          return {url:w.url,headers:h,by:p.name||('parse'+i)};
+          console.log('PARSEDBG WebView 命中 '+nm+' ('+(Date.now()-s)+'ms) => '+w.url.slice(0,140));
+          return {url:w.url,headers:h,by:nm};
         }
       }else{
         var r=await getEx(full,h);
         if(r&&r.ok){
           var u=pickStream(r.text);
           if(u){
-            console.log('PARSEDBG 接口命中 '+(p.name||i)+' => '+u.slice(0,140));
-            return {url:u,headers:h,by:p.name||('parse'+i)};
+            console.log('PARSEDBG 接口命中 '+nm+' ('+(Date.now()-s)+'ms) => '+u.slice(0,140));
+            return {url:u,headers:h,by:nm};
           }
         }
       }
-    }catch(e){ console.log('PARSEDBG 失败 '+(p.name||i)+': '+e); }
+      console.log('PARSEDBG 未命中 '+nm+' ('+(Date.now()-s)+'ms)');
+    }catch(e){ console.log('PARSEDBG 失败 '+nm+': '+e); }
+    return null;
   }
+  var BATCH=3;
+  for(var s=0;s<jobs.length;s+=BATCH){
+    var rs=await Promise.all(jobs.slice(s,s+BATCH).map(runOne));
+    for(var k=0;k<rs.length;k++){ if(rs[k]&&rs[k].url)return rs[k]; }
+  }
+  return null;
+}
+/** parse:1 且 jx:0 的播放页自带解析能力（如骚火 https://hhjx.hhplayer.com/?url=加密串），
+ *  影视仓直接加载/嗅探它；再套一层在线解析接口反而 12/12 失败（11-10 实测 94s）。
+ *  直嗅 1.5s 就能拦到真实 m3u8，故作为 parse:1 的首选分支。 */
+async function sniffPlayPage(url,headers,t){
+  if(!(window.Android&&Android.webSniff))return null;
+  var s=Date.now();
+  try{
+    var w=await webSniff(url,headers,scriptsFor(t,url));
+    if(w&&w.ok&&w.url){
+      console.log('SPIDERDBG 直嗅播放页命中 ('+(Date.now()-s)+'ms) => '+String(w.url).slice(0,140));
+      return {url:w.url,headers:headers,by:'直嗅播放页'};
+    }
+    console.log('SPIDERDBG 直嗅播放页未命中 ('+(Date.now()-s)+'ms)');
+  }catch(e){ console.log('SPIDERDBG 直嗅播放页异常 '+e); }
   return null;
 }
 /** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器。
@@ -1370,7 +1403,14 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
   var url=j.url||j.playUrl||'';
   var parse=(j.parse===1||j.parse==='1');
   var headers={};
-  try{ if(j.header&&typeof j.header==='object') headers=j.header; }catch(err){}
+  // 有的 jar 给对象，有的给 JSON 字符串（骚火 SaoHuo 就是字符串），还有的直接给 Referer 纯串
+  try{
+    if(j.header&&typeof j.header==='object') headers=j.header;
+    else if(j.header&&typeof j.header==='string'){
+      try{ var _h=JSON.parse(j.header); headers=(_h&&typeof _h==='object')?_h:{Referer:j.header}; }
+      catch(e1){ headers={Referer:j.header}; }
+    }
+  }catch(err){}
   var name=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
   // 已是直链媒体 → 直接播（header 全量透传，Jpys 这类要 UA+Origin+Referer）
   if(url && !parse && isDirectMedia(url)){
@@ -1380,10 +1420,20 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
   }
   if(url && /^https?:/i.test(url)){
     var finalUrl='', finalHeaders=headers;
-    // parse=1 → 先走订阅 parses 解析通道（影视仓能播、旧版不能播的关键差异）
-    if(parse){
-      var r=await resolveViaParses(url,headers,t);
-      if(r&&r.url){ finalUrl=r.url; finalHeaders=mergeHeaders(headers,r.headers); }
+    // 少数源标 parse:1 但给的本来就是 m3u8 接口（热播 AppRJ），别再瞎解析
+    if(isDirectMedia(url)) finalUrl=url;
+    // parse=1 分流：jx:0 表示播放页自带解析，影视仓直接嗅探它；
+    // 11-10 实测骚火：直嗅 1.5s 出 m3u8，把它再套 13 个 parses 则 94s 全失败。
+    if(parse && !finalUrl){
+      var jx=parseInt(j.jx,10); if(isNaN(jx))jx=0;
+      if(jx===0){
+        var d=await sniffPlayPage(url,headers,t);
+        if(d&&d.url){ finalUrl=d.url; finalHeaders=mergeHeaders(headers,d.headers); }
+      }
+      if(!finalUrl){
+        var r=await resolveViaParses(url,headers,t);
+        if(r&&r.url){ finalUrl=r.url; finalHeaders=mergeHeaders(headers,r.headers); }
+      }
     }
     // 解析通道没结果 → 回退静态嗅探（旺旺 mac_url、量子 var main 这类老页面仍能用）
     if(!finalUrl){
