@@ -2130,11 +2130,16 @@ function vipRenderGroups(c,idx){
       var b=document.createElement('button'); b.type='button';
       b.textContent=nm.length>10?nm.slice(0,10):nm; b.title=nm;
       b.onclick=function(){vipPlayEp(c,i);};
+      b.addEventListener('contextmenu', function(ev){ ev.preventDefault(); clearTimeout(b._lpT); vipPlayEp(c,i,'download'); });
+      b.addEventListener('touchstart', function(){ b._lpT=setTimeout(function(){ if(window.Android&&Android.downloadResolved) vipPlayEp(c,i,'download'); }, 550); });
+      b.addEventListener('touchend', function(){ clearTimeout(b._lpT); });
+      b.addEventListener('touchmove', function(){ clearTimeout(b._lpT); });
+      b.addEventListener('touchcancel', function(){ clearTimeout(b._lpT); });
       gb.appendChild(b);
     });
   }
 }
-function vipPlayEp(c,idx){
+function vipPlayEp(c,idx,mode){
   var g=(c.groups||[])[c.srcIdx||0];
   if(!g||!g.eps[idx])return;
   var eps=g.eps, e=eps[idx];
@@ -2142,6 +2147,12 @@ function vipPlayEp(c,idx){
     return {name:x.name||('第'+(i+1)+'集'),url:x.url};
   }));
   var nm=String(c.curName||'VIP')+' · '+(e.name||('第'+(idx+1)+'集'));
+  if(mode==='download'){
+    vipLog('DIRECT DOWNLOAD '+e.url.slice(0,140)+' idx='+idx);
+    if(window.Android&&Android.downloadResolved) Android.downloadResolved(e.url,'{}',nm);
+    else vipDirectFallback(c,'下载桥不可用');
+    return;
+  }
   vipLog('DIRECT PLAY '+e.url.slice(0,140)+' idx='+idx+' eps='+eps.length);
   if(window.Android&&Android.playVipResult){
     c.done=true;
