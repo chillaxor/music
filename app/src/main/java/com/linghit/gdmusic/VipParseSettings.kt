@@ -19,8 +19,10 @@ import com.google.android.material.button.MaterialButton
  * 设置页「VIP 链接解析」区块（阶段 1）。
  *
  * 只负责配置的读写与展示：总开关、失败回退、解析接口增删改 / 批量导入 / 官网识别测试。
- * 路由（阶段 2）与播放（阶段 3）尚未接线，所以开关打开也不会改变现有链接行为，
- * 按钮文案里如实写明「阶段 2 接线后生效」。
+ * 解析接口全部由用户自行填写：影视仓订阅里的 parses 属于采集站接口，
+ * 对腾讯/爱奇艺等官网播放页无效，因此不提供「一键导入影视仓接口」。
+ * 路由与播放由 VipLinkDispatcher + VideoActivity + video.html 的 __resolveVipAt 负责，
+ * 这里不碰任何跳转逻辑。
  *
  * 单独成文件是为了让 SettingsActivity 只多一行调用，保持它已有的 setupXxx 结构。
  */
@@ -40,11 +42,12 @@ fun AppCompatActivity.setupVipParseSection() {
             else "管理解析接口…（当前 ${src.size} 条）"
         val sel = VipParseStore.selectedSource(this)
         status.text = buildString {
-            append("当前：").append(if (on) "已开启（阶段 2 接线后生效）" else "未开启")
+            append("当前：").append(if (on) "已开启（点官网链接自动解析）" else "未开启")
             append("\n官网识别：内置 ").append(VipLinkRouter.ruleCount)
                 .append(" 条规则 / ").append(VipLinkRouter.platforms.size).append(" 个平台")
-            append("\n默认接口：").append(sel?.name ?: "未设置（按顺序尝试）")
-            append("\n接口由你自己填写，App 不内置第三方解析站；仅用于你有权观看的内容。")
+            append("\n默认接口：").append(sel?.name ?: "未设置（按顺序尝试前 8 条）")
+            append("\n接口需自行填写，格式如 https://解析站/?url=；影视仓的采集解析接口对官网链接无效。")
+            append("\n仅用于你有权观看的内容。")
         }
     }
 
@@ -53,7 +56,7 @@ fun AppCompatActivity.setupVipParseSection() {
         VipParseStore.setEnabled(this, !cur)
         Toast.makeText(
             this,
-            if (cur) "已关闭 VIP 链接解析" else "已开启（阶段 2 接线后生效）",
+            if (cur) "已关闭 VIP 链接解析" else "已开启：点官网链接会先解析再进原生播放器",
             Toast.LENGTH_SHORT
         ).show()
         refresh()
@@ -153,6 +156,15 @@ private fun AppCompatActivity.showVipSourcesDialog(onDone: () -> Unit) {
         }
     }
     renderList()
+
+    // 影视仓订阅里的 parses 是「采集站解析」接口，喂官网播放页只会超时；
+    // 不再提供一键导入，避免把两类完全不同的接口混在一起。
+    root.addView(
+        tv(
+            "格式：https://解析站/?url=（官网链接自动拼在后面）\n" +
+                "影视仓订阅里的采集解析接口不适用于官网播放页，请勿填入。", 11f
+        )
+    )
 
     // ---- 新增一条 ----
     root.addView(tv("新增一条", 13f))

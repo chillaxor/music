@@ -30,6 +30,12 @@ object ShortcutRouter {
                 // 内部伪协议（app://gallery / app://camera / app://<包名>）→ 本 App 接管，
                 // 不再当深链去系统找接收方（否则报「无安卓对应软件」）
                 if (InternalScheme.isInternal(u) && InternalScheme.open(ctx, u)) return
+                // VIP 官网播放页：总开关打开时转原生播放器解析链。要放在深链唤起之前，
+                // 否则 v.qq.com / iqiyi.com 这类地址可能被 LinkRouter 交给外部 App 跳走。
+                if (VipLinkDispatcher.shouldHandle(ctx, u)) {
+                    VipLinkDispatcher.open(ctx, u)
+                    return
+                }
                 // 深链 / 小红书分享链接 → 先尝试唤起指定的 App
                 val appLink = LinkRouter.resolveAppLink(u)
                 if (appLink != null) {

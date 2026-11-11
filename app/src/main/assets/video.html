@@ -16,6 +16,29 @@
     font-size:14px;overscroll-behavior:none}
   /* 小窗播放中：底部留出空间，别让悬浮小播放器挡住页面底部内容 */
   body.mini-playing{padding-bottom:130px}
+  /* VIP 官网链接解析：独立解析态，影视仓的顶栏/列表/详情/抽屉一律不显示 */
+  body.vip-only .topbar,
+  body.vip-only #histPanel,
+  body.vip-only #chips,
+  body.vip-only #status,
+  body.vip-only #grid,
+  body.vip-only #searchPage,
+  body.vip-only #sheet,
+  body.vip-only #srcDrawer{display:none!important}
+  body.vip-only{background:radial-gradient(circle at 50% 32%,#1d202b,#0e0f13 70%);padding:0}
+  #vipPanel{display:none;min-height:100vh;align-items:center;justify-content:center;padding:24px}
+  body.vip-only #vipPanel{display:flex}
+  .vip-card{width:100%;max-width:420px;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+    padding:26px 22px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+  .vip-ico{width:56px;height:56px;margin:0 auto 16px;border-radius:50%;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;
+    font-size:24px;line-height:56px;box-shadow:0 8px 24px rgba(245,94,26,.35)}
+  .vip-title{font-size:18px;font-weight:700;letter-spacing:.5px}
+  .vip-url{margin-top:10px;font-size:12px;color:var(--sub);word-break:break-all;line-height:1.6}
+  .vip-state{margin-top:18px;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.05);
+    font-size:12.5px;color:var(--txt);word-break:break-all;line-height:1.6;min-height:20px}
+  .vip-tip{margin-top:18px;font-size:11px;color:var(--sub);line-height:1.7}
   /* 顶栏 */
   .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;
     padding:10px 12px;background:linear-gradient(180deg,#15171c,#101116);border-bottom:1px solid var(--line)}
@@ -241,6 +264,17 @@
           分类浏览为单站模式，点上方站点 chip 切换。
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- VIP 官网链接解析：独立态面板（body.vip-only 时才显示） -->
+  <div id="vipPanel">
+    <div class="vip-card">
+      <div class="vip-ico">▶</div>
+      <div class="vip-title">VIP 链接解析</div>
+      <div class="vip-url" id="vipUrl"></div>
+      <div class="vip-state" id="vipState">正在准备…</div>
+      <div class="vip-tip">解析接口在「设置 → VIP 链接解析」里自行填写。<br>影视仓的订阅与搜索不会加载。</div>
     </div>
   </div>
 
@@ -1563,8 +1597,113 @@ window.__resumeHistory=function(b64){
   })();
 };
 
+/* ============ VIP 官网链接解析（阶段 3） ============
+ * 官网播放页 → 用户配置的解析接口，两条路同时试：
+ *   ① 接口型：HTTP GET 返回 JSON / 文本里直接带 m3u8；
+ *   ② 页面型：离屏 WebView 真正渲染解析站播放页，拦截媒体请求拿直链。
+ * 谁先命中用谁，命中即停；全失败交给原生按设置回退原网页。
+ * 不复用 resolveViaParses：那边依赖订阅 srcCfg，12+ 个接口会拖到 90s 以上；
+ * 这里只跑用户自己选的源，限制 6 条 / 每批 3 条，首选源由原生排在最前。
+ */
+/** 独立解析态面板：只显示官网地址与解析进度，不碰影视仓 DOM */
+function vipPanelSet(url,state){
+  try{
+    var u=document.getElementById('vipUrl'), s=document.getElementById('vipState');
+    if(u&&url)u.textContent=url;
+    if(s&&state)s.textContent=state;
+  }catch(e){}
+}
+/** 由 ?vip=1 或 onNewIntent 触发：切到独立解析态 */
+window.enterVipOnly=function(){
+  window.__VIP_ONLY__=true;
+  try{ document.body.classList.add('vip-only'); }catch(e){}
+  vipPanelSet('', '正在准备解析…');
+  vipLog('vip_only 模式：影视仓订阅与列表已跳过');
+};
+function vipLog(m){
+  console.log('VIPDBG '+m);
+  try{ if(window.Android&&Android.vipLog)Android.vipLog(String(m)); }catch(e){}
+  if(window.__VIP_ONLY__) vipPanelSet('', String(m));
+}
+/** 多个候选里取第一个非 null 的成功结果；全部失败才 resolve(null) */
+function vipFirstHit(ps){
+  return new Promise(function(res){
+    var left=ps.length, done=false;
+    if(!left){res(null);return;}
+    ps.forEach(function(p){
+      p.then(function(v){
+        if(v&&!done){done=true;res(v);}
+        if(--left===0&&!done)res(null);
+      },function(){
+        if(--left===0&&!done)res(null);
+      });
+    });
+  });
+}
+window.__resolveVipAt=function(b64Url,b64Sources,b64Platform){
+  var url='',list=[],platform='';
+  try{url=decodeB64(b64Url||'');}catch(e){}
+  try{list=JSON.parse(decodeB64(b64Sources||''))||[];}catch(e){list=[];}
+  try{platform=decodeB64(b64Platform||'');}catch(e){}
+  function fail(msg){
+    vipLog('FAIL '+msg);
+    vipPanelSet('', '解析失败：'+msg);
+    if(window.Android&&Android.onVipFailed)Android.onVipFailed(msg);
+  }
+  if(!/^https?:/i.test(url)){ fail('链接不是有效的官网地址'); return; }
+  if(!list.length){ fail('还没配置解析接口（设置 → VIP 链接解析 里自行填写）'); return; }
+  vipPanelSet(url, '开始解析 · '+(platform||'官网')+' · '+list.length+' 个接口');
+  vipLog('start platform='+platform+' sources='+list.length+' url='+url.slice(0,120));
+  function srcHeaders(s){
+    var h={'Referer':url};
+    try{
+      var j=JSON.parse(s.headers||'{}');
+      Object.keys(j).forEach(function(k){ if(j[k]!=null&&String(j[k]).trim())h[k]=String(j[k]); });
+    }catch(e){}
+    return h;
+  }
+  function runOne(s){
+    var v=s.encoded?encodeURIComponent(url):url;
+    var full=norm(String(s.prefix||'')+v);
+    var h=srcHeaders(s), nm=s.name||'解析源';
+    vipLog('try '+nm+' => '+full.slice(0,150));
+    var jobs=[];
+    jobs.push(getEx(full,h).then(function(r){
+      var u=(r&&r.ok)?pickStream(r.text):'';
+      if(u){ vipLog('HIT-HTTP '+nm+' => '+u.slice(0,140)); return {url:u,headers:h,by:nm}; }
+      return null;
+    },function(){return null;}));
+    jobs.push(webSniff(full,h,[]).then(function(w){
+      if(w&&w.ok&&w.url){ vipLog('HIT-SNIFF '+nm+' => '+w.url.slice(0,140)); return {url:w.url,headers:h,by:nm}; }
+      return null;
+    },function(){return null;}));
+    return vipFirstHit(jobs);
+  }
+  (async function(){
+    var use=list.slice(0,6), BATCH=3;
+    for(var i=0;i<use.length;i+=BATCH){
+      var rs=await Promise.all(use.slice(i,i+BATCH).map(runOne));
+      for(var k=0;k<rs.length;k++){
+        if(rs[k]&&rs[k].url){
+          var r=rs[k];
+          vipLog('FINAL '+r.by+' => '+r.url.slice(0,140));
+          var eps=JSON.stringify([{name:'正片',url:r.url}]);
+          var name='VIP · '+(platform||'官网')+' · 正片';
+          if(window.Android&&Android.playVipResult) Android.playVipResult(r.url,name,JSON.stringify(r.headers),eps);
+          else fail('播放桥不可用');
+          return;
+        }
+      }
+      vipLog('batch '+(Math.floor(i/BATCH)+1)+' 未命中');
+    }
+    fail('所有解析接口都没有返回可播放地址');
+  })();
+};
+
 /* ============ 启动 ============ */
 async function boot(){
+  // 官网链接解析是独立态：不加载任何影视仓订阅，也不拉首页列表
+  if(/[?&]vip=1(?:&|$)/.test(location.search)){ window.enterVipOnly(); return; }
   loadSources();
   $('scopeBtn').textContent = STATE.searchScope==='all' ? '全网' : '本站';
   try{ STATE.spiderOn = localStorage.getItem('gd_video_spider')==='1'; }catch(e){}

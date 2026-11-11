@@ -349,6 +349,17 @@ class VideoActivity : AppCompatActivity() {
     /** 历史页点续播带回的记录 JSON：等 video.html 加载完交给 JS 重新起播 */
     private var pendingResumeJson: String? = null
     private var pageReady = false
+
+    // ===================== VIP 官网链接解析（阶段 3） =====================
+    /** 等 video.html 加载完再触发的官网播放页地址 */
+    private var pendingVipUrl: String? = null
+    /** 当前正在解析的官网地址（失败回退要用） */
+    private var vipUrlCurrent: String? = null
+    private var vipPlatformName = ""
+    /** 一次解析只触发一次，避免 onPageFinished / onNewIntent 重复起播 */
+    private var vipFired = false
+    /** 独立解析态：页面用 ?vip=1 加载，跳过影视仓订阅/列表，不显示影视仓 UI */
+    private var vipOnlyMode = false
     private val hisHandler = Handler(Looper.getMainLooper())
     private val hisTick = object : Runnable {
         override fun run() {
@@ -610,6 +621,19 @@ class VideoActivity : AppCompatActivity() {
             }
         }
         onBackPressedDispatcher.addCallback(this, backCallback!!)
+        // VIP 官网链接：从自定义链接 / 链接页分流进来，等页面就绪后交给 JS 走解析链
+        intent.getStringExtra(VipLinkDispatcher.EXTRA_OPEN_URL)
+            ?.takeIf { it.isNotBlank() && VipParseStore.isEnabled(this) && VipLinkRouter.isVipPage(it) }
+            ?.let {
+                pendingVipUrl = it
+                vipPlatformName = intent?.getStringExtra(VipLinkDispatcher.EXTRA_PLATFORM)
+                    ?: VipLinkRouter.platformOf(it) ?: "官网"
+                Log.i("VipParse", "onCreate open_url=$it platform=$vipPlatformName")
+                Toast.makeText(this, "正在解析 $vipPlatformName 链接…", Toast.LENGTH_SHORT).show()
+            }
+        // 官网链接解析走独立态：页面不加载影视仓订阅与首页列表
+        vipOnlyMode = intent?.getBooleanExtra(VipLinkDispatcher.EXTRA_VIP_ONLY, false) == true
+        if (vipOnlyMode) Log.i("VipParse", "vip_only 模式：跳过影视仓订阅/列表加载")
         setupWebView()
         // 悬浮窗上点「⤢/画面/通知」且 Activity 已被回收时，重建后收回全屏继续播
         if (intent?.getStringExtra(VideoFloatService.EXTRA_ACTION) == VideoFloatService.ACTION_EXPAND) {
@@ -627,6 +651,22 @@ class VideoActivity : AppCompatActivity() {
         // 悬浮窗上点「⤢」/点画面/点通知：收回全屏继续播
         if (intent?.getStringExtra(VideoFloatService.EXTRA_ACTION) == VideoFloatService.ACTION_EXPAND) {
             mainHandler.post { takeBackFromFloat() }
+            return
+        }
+        // 从链接页再次点同一条官网链接：复用本实例重新解析
+        val vip = intent?.getStringExtra(VipLinkDispatcher.EXTRA_OPEN_URL)
+            ?.takeIf { it.isNotBlank() && VipParseStore.isEnabled(this) && VipLinkRouter.isVipPage(it) }
+        if (vip != null) {
+            vipPlatformName = intent?.getStringExtra(VipLinkDispatcher.EXTRA_PLATFORM)
+                ?: VipLinkRouter.platformOf(vip) ?: "官网"
+            vipFired = false
+            vipUrlCurrent = vip
+            if (intent?.getBooleanExtra(VipLinkDispatcher.EXTRA_VIP_ONLY, false) == true) {
+                vipOnlyMode = true
+                if (pageReady) safeEval("if(window.enterVipOnly)window.enterVipOnly()")
+            }
+            Log.i("VipParse", "onNewIntent open_url=$vip platform=$vipPlatformName vipOnly=$vipOnlyMode")
+            if (pageReady) fireVipParse(vip) else pendingVipUrl = vip
             return
         }
         val j = intent?.getStringExtra("resume_json")
@@ -648,7 +688,12 @@ class VideoActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // 续播要交给页面 JS（重新拉详情/重新解析），必须等页面就绪
                 pageReady = true
-                pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
+                // VIP 官网链接优先于历史续播：同一次启动只走一条
+                pendingVipUrl?.let {
+                    pendingVipUrl = null
+                    pendingResumeJson = null
+                    fireVipParse(it)
+                } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
             }
 
             // 网页万一跳到 baiduboxapp:// 之类的私有协议，静默拦截避免错误页
@@ -671,7 +716,10 @@ class VideoActivity : AppCompatActivity() {
             }
         }
         webView.addJavascriptInterface(VideoBridge(), "Android")
-        webView.loadUrl("file:///android_asset/video.html")
+        webView.loadUrl(
+            if (vipOnlyMode) "file:///android_asset/video.html?vip=1"
+            else "file:///android_asset/video.html"
+        )
     }
 
     // ===================== 原生能力桥 =====================
@@ -846,6 +894,29 @@ class VideoActivity : AppCompatActivity() {
                 (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotBlank() } }
             }.getOrDefault(emptyList())
             runOnUiThread { startWebSniff(url, h, scripts, cbId) }
+        }
+
+        /** VIP 官网链接解析成功：全屏起播（独立态只显示解析面板，不适合内嵌播放器） */
+        @JavascriptInterface
+        fun playVipResult(url: String, title: String, headerJson: String, epsJson: String) {
+            val h = parseHeaders(headerJson)
+            val ref = h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: ""
+            Log.i("VipParse", "playVipResult headers=${h.keys} url=${url.take(120)}")
+            runOnUiThread {
+                startVideo(url, title, ref, epsJson, 0, "", "", inline = false, headers = h)
+            }
+        }
+
+        /** 所有解析源都失败：按设置决定自动回退原网页还是留在当前页 */
+        @JavascriptInterface
+        fun onVipFailed(reason: String) {
+            runOnUiThread { handleVipFailure(reason) }
+        }
+
+        /** 解析链关键节点日志（tag VipParse），真机验收时可直接 grep */
+        @JavascriptInterface
+        fun vipLog(msg: String) {
+            Log.i("VipParse", msg)
         }
 
         /** 经典全屏起播（历史续播用）：铺满横屏 + 沉浸式，不进内嵌态 */
@@ -1034,6 +1105,58 @@ class VideoActivity : AppCompatActivity() {
     private var webViewAlive = true
     private fun safeEval(code: String) {
         if (webViewAlive) webView.evaluateJavascript(code, null)
+    }
+
+    // ===================== VIP 官网链接解析（阶段 3） =====================
+
+    /** 页面就绪后把官网 URL + 用户配置的解析源交给 JS 的 __resolveVipAt。
+     *  全部用 base64 传，避免 URL / header JSON 里的引号和反斜杠破坏 JS 字符串字面量。 */
+    private fun fireVipParse(url: String) {
+        if (vipFired) return
+        vipFired = true
+        vipUrlCurrent = url
+        val srcs = VipParseStore.orderedSources(this)
+        val arr = JSONArray()
+        srcs.take(8).forEach { s ->
+            arr.put(
+                JSONObject()
+                    .put("name", s.name)
+                    .put("prefix", s.prefix)
+                    .put("encoded", s.encoded)
+                    .put("headers", s.headerJson)
+            )
+        }
+        fun b64(s: String) = Base64.encodeToString(
+            s.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP
+        )
+        Log.i("VipParse", "fire url=$url platform=$vipPlatformName sources=${arr.length()} (total ${srcs.size})")
+        safeEval(
+            "if(window.__resolveVipAt)window.__resolveVipAt('${b64(url)}','${b64(arr.toString())}','${b64(vipPlatformName)}');" +
+                "else if(window.Android&&Android.onVipFailed)Android.onVipFailed('页面未提供解析入口');"
+        )
+    }
+
+    /** 解析全失败：按设置里的「失败回退」决定自动打开原网页，还是让用户自己选 */
+    private fun handleVipFailure(reason: String) {
+        val u = vipUrlCurrent ?: return
+        val fb = VipParseStore.fallbackOnFail(this)
+        Log.i("VipParse", "failed reason=$reason fallback=$fb")
+        vipFired = false
+        if (fb) {
+            Toast.makeText(this, "解析失败：$reason，已打开原网页", Toast.LENGTH_LONG).show()
+            VipLinkDispatcher.fallback(this, u)
+            finish()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("解析失败")
+                .setMessage("$reason\n\n官网：$u")
+                .setPositiveButton("打开原网页") { _, _ ->
+                    VipLinkDispatcher.fallback(this, u)
+                    finish()
+                }
+                .setNegativeButton(if (vipOnlyMode) "留在此页" else "留在影视仓", null)
+                .show()
+        }
     }
 
     /** Spider 桥回传：结果 base64 避免转义问题（引擎回调在 watchdog 线程，切回 UI 线程） */

@@ -30,7 +30,9 @@ object VipParseStore {
         val prefix: String,
         /** true=原链接 URL 编码后拼接；false=原样拼接 */
         val encoded: Boolean = true,
-        val enabled: Boolean = true
+        val enabled: Boolean = true,
+        /** 请求解析页时附带的 header JSON（从内置订阅 parses.ext.header 导入时保留），空串＝用默认 */
+        val headerJson: String = ""
     ) {
         fun toJson() = JSONObject().apply {
             put("id", id)
@@ -38,6 +40,7 @@ object VipParseStore {
             put("prefix", prefix)
             put("encoded", encoded)
             put("enabled", enabled)
+            put("headerJson", headerJson)
         }
 
         companion object {
@@ -46,7 +49,8 @@ object VipParseStore {
                 name = o.optString("name"),
                 prefix = o.optString("prefix"),
                 encoded = o.optBoolean("encoded", true),
-                enabled = o.optBoolean("enabled", true)
+                enabled = o.optBoolean("enabled", true),
+                headerJson = o.optString("headerJson", "")
             )
         }
     }
@@ -183,4 +187,5 @@ object VipParseStore {
             }
         return n
     }
+
 }

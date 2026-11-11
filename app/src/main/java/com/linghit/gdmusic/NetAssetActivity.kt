@@ -64,6 +64,8 @@ class NetAssetActivity : AppCompatActivity() {
 
     private val tabs = mutableListOf<BrowserTab>()
     private var currentTab: BrowserTab? = null
+    /** VIP 解析失败后的回退：本次打开原网页时跳过分流，避免「解析失败→再解析」死循环 */
+    private var bypassVipOnce = false
 
     // 原生持久化存储：localStorage 在 file:// 下不可靠（退出进程即丢），
     // 这里用 SharedPreferences 落盘，作为 App 端唯一可信数据源。
@@ -371,6 +373,7 @@ class NetAssetActivity : AppCompatActivity() {
         }
         webView.loadUrl("file:///android_asset/index.html")
         // 首页钉的链接：深链唤起指定 App，普通网址进 App 内嵌浏览器（不跳出 App）
+        bypassVipOnce = intent?.getBooleanExtra(VipLinkDispatcher.EXTRA_BYPASS, false) == true
         intent.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { openLinkOrApp(it) }
 
         // —— app 内嵌浏览器（链接页用）——
@@ -387,6 +390,7 @@ class NetAssetActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent?.getBooleanExtra(VipLinkDispatcher.EXTRA_BYPASS, false) == true) bypassVipOnce = true
         intent?.getStringExtra("open_url")?.takeIf { it.isNotBlank() }?.let { openLinkOrApp(it) }
     }
 
@@ -419,8 +423,16 @@ class NetAssetActivity : AppCompatActivity() {
      */
     private fun openLinkOrApp(url: String) {
         val u = LinkRouter.normalize(url)
+        val bypass = bypassVipOnce
+        bypassVipOnce = false
         // 内部伪协议（app://gallery / app://camera / app://<包名>）→ 本 App 接管
         if (InternalScheme.isInternal(u) && InternalScheme.open(this, u)) return
+        // VIP 官网播放页：开关打开时转原生播放器解析链（链接页内的链接也走这条）
+        if (VipLinkDispatcher.shouldHandle(this, u, bypass)) {
+            closeAllTabs()
+            VipLinkDispatcher.open(this, u)
+            return
+        }
         val appLink = LinkRouter.resolveAppLink(u)
         if (appLink != null) {
             // 跳 App 前把内嵌浏览器收起来：否则从目标 App 回来时浏览器面板还挡在记账页上
