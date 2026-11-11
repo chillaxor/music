@@ -82,6 +82,9 @@ class SettingsActivity : AppCompatActivity() {
         // ---- 首页每日一诗卡片 ----
         setupPoem()
 
+        // ---- VIP 链接解析（阶段 1：配置入口） ----
+        setupVipParseSection()
+
         // 版本与构建时间：装没装上新包，来这里看一眼就知道（崩溃日志头部也会带同样的信息）
         findViewById<TextView>(R.id.versionInfo).text =
             "GD音乐 版本 ${BuildConfig.VERSION_NAME} · 构建 ${BuildConfig.BUILD_TIME}"
