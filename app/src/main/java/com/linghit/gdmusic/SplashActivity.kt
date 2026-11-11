@@ -52,6 +52,10 @@ class SplashActivity : AppCompatActivity() {
         ReminderNotif.ensureChannel(this)
         ReminderScheduler.rescheduleAll(this)
 
+        // VIP 脚本订阅：先灌入上次同步的官网识别规则（不联网也生效），
+        // 再按 24 小时节流在后台检查上游是否出了新版，有新版就整体刷新配置。
+        VipScriptUpdater.autoCheck(this)
+
         val bg = findViewById<ImageView>(R.id.splashBg)
         val center = findViewById<LinearLayout>(R.id.splashCenter)
         val caption = findViewById<TextView>(R.id.splashCaption)

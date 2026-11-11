@@ -32,7 +32,9 @@ object VipParseStore {
         val encoded: Boolean = true,
         val enabled: Boolean = true,
         /** 请求解析页时附带的 header JSON（从内置订阅 parses.ext.header 导入时保留），空串＝用默认 */
-        val headerJson: String = ""
+        val headerJson: String = "",
+        /** "script" = 脚本订阅同步来的；"user" = 用户手填。刷新脚本时只替换前者 */
+        val origin: String = "user"
     ) {
         fun toJson() = JSONObject().apply {
             put("id", id)
@@ -41,6 +43,7 @@ object VipParseStore {
             put("encoded", encoded)
             put("enabled", enabled)
             put("headerJson", headerJson)
+            put("origin", origin)
         }
 
         companion object {
@@ -50,7 +53,8 @@ object VipParseStore {
                 prefix = o.optString("prefix"),
                 encoded = o.optBoolean("encoded", true),
                 enabled = o.optBoolean("enabled", true),
-                headerJson = o.optString("headerJson", "")
+                headerJson = o.optString("headerJson", ""),
+                origin = o.optString("origin", "user")
             )
         }
     }
@@ -106,6 +110,40 @@ object VipParseStore {
     fun replaceAll(ctx: Context, list: List<Source>) = saveSources(ctx, list)
 
     private fun newId() = "v" + System.nanoTime().toString(36)
+
+    /**
+     * 脚本订阅专用：用脚本里的解析前缀替换**上一批脚本来源**，
+     * 用户手填的接口（origin=user）一律保留；同前缀不重复添加。
+     * 已有脚本条目会复用 id / encoded，避免刷新后首选线路和修改过的拼接方式丢失。
+     * 脚本 showPlayerWindow 是裸拼，所以新条目默认 encoded=false。
+     * @return 实际生效的脚本条目数
+     */
+    fun mergeScriptSources(ctx: Context, list: List<Pair<String, String>>, encoded: Boolean): Int {
+        val cur = sources(ctx)
+        val keep = cur.filter { it.origin != "script" }.toMutableList()
+        val oldScript = cur.filter { it.origin == "script" }.associateBy { it.prefix }
+        var n = 0
+        list.take(50).forEach { (name, prefix) ->
+            val p = prefix.trim()
+            if (p.isEmpty() || validatePrefix(p) != null) return@forEach
+            if (keep.any { it.prefix == p }) return@forEach
+            val old = oldScript[p]
+            keep.add(
+                Source(
+                    id = old?.id ?: newId(),
+                    name = name.trim().ifBlank { "脚本线路" },
+                    prefix = p,
+                    encoded = old?.encoded ?: encoded,
+                    enabled = old?.enabled ?: true,
+                    headerJson = old?.headerJson.orEmpty(),
+                    origin = "script"
+                )
+            )
+            n++
+        }
+        saveSources(ctx, keep)
+        return n
+    }
 
     /** 新增（同前缀去重）；返回是否真的新增 */
     fun add(ctx: Context, name: String, prefix: String, encoded: Boolean): Boolean {
@@ -170,13 +208,37 @@ object VipParseStore {
 
     fun directDetail(ctx: Context) = direct(ctx).optString("detail", "")
 
+    /** 设置页手动保存：标记为手填，之后脚本订阅不再覆盖 */
     fun setDirectConfig(ctx: Context, enabled: Boolean, suggest: String, detail: String) {
         put(
             ctx, "direct", JSONObject()
                 .put("enabled", enabled)
                 .put("suggest", suggest.trim())
                 .put("detail", detail.trim())
+                .put("fromScript", false)
         )
+    }
+
+    /**
+     * 脚本订阅专用：把订阅到的 suggest / detail 模板写进直连配置。
+     * - 用户手填过（fromScript=false 且模板非空）→ 不覆盖，返回 false；
+     * - 首次订阅（模板为空）→ 顺手把直连开关打开，做到「订阅完就能用」；
+     * - 后续刷新只换模板，不重新打开用户主动关掉的开关。
+     * @return 是否真的写入了模板
+     */
+    fun applyScriptDirect(ctx: Context, suggest: String, detail: String): Boolean {
+        val cur = direct(ctx)
+        val userFilled = cur.optString("suggest", "").isNotBlank() && !cur.optBoolean("fromScript", false)
+        if (userFilled) return false
+        val first = cur.optString("suggest", "").isBlank()
+        put(
+            ctx, "direct", JSONObject()
+                .put("enabled", if (first) true else cur.optBoolean("enabled", false))
+                .put("suggest", suggest.trim())
+                .put("detail", detail.trim())
+                .put("fromScript", true)
+        )
+        return true
     }
 
     /** 模板必须带对应占位符，且是 http(s) 地址 */
