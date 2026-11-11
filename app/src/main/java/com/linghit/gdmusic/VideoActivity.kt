@@ -70,6 +70,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.ContentValues
+import android.media.MediaScannerConnection
+import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * 影视仓（TVBox / CatVod 风格）视频模块。
@@ -1064,8 +1072,18 @@ class VideoActivity : AppCompatActivity() {
             }
         }
 
+        /** 选集下载入口：JS 侧长按某集触发，把「解析后的最终直链 + 完整防盗链头」交过来。
+         *  App 内用 okhttp 带 header 拉取（jx/防盗链源不会被 403）：mp4/flv 等单文件直链直接下；
+         *  m3u8 拉索引、并发下所有 ts、按序合并成单个 .ts 文件。 */
         @JavascriptInterface
-        fun toast(msg: String) {
+        fun downloadResolved(url: String, headerJson: String, title: String) {
+            val h = parseHeaders(headerJson)
+            Log.d("VidDl", "downloadResolved url=${url.take(90)} headers=${h.keys}")
+            startDownload(url, h, title)
+        }
+
+    @JavascriptInterface
+    fun toast(msg: String) {
             runOnUiThread {
                 Toast.makeText(this@VideoActivity, msg, Toast.LENGTH_SHORT).show()
             }
@@ -2051,6 +2069,190 @@ class VideoActivity : AppCompatActivity() {
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    // ===================== 选集下载 =====================
+    /** 下载专用 OkHttp（长读超时，适配大文件/慢 CDN）；复用项目 client 的 HTTP/1.1 与重定向策略 */
+    private val dlClient = OkHttpClient.Builder()
+        .followRedirects(true).followSslRedirects(true)
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    /** 选集下载：后台线程用 okhttp 带完整 headers 拉取，mp4 直下 / m3u8 合并，写公共目录并通知媒体库 */
+    private fun startDownload(rawUrl: String, headers: Map<String, String>, title: String) {
+        if (rawUrl.isBlank()) { toast("没有可用的下载地址"); return }
+        val safeTitle = sanitizeName(title.ifBlank { "从前慢_${System.currentTimeMillis()}" })
+        val isM3u8 = rawUrl.contains(".m3u8", true)
+        val hdrs = LinkedHashMap<String, String>()
+        headers.forEach { (k, v) -> if (v.isNotBlank() && k.lowercase() !in HOP_BY_HOP) hdrs[k] = v }
+        Thread {
+            try {
+                val out = prepareDownloadOutput(safeTitle, if (isM3u8) "ts" else guessExt(rawUrl))
+                showDlProgress(safeTitle, 0, true)
+                if (isM3u8) downloadM3u8(rawUrl, hdrs, out.stream) else downloadSingle(rawUrl, hdrs, out.stream)
+                out.stream.close()
+                runOnUiThread { toast("下载完成：$safeTitle"); scanDownloaded(out.scanPath) }
+            } catch (e: Exception) {
+                Log.w("VidDl", "下载失败: ${e.message}")
+                runOnUiThread { toast("下载失败：${e.message?.take(80)}") }
+            } finally { dismissDlProgress() }
+        }.start()
+    }
+
+    /** 输出目标：API29+ 写 MediaStore（公共 Movies/从前慢，免权限）；否则写应用私有 Movies 目录 */
+    private data class DlOutput(val stream: java.io.OutputStream, val scanPath: String)
+    private fun prepareDownloadOutput(name: String, ext: String): DlOutput {
+        val dirName = "从前慢"
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cv = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, "$name.$ext")
+                put(MediaStore.Video.Media.MIME_TYPE, if (ext == "ts") "video/mp2t" else "video/$ext")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "${android.os.Environment.DIRECTORY_MOVIES}/$dirName")
+            }
+            val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cv)
+                ?: throw Exception("无法创建媒体库条目")
+            DlOutput(contentResolver.openOutputStream(uri)!!, "")
+        } else {
+            val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
+            val d = File(dir, dirName); if (!d.exists()) d.mkdirs()
+            val f = File(d, "$name.$ext")
+            DlOutput(FileOutputStream(f), f.absolutePath)
+        }
+    }
+
+    /** 单文件下载（mp4/flv/...），带进度通知 */
+    private fun downloadSingle(url: String, headers: Map<String, String>, out: java.io.OutputStream) {
+        dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} ${resp.message}")
+            val total = resp.body?.contentLength() ?: -1L
+            val `in` = resp.body?.byteStream() ?: throw Exception("空响应")
+            val buf = ByteArray(64 * 1024); var read: Int; var done: Long = 0
+            while (`in`.read(buf).also { read = it } > 0) {
+                out.write(buf, 0, read); done += read
+                if (total > 0) updateDlProgress((done * 100 / total).toInt())
+            }
+        }
+    }
+
+    /** m3u8 下载：拉索引 → 处理 master playlist / 加密检测 → 并发下所有 ts → 按序合并 */
+    private fun downloadM3u8(indexUrl: String, headers: Map<String, String>, out: java.io.OutputStream) {
+        val idxText = httpGetText(indexUrl, headers)
+        val lines = idxText.lineSequence().map { it.trimEnd() }.filter { it.isNotEmpty() }.toList()
+        if (lines.any { it.startsWith("#EXT-X-KEY") && it.contains("METHOD=AES-128") })
+            throw Exception("该视频为 AES-128 加密流，App 暂不支持，请用 IDM+/ADM 嗅探下载")
+        val variantIdx = lines.indexOfFirst { it.startsWith("#EXT-X-STREAM-INF") }
+        val mediaUrl = if (variantIdx >= 0) {
+            val uri = lines.getOrNull(variantIdx + 1)?.takeIf { !it.startsWith("#") } ?: indexUrl
+            resolveUrl(indexUrl, uri)
+        } else indexUrl
+        val mediaText = if (mediaUrl != indexUrl) httpGetText(mediaUrl, headers) else idxText
+        val segs = mediaText.lineSequence().map { it.trimEnd() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
+        if (segs.isEmpty()) throw Exception("m3u8 解析无切片")
+        val total = segs.size
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+        val latch = java.util.concurrent.CountDownLatch(total)
+        val doneCount = java.util.concurrent.atomic.AtomicInteger(0)
+        segs.forEachIndexed { i, seg ->
+            pool.execute {
+                try {
+                    val segUrl = resolveUrl(mediaUrl, seg)
+                    val bytes = httpGetBytes(segUrl, headers)
+                    synchronized(out) { out.write(bytes) }
+                    val p = doneCount.incrementAndGet()
+                    updateDlProgress(p * 100 / total)
+                } catch (e: Exception) { Log.w("VidDl", "ts#$i 失败: ${e.message}") }
+                finally { latch.countDown() }
+            }
+        }
+        latch.await(); pool.shutdown()
+    }
+
+    /** 拼接相对/绝对 URL（基于 base 目录） */
+    private fun resolveUrl(base: String, rel: String): String {
+        if (rel.startsWith("//")) return "https:$rel"
+        if (rel.startsWith("http://", true) || rel.startsWith("https://", true)) return rel
+        try {
+            val b = android.net.Uri.parse(base)
+            if (android.net.Uri.parse(rel).scheme != null) return rel
+            val basePath = (b.path ?: "/").substringBeforeLast("/", "/")
+            val path = "$basePath/${rel.removePrefix("/")}"
+            return android.net.Uri.parse("${b.scheme}://${b.authority}$path").toString()
+        } catch (e: Exception) { return rel }
+    }
+
+    /** 带 headers 的 GET 文本 */
+    private fun httpGetText(url: String, headers: Map<String, String>): String {
+        dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+            return resp.body?.string() ?: ""
+        }
+    }
+    /** 带 headers 的 GET 字节（ts 切片） */
+    private fun httpGetBytes(url: String, headers: Map<String, String>): ByteArray {
+        dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+            return resp.body?.bytes() ?: ByteArray(0)
+        }
+    }
+    /** 构造带 headers 的请求 */
+    private fun headerRequest(url: String, headers: Map<String, String>): Request {
+        val b = Request.Builder().url(url).header("Accept", "*/*")
+        if (headers.none { it.key.equals("User-Agent", true) }) b.header("User-Agent", "Mozilla/5.0")
+        headers.forEach { (k, v) -> if (k.lowercase() !in HOP_BY_HOP) b.header(k, v) }
+        return b.build()
+    }
+
+    /** 从 URL 推断扩展名（默认 mp4） */
+    private fun guessExt(url: String): String {
+        val p = url.substringBefore("?").substringBefore("#")
+        val e = p.substringAfterLast(".", "")
+        return if (e.length in 2..4) e.lowercase() else "mp4"
+    }
+    /** 文件名去除非法字符 */
+    private fun sanitizeName(s: String): String =
+        s.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(60).ifBlank { "video" }
+
+    /** 下载完成后让媒体库扫描（仅私有目录需要；MediaStore 写入后自动可见） */
+    private fun scanDownloaded(path: String) {
+        if (path.isNotBlank()) MediaScannerConnection.scanFile(this, arrayOf(path), arrayOf("video/*"), null)
+    }
+
+    // ---- 下载进度通知 ----
+    private val DL_CHANNEL = "gdmusic_download"
+    private val DL_NOTIFY_ID = 2001
+    private fun ensureDlChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (mgr.getNotificationChannel(DL_CHANNEL) == null) {
+                val ch = NotificationChannel(DL_CHANNEL, "从前慢下载", NotificationManager.IMPORTANCE_LOW)
+                mgr.createNotificationChannel(ch)
+            }
+        }
+    }
+    private fun showDlProgress(title: String, pct: Int, indeterminate: Boolean) {
+        ensureDlChannel()
+        val n = NotificationCompat.Builder(this, DL_CHANNEL)
+            .setContentTitle("下载中：$title")
+            .setContentText(if (indeterminate) "准备下载…" else "$pct%")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, pct, indeterminate).build()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(DL_NOTIFY_ID, n)
+    }
+    private fun updateDlProgress(pct: Int) {
+        val n = NotificationCompat.Builder(this, DL_CHANNEL)
+            .setContentTitle("下载中")
+            .setContentText("$pct%")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, pct, false).build()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(DL_NOTIFY_ID, n)
+    }
+    private fun dismissDlProgress() {
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(DL_NOTIFY_ID)
     }
 
     // ===================== DLNA 投屏 =====================

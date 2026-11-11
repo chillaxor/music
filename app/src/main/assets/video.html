@@ -1334,6 +1334,13 @@ function renderEps(v){
       STATE.played[sig]=true; savePlayed();
       playEp(g.from,g.eps,ei);
     };
+    // 长按选集 = 下载该集：复用与播放完全相同的解析链路（spider playerContent / parses / 直连嗅探），
+    // 解析完成后调 Android.downloadResolved 而非起播。touchstart 计时 550ms 触发，contextmenu（桌面/部分 WebView）兜底。
+    b.addEventListener('contextmenu', function(ev){ ev.preventDefault(); clearTimeout(b._lpT); playEp(g.from,g.eps,ei,'download'); });
+    b.addEventListener('touchstart', function(){ b._lpT=setTimeout(function(){ if(window.Android&&Android.downloadResolved) playEp(g.from,g.eps,ei,'download'); }, 550); });
+    b.addEventListener('touchend', function(){ clearTimeout(b._lpT); });
+    b.addEventListener('touchmove', function(){ clearTimeout(b._lpT); });
+    b.addEventListener('touchcancel', function(){ clearTimeout(b._lpT); });
     return b;
   }
   loadPlayed();
@@ -1366,7 +1373,7 @@ function renderEps(v){
  * 同时把整条剧集列表交给原生播放器，支持上一集/下一集/播完自动连播；
  * 爬虫源列表原生侧只存元数据，切集时回传 __playSpiderAt 重新解析。
  */
-function playEp(from,eps,idx){
+function playEp(from,eps,idx,mode){
   // 注意：不再在这里 closeSheet()。详情页留在 WebView 里（被全屏播放器盖住），
   // 这样播放中按返回关掉播放器后，能回到「播放前那个视频的详情/选集页」，而不是列表或主页。
   var spiderT=STATE.detailSpider;
@@ -1375,9 +1382,9 @@ function playEp(from,eps,idx){
   // 标记「已播」并持久化：先写盘再 renderEps（renderEps 会按 detailKey 重新读盘，
   // 爬虫源 vod_id 为空也不漏标），重开详情 / 续播仍能看到 ✓。
   var _sig=from+'$$$'+idx;
-  STATE.played[_sig]=true;
+  if(mode!=='download') STATE.played[_sig]=true;
   try{ if(STATE.detail){ var _k=(function(){var sp=STATE.detailSpider,site=STATE.detailSite,vid=(STATE.detail.vod_id||STATE.detail.vod_name||'').toString().trim(); if(sp)return 's:'+(sp.key||sp.api)+'|'+vid; if(site)return 'd:'+(site.api||site.key||'')+'|'+vid; return 'd:unknown|'+vid;})(); localStorage.setItem('gd_played_'+_k, JSON.stringify(STATE.played)); } }catch(e){}
-  if(STATE.detail) renderEps(STATE.detail); // 重画选集，把「正在播放」高亮 + ✓ 移到新点的集
+  if(mode!=='download' && STATE.detail) renderEps(STATE.detail); // 下载模式不重画选集、不污染已播标记
   var epsJson=JSON.stringify(eps.map(function(x){
     return {name:x.name,url:x.url,spider:!!spiderT};
   }));
@@ -1389,7 +1396,7 @@ function playEp(from,eps,idx){
   // 历史记录元数据：key 决定同一条记录去重更新，vodId/siteApi/from 供续播重新拉详情
   var meta=playMeta(e);
   // 爬虫源：先经 playerContent 解析出直链再交原生播放器
-  if(spiderT){ playSpiderEp(spiderT,from,e,idx,epsJson,spJson,meta); return; }
+  if(spiderT){ playSpiderEp(spiderT,from,e,idx,epsJson,spJson,meta,mode); return; }
   var url=e.url, name=(STATE.detail.vod_name||'')+' · '+from+' · '+e.name;
   // 很多 CDN 校验 Referer：带上详情所属站点的 origin，否则 403
   var ref='';
@@ -1410,7 +1417,10 @@ function playEp(from,eps,idx){
       }));
       STATE.playEps=eps; STATE.playEpsJson=epsJson;
     }
-    if(window.Android&&Android.playVideo) Android.playVideo(finalUrl,name,ref,epsJson,idx,spJson,meta);
+    if(mode==='download'){
+      if(window.Android&&Android.downloadResolved) Android.downloadResolved(finalUrl, (ref?JSON.stringify({Referer:ref}):'{}'), name);
+      else toast('当前环境不支持下载');
+    } else if(window.Android&&Android.playVideo) Android.playVideo(finalUrl,name,ref,epsJson,idx,spJson,meta);
     else toast('当前环境不支持播放');
   })();
 }
@@ -1548,7 +1558,7 @@ function playResolved(url,name,headers,idx,epsJson,spJson,meta){
   else if(window.Android&&Android.playVideo) Android.playVideo(url,name,ref,epsJson,idx,spJson,meta);
   else toast('当前环境不支持播放');
 }
-async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
+async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta,mode){
   toast('正在解析播放地址…');
   var txt=await spiderPlay(t,flag,e.url);
   var j=null; try{j=JSON.parse(txt);}catch(err){}
@@ -1605,7 +1615,10 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta){
       epsJson=JSON.stringify(arr); STATE.playEpsJson=epsJson;
     }catch(err){}
     console.log('SPIDERDBG['+tag+'] FINAL '+finalUrl.slice(0,140));
-    playResolved(finalUrl,name,finalHeaders,idx,epsJson,spJson,meta);
+    if(mode==='download'){
+      if(window.Android&&Android.downloadResolved) Android.downloadResolved(finalUrl, JSON.stringify(finalHeaders), name);
+      else toast('当前环境不支持下载');
+    } else playResolved(finalUrl,name,finalHeaders,idx,epsJson,spJson,meta);
     return;
   }
   console.log('SPIDERDBG['+tag+'] NO_URL msg='+(j.msg||''));
