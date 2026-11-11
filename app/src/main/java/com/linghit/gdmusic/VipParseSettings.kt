@@ -59,10 +59,10 @@ fun AppCompatActivity.setupVipParseSection() {
             append("\n官网识别：").append(VipLinkRouter.ruleCount)
                 .append(" 条规则 / ").append(VipLinkRouter.platforms.size).append(" 个平台")
                 .append(if (VipLinkRouter.subscribedRuleCount > 0) "（脚本订阅）" else "（内置兜底）")
-            append("\n直连搜索：").append(if (directOn) "已启用（片名→联想→播放列表）" else "未配置")
+            append("\n直连搜索：").append(if (directOn) "已启用（搜片单→选片→详情选集）" else "未配置")
             append("\n默认接口：").append(sel?.name ?: "未设置（按顺序尝试前 8 条）")
             append("\n配置由「脚本订阅」从上游自动同步；你手填的接口与模板不会被覆盖。")
-            append("\n直连失败会回落到解析接口。影视仓的采集接口对官网链接无效。")
+            append("\n搜到片单后由你选片、在详情页选集，不会自动播放；直连失败才回落到解析接口。")
             append("\n仅用于你有权观看的内容。")
         }
     }

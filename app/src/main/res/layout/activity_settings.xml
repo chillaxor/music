@@ -561,7 +561,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="自定义链接里填腾讯视频、爱奇艺、优酷等官网播放页时，开启后会尝试走解析线路用原生播放器播放。识别规则、解析接口与直连模板可由「脚本订阅」从上游自动同步并跟随更新；App 不内置任何第三方接口地址。"
+                        android:text="自定义链接里填腾讯视频、爱奇艺、优酷等官网播放页时，开启后先按片名搜出片单由你挑一部，进详情页选好集数才用原生播放器播放，不会自动起播。识别规则、解析接口与直连模板可由「脚本订阅」从上游自动同步并跟随更新；App 不内置任何第三方接口地址。"
                         android:textSize="13sp"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:layout_marginTop="6dp"/>
