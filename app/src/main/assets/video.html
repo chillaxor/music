@@ -185,6 +185,9 @@
   .ep:active{background:var(--accent);color:#fff}
   /* 正在播放的这一集：主题色实底 + 白字 + 加粗，一眼能看到看到哪了 */
   .ep.on{background:var(--accent);color:#fff;font-weight:700;border-color:var(--accent)}
+  /* 已播过的集：右上角 ✓ 角标（持久化，爬虫源 vod_id 为空也能标记） */
+  .ep.done{position:relative}
+  .ep.done::after{content:'✓';position:absolute;top:1px;right:4px;font-size:10px;line-height:1;color:var(--accent2);font-weight:700}
   /* 源管理抽屉 */
   .srcDrawer{position:fixed;inset:0;z-index:50;display:none}
   .srcDrawer.show{display:block}
@@ -391,7 +394,8 @@ var STATE={
   groups:[],                 // 全网搜索结果分组 [{ri,si,name,items,pg,spider?}]
   // 当前播放列表（原生播放器切集/连播时经 __playSpiderAt 回传）
   playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:'',
-  playVodId:''              // 正在播放的片子 vod_id，选集页用它高亮「正在播放」的集
+  playVodId:'',             // 正在播放的片子 vod_id，选集页用它高亮「正在播放」的集
+  played:{},               // 当前详情「已播」集签名集合（from$$$idx → true），本地持久化
 };
 /* 进入详情是否自动起播第一集（内嵌在详情页顶部，非全屏）。
  * 仅「打开详情」时置 true；恢复播放前那一页（__restoreAfterPlay）、点选集重画等
@@ -1304,18 +1308,35 @@ function renderEps(v){
   var box=$('dEps'); box.innerHTML='';
   var groups=parsePlay(v);
   if(!groups.length){box.innerHTML='<div style="color:var(--sub);padding:12px">该资源没有可播放的集数（可能是需解析的站点）</div>';return;}
-  // 正在播放的集：同一部片子（vod_id 相同）+ 同线路 + 同下标才高亮，避免串台
+  // 当前详情的持久化「已播」集合：用来源+片名做 key，爬虫源 vod_id 为空也能精准回灌
+  function detailKey(){
+    var sp=STATE.detailSpider, site=STATE.detailSite, vid=(v.vod_id||v.vod_name||'').toString().trim();
+    if(sp) return 's:'+(sp.key||sp.api)+'|'+vid;
+    if(site) return 'd:'+(site.api||site.key||'')+'|'+vid;
+    return 'd:unknown|'+vid;
+  }
+  function loadPlayed(){ var k=detailKey(); STATE.played={}; try{ var raw=localStorage.getItem('gd_played_'+k); if(raw) STATE.played=JSON.parse(raw)||{}; }catch(e){} }
+  function savePlayed(){ try{ localStorage.setItem('gd_played_'+detailKey(), JSON.stringify(STATE.played)); }catch(e){} }
+  // 正在播放的集：同一部片子 + 同线路 + 同下标才高亮，避免串台。
+  // 爬虫源 vod_id 常为空/不稳，空时不再用 ‘&&’ 短路禁掉整页高亮，改以 from+idx 兜底。
   function isPlaying(from,ei){
-    return STATE.playVodId && STATE.playVodId===(v.vod_id||'') &&
-           STATE.playFrom===from && STATE.playIdx===ei;
+    var sameVod = !STATE.playVodId || STATE.playVodId===(v.vod_id||'');
+    return sameVod && STATE.playFrom===from && STATE.playIdx===ei;
   }
   function mkEp(g,e,ei){
-    var b=document.createElement('div'); b.className='ep'+(isPlaying(g.from,ei)?' on':'');
+    var sig=g.from+'$$$'+ei;
+    var b=document.createElement('div');
+    b.className='ep'+((isPlaying(g.from,ei))?' on':'')+((STATE.played&&STATE.played[sig])?' done':'');
     b.textContent=e.name;
-    b.title=e.name;
-    b.onclick=function(){playEp(g.from,g.eps,ei);};
+    b.title=e.name+(STATE.played&&STATE.played[sig]?'（已播）':'');
+    b.onclick=function(){
+      // 点哪一集就记「已播」，持久化后重开详情/续播仍能看到标记
+      STATE.played[sig]=true; savePlayed();
+      playEp(g.from,g.eps,ei);
+    };
     return b;
   }
+  loadPlayed();
   // 单线路：直接显示该线路的选集
   if(groups.length===1){
     var g0=groups[0]; var ep0=document.createElement('div'); ep0.className='eps';
@@ -1351,7 +1372,12 @@ function playEp(from,eps,idx){
   var spiderT=STATE.detailSpider;
   STATE.playFrom=from; STATE.playEps=eps; STATE.playIdx=idx;
   STATE.playVodId=(STATE.detail&&STATE.detail.vod_id)||''; // 记下正在播的片子，供选集高亮
-  if(STATE.detail) renderEps(STATE.detail); // 重画选集，把「正在播放」高亮移到新点的集
+  // 标记「已播」并持久化：先写盘再 renderEps（renderEps 会按 detailKey 重新读盘，
+  // 爬虫源 vod_id 为空也不漏标），重开详情 / 续播仍能看到 ✓。
+  var _sig=from+'$$$'+idx;
+  STATE.played[_sig]=true;
+  try{ if(STATE.detail){ var _k=(function(){var sp=STATE.detailSpider,site=STATE.detailSite,vid=(STATE.detail.vod_id||STATE.detail.vod_name||'').toString().trim(); if(sp)return 's:'+(sp.key||sp.api)+'|'+vid; if(site)return 'd:'+(site.api||site.key||'')+'|'+vid; return 'd:unknown|'+vid;})(); localStorage.setItem('gd_played_'+_k, JSON.stringify(STATE.played)); } }catch(e){}
+  if(STATE.detail) renderEps(STATE.detail); // 重画选集，把「正在播放」高亮 + ✓ 移到新点的集
   var epsJson=JSON.stringify(eps.map(function(x){
     return {name:x.name,url:x.url,spider:!!spiderT};
   }));
