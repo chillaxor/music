@@ -356,6 +356,8 @@ class VideoActivity : AppCompatActivity() {
     /** 当前正在解析的官网地址（失败回退要用） */
     private var vipUrlCurrent: String? = null
     private var vipPlatformName = ""
+    /** 快捷位名称：直连搜片名时的第一候选 */
+    private var vipLabel = ""
     /** 一次解析只触发一次，避免 onPageFinished / onNewIntent 重复起播 */
     private var vipFired = false
     /** 独立解析态：页面用 ?vip=1 加载，跳过影视仓订阅/列表，不显示影视仓 UI */
@@ -628,7 +630,8 @@ class VideoActivity : AppCompatActivity() {
                 pendingVipUrl = it
                 vipPlatformName = intent?.getStringExtra(VipLinkDispatcher.EXTRA_PLATFORM)
                     ?: VipLinkRouter.platformOf(it) ?: "官网"
-                Log.i("VipParse", "onCreate open_url=$it platform=$vipPlatformName")
+                vipLabel = intent?.getStringExtra(VipLinkDispatcher.EXTRA_LABEL) ?: ""
+                Log.i("VipParse", "onCreate open_url=$it platform=$vipPlatformName label=$vipLabel")
                 Toast.makeText(this, "正在解析 $vipPlatformName 链接…", Toast.LENGTH_SHORT).show()
             }
         // 官网链接解析走独立态：页面不加载影视仓订阅与首页列表
@@ -659,6 +662,7 @@ class VideoActivity : AppCompatActivity() {
         if (vip != null) {
             vipPlatformName = intent?.getStringExtra(VipLinkDispatcher.EXTRA_PLATFORM)
                 ?: VipLinkRouter.platformOf(vip) ?: "官网"
+            vipLabel = intent?.getStringExtra(VipLinkDispatcher.EXTRA_LABEL) ?: ""
             vipFired = false
             vipUrlCurrent = vip
             if (intent?.getBooleanExtra(VipLinkDispatcher.EXTRA_VIP_ONLY, false) == true) {
@@ -896,14 +900,18 @@ class VideoActivity : AppCompatActivity() {
             runOnUiThread { startWebSniff(url, h, scripts, cbId) }
         }
 
-        /** VIP 官网链接解析成功：全屏起播（独立态只显示解析面板，不适合内嵌播放器） */
+        /**
+         * VIP 官网链接解析成功：全屏起播（独立态只显示解析面板，不适合内嵌播放器）。
+         * idx 是官网链接里识别出的当前集下标，直连搜索会把整份剧集表一并传回来，
+         * 这样上一集/下一集/播完连播都能直接复用影视仓已有的 epsList 逻辑。
+         */
         @JavascriptInterface
-        fun playVipResult(url: String, title: String, headerJson: String, epsJson: String) {
+        fun playVipResult(url: String, title: String, headerJson: String, epsJson: String, idx: Int) {
             val h = parseHeaders(headerJson)
             val ref = h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: ""
-            Log.i("VipParse", "playVipResult headers=${h.keys} url=${url.take(120)}")
+            Log.i("VipParse", "playVipResult headers=${h.keys} idx=$idx url=${url.take(120)}")
             runOnUiThread {
-                startVideo(url, title, ref, epsJson, 0, "", "", inline = false, headers = h)
+                startVideo(url, title, ref, epsJson, idx, "", "", inline = false, headers = h)
             }
         }
 
@@ -1129,11 +1137,31 @@ class VideoActivity : AppCompatActivity() {
         fun b64(s: String) = Base64.encodeToString(
             s.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP
         )
-        Log.i("VipParse", "fire url=$url platform=$vipPlatformName sources=${arr.length()} (total ${srcs.size})")
-        safeEval(
-            "if(window.__resolveVipAt)window.__resolveVipAt('${b64(url)}','${b64(arr.toString())}','${b64(vipPlatformName)}');" +
-                "else if(window.Android&&Android.onVipFailed)Android.onVipFailed('页面未提供解析入口');"
-        )
+        val bUrl = b64(url)
+        val bSrc = b64(arr.toString())
+        val bPlat = b64(vipPlatformName)
+        val sourcesCall = "window.__resolveVipAt('$bUrl','$bSrc','$bPlat')"
+        val missing = "else if(window.Android&&Android.onVipFailed)Android.onVipFailed('页面未提供解析入口');"
+
+        if (VipParseStore.directConfigured(this)) {
+            // 二期：先按片名直连取真实播放列表；JS 侧失败会自己回落到一期解析接口
+            val cfg = JSONObject()
+                .put("suggest", VipParseStore.directSuggest(this))
+                .put("detail", VipParseStore.directDetail(this))
+            Log.i(
+                "VipParse",
+                "fire DIRECT url=$url label=$vipLabel platform=$vipPlatformName " +
+                    "sources=${arr.length()} (total ${srcs.size})"
+            )
+            safeEval(
+                "if(window.__resolveVipDirect)window.__resolveVipDirect(" +
+                    "'$bUrl','${b64(cfg.toString())}','${b64(vipLabel)}','$bPlat','$bSrc');" +
+                    "else if(window.__resolveVipAt)$sourcesCall;$missing"
+            )
+        } else {
+            Log.i("VipParse", "fire url=$url platform=$vipPlatformName sources=${arr.length()} (total ${srcs.size})")
+            safeEval("if(window.__resolveVipAt)$sourcesCall;$missing")
+        }
     }
 
     /** 解析全失败：按设置里的「失败回退」决定自动打开原网页，还是让用户自己选 */

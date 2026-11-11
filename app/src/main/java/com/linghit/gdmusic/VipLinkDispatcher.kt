@@ -23,6 +23,8 @@ object VipLinkDispatcher {
     const val EXTRA_OPEN_URL = "open_url"
     const val EXTRA_BYPASS = "vip_bypass"
     const val EXTRA_PLATFORM = "vip_platform"
+    /** 快捷位名称：二期直连搜索拿它当片名的第一候选（官网标题常是平台占位文字） */
+    const val EXTRA_LABEL = "vip_label"
     /** 独立解析态：VideoActivity 只跑 VIP 解析，不加载影视仓订阅与首页列表 */
     const val EXTRA_VIP_ONLY = "vip_only"
 
@@ -33,12 +35,17 @@ object VipLinkDispatcher {
     }
 
     /** 命中官网播放页：转原生播放器解析链 */
-    fun open(ctx: Context, url: String) {
+    fun open(ctx: Context, url: String, label: String = "") {
         val platform = VipLinkRouter.platformOf(url) ?: "官网"
-        Log.i("VipParse", "route url=$url platform=$platform sources=${VipParseStore.orderedSources(ctx).size}")
+        Log.i(
+            "VipParse",
+            "route url=$url platform=$platform label=$label " +
+                "direct=${VipParseStore.directConfigured(ctx)} sources=${VipParseStore.orderedSources(ctx).size}"
+        )
         val i = Intent(ctx, VideoActivity::class.java)
             .putExtra(EXTRA_OPEN_URL, url)
             .putExtra(EXTRA_PLATFORM, platform)
+            .putExtra(EXTRA_LABEL, label)
             .putExtra(EXTRA_VIP_ONLY, true)
         if (ctx !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { ctx.startActivity(i) }

@@ -34,6 +34,15 @@
   .vip-ico{width:56px;height:56px;margin:0 auto 16px;border-radius:50%;
     background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;
     font-size:24px;line-height:56px;box-shadow:0 8px 24px rgba(245,94,26,.35)}
+  /* 二期：片名手填 / 重搜 / 多候选点选 */
+  .vip-row{display:flex;gap:8px;margin-top:14px}
+  .vip-row input{flex:1;min-width:0;background:rgba(255,255,255,.08);color:#fff;
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;outline:none}
+  .vip-row button,.vip-cands button{border-radius:10px;font-size:13px;cursor:pointer}
+  .vip-row button{background:var(--accent);color:#fff;border:0;padding:10px 14px;white-space:nowrap}
+  .vip-cands{display:flex;flex-direction:column;gap:8px;margin-top:14px;max-height:38vh;overflow-y:auto}
+  .vip-cands button{background:rgba(255,255,255,.07);color:#fff;
+    border:1px solid var(--line);padding:10px 12px;text-align:left}
   .vip-title{font-size:18px;font-weight:700;letter-spacing:.5px}
   .vip-url{margin-top:10px;font-size:12px;color:var(--sub);word-break:break-all;line-height:1.6}
   .vip-state{margin-top:18px;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.05);
@@ -274,6 +283,11 @@
       <div class="vip-title">VIP 链接解析</div>
       <div class="vip-url" id="vipUrl"></div>
       <div class="vip-state" id="vipState">正在准备…</div>
+      <div class="vip-row" id="vipTitleRow">
+        <input id="vipTitleEt" type="text" placeholder="片名（识别不到时手填）" />
+        <button id="vipRetryBtn" type="button">重搜</button>
+      </div>
+      <div class="vip-cands" id="vipCands"></div>
       <div class="vip-tip">解析接口在「设置 → VIP 链接解析」里自行填写。<br>影视仓的订阅与搜索不会加载。</div>
     </div>
   </div>
@@ -1689,7 +1703,7 @@ window.__resolveVipAt=function(b64Url,b64Sources,b64Platform){
           vipLog('FINAL '+r.by+' => '+r.url.slice(0,140));
           var eps=JSON.stringify([{name:'正片',url:r.url}]);
           var name='VIP · '+(platform||'官网')+' · 正片';
-          if(window.Android&&Android.playVipResult) Android.playVipResult(r.url,name,JSON.stringify(r.headers),eps);
+          if(window.Android&&Android.playVipResult) Android.playVipResult(r.url,name,JSON.stringify(r.headers),eps,0);
           else fail('播放桥不可用');
           return;
         }
@@ -1697,6 +1711,259 @@ window.__resolveVipAt=function(b64Url,b64Sources,b64Platform){
       vipLog('batch '+(Math.floor(i/BATCH)+1)+' 未命中');
     }
     fail('所有解析接口都没有返回可播放地址');
+  })();
+};
+
+/* ============ VIP 直连搜索（二期） ============
+ * 与一期「解析站 iframe」完全不同：这里按片名查片源、取回真实播放列表，
+ * 直接把 m3u8 交给 ExoPlayer，不渲染任何第三方页面。
+ *
+ * 片名来源分三级：快捷位名称 → 官网静态 og:title / title → 解析面板手填。
+ * 脚本原本是在官网 DOM 里等标题稳定，独立态不加载官网页，所以改成静态抓取。
+ * 联想/详情两条模板由使用者在设置页填写，代码里不含任何第三方接口地址。
+ */
+var VIP_SITES='爱奇艺|腾讯视频|腾讯|优酷|芒果TV|芒果|哔哩哔哩|bilibili|B站|搜狐视频|搜狐|乐视视频|乐视|PPTV聚力|PPTV|1905电影网|1905|土豆网|土豆|风行网|风行|西瓜视频|咪咕视频|咪咕|AcFun';
+var VIP_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36';
+
+/** 剥掉平台名、营销词与「第N集」后缀，取出能拿去搜的片名主体 */
+function vipCleanTitle(t){
+  t=String(t||'').replace(/[《》【】「」]/g,'')
+    .replace(new RegExp('(?:^|[\\s\\-_：:|｜，,。·]+)(?:'+VIP_SITES+')(?=$|[\\s\\-_：:|｜，,。·]+)','gi'),' ')
+    .replace(new RegExp('^(?:'+VIP_SITES+')+','i'),'')
+    .replace(new RegExp('(?:[\\s\\-_：:|｜]+|^)(?:'+VIP_SITES+')$','i'),'')
+    .replace(/在线观看|高清正版|免费观看|完整版|正片|预告|全集|高清视频|高清|正版|VIP|独播|HD|&|·/gi,' ');
+  // 营销词统一换成空格（不是删掉），否则「_高清正版」会粘成片名的一部分
+  var parts=t.split(/[-_\s（(|｜&·]/)
+    .map(function(s){return s.replace(/第.+[集季部]/,'').trim();})
+    .filter(Boolean);
+  var onlySite=new RegExp('^(?:'+VIP_SITES+')$','i');
+  var hit=null;
+  for(var i=0;i<parts.length;i++){
+    var p=parts[i];
+    if(p.length>=2&&!onlySite.test(p)&&!/第\d{1,8}[集期话季]/.test(p)){hit=p;break;}
+  }
+  return hit||parts[0]||'';
+}
+function vipDecode(s){
+  var mp={'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'",'&nbsp;':' '};
+  return String(s||'').replace(/&(?:#(\d+)|#x([0-9a-f]+)|amp|lt|gt|quot|#39|nbsp);/gi,
+    function(m,d,h){
+      if(d)return String.fromCharCode(parseInt(d,10));
+      if(h)return String.fromCharCode(parseInt(h,16));
+      return mp[m.toLowerCase()]||m;
+    });
+}
+/** 静态 HTML 里的 og:title 是服务端直出的，比 SPA 的 document.title 可靠 */
+function vipRawTitle(html){
+  var h=String(html||'');
+  var m=h.match(/<meta[^>]+(?:property|name)=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+      ||h.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:title["']/i)
+      ||h.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return m?vipDecode(m[1]):'';
+}
+function vipTitleFromHtml(html){ return vipCleanTitle(vipRawTitle(html)); }
+/** 官网 URL / 片名里抠当前集数：?ep= / /p9.html / /ep33 / 第12集 */
+function vipEpNum(url,title){
+  var u=String(url||''), s=u+' '+String(title||''), m;
+  if((m=u.match(/[?&](?:ep|episode|p|e|cur)=(\d{1,5})(?!\d)/i)))return parseInt(m[1],10);
+  if((m=u.match(/\/p(\d{1,5})\.html/i)))return parseInt(m[1],10);
+  if((m=u.match(/\/ep(\d{1,5})(?!\d)/i)))return parseInt(m[1],10);
+  if((m=s.match(/第?\s*(\d{1,8})\s*[集期话]/)))return parseInt(m[1],10);
+  return 0;
+}
+/** 采集接口的播放列表：三个美元符号分线路，# 分集，单个美元符号分名称与地址 */
+function vipParseEps(pu){
+  if(!pu)return [];
+  var groups=String(pu).split('$$$');
+  for(var g=0;g<groups.length;g++){
+    var out=groups[g].split('#').map(function(s){
+      var i=s.indexOf('$');
+      return i>0?{name:s.slice(0,i),url:s.slice(i+1)}:{name:'',url:s};
+    }).filter(function(e){return /^https?:\/\//i.test(e.url);});
+    if(out.length)return out;
+  }
+  return [];
+}
+/** 精确 > 前缀 > 包含 > 反向包含；单字片名不做反向包含，避免播错片 */
+function vipRank(list,title){
+  function sc(x){
+    var n=String((x&&x.name)||'');
+    if(n===title)return 4;
+    if(n.indexOf(title)===0)return 3;
+    if(n.indexOf(title)>=0)return 2;
+    if(title.length>=2&&title.indexOf(n)>=0)return 1;
+    return 0;
+  }
+  var a=list.slice().sort(function(x,y){return sc(y)-sc(x);});
+  a.forEach(function(x){x._score=sc(x);});
+  return a;
+}
+/** getEx 自带 25s 超时，直连串行要好几次请求，这里再套一层短超时 */
+function vipGet(url,h,ms){
+  return Promise.race([
+    getEx(url,h||{}),
+    new Promise(function(res){setTimeout(function(){res({ok:false,text:'',code:0});},ms||9000);})
+  ]);
+}
+function vipJson(r){ try{return r&&r.ok?JSON.parse(r.text):null; }catch(e){return null;} }
+function vipPanelTitle(t){ var e=document.getElementById('vipTitleEt'); if(e)e.value=t||''; }
+function vipPanelCands(list,pick){
+  var box=document.getElementById('vipCands');
+  if(!box)return;
+  box.innerHTML='';
+  list.forEach(function(c){
+    var b=document.createElement('button');
+    b.type='button'; b.textContent=String(c.name||'未命名');
+    b.onclick=function(){ box.innerHTML=''; pick(c); };
+    box.appendChild(b);
+  });
+}
+
+/** 直连失败：带着原生传来的 b64 参数直接回落到一期接口链，不重新编码 */
+function vipDirectFallback(c,reason){
+  if(c.done)return;
+  c.done=true;
+  vipLog('DIRECT 失败：'+reason+' → 回落解析接口');
+  var arr=[]; try{arr=JSON.parse(decodeB64(c.bSrc||''))||[];}catch(e){}
+  if(arr.length&&window.__resolveVipAt){
+    vipPanelSet(c.url,'直连未命中，改试 '+arr.length+' 个解析接口…');
+    window.__resolveVipAt(c.bUrl,c.bSrc,c.bPlat);
+  }else if(window.Android&&Android.onVipFailed){
+    vipPanelSet('', '直连未命中：'+reason);
+    Android.onVipFailed('直连搜索未命中（'+reason+'），且未配置解析接口');
+  }
+}
+
+/** 命中候选后取播放列表并起播；eps 全量回传，原生可上一集/下一集 */
+async function vipDirectFinish(c,hit,title,detailMap){
+  vipPanelSet(c.url,'命中「'+hit.name+'」，取播放列表…');
+  vipLog('DIRECT hit='+hit.name+' id='+hit.id);
+  var H={'User-Agent':VIP_UA,'Accept':'*/*'};
+  var o=detailMap[String(hit.id)];
+  if(!o){
+    var dUrl=String(c.cfg.detail||'').replace('{ids}',encodeURIComponent(String(hit.id)));
+    var dj=vipJson(await vipGet(dUrl,H,9000));
+    if(dj&&dj.list&&dj.list.length)o=dj.list[0];
+  }
+  var eps=o?vipParseEps(o.vod_play_url):[];
+  if(!eps.length){ vipDirectFallback(c,'没有取到播放地址'); return; }
+  var num=vipEpNum(c.url,(c.rawTitle||'')+' '+title), idx=0;
+  if(num>0){
+    for(var i=0;i<eps.length;i++){
+      var m=String(eps[i].name||'').match(/\d{1,8}/);
+      if(m&&parseInt(m[0],10)===num){idx=i;break;}
+    }
+  }
+  var epsJson=JSON.stringify(eps.map(function(e,i){
+    return {name:e.name||('第'+(i+1)+'集'),url:e.url};
+  }));
+  var nm=String(hit.name)+' · '+(eps[idx].name||('第'+(idx+1)+'集'));
+  vipLog('DIRECT FINAL '+eps[idx].url.slice(0,140)+' idx='+idx+' eps='+eps.length);
+  // vipLog 会把面板刷成日志文本，成功提示要放在它后面，用户才看得到友好结果
+  vipPanelSet(c.url,'✓ 命中「'+hit.name+'」共 '+eps.length+' 集，第 '+(idx+1)+' 集起播');
+  if(window.Android&&Android.playVipResult){
+    c.done=true;
+    Android.playVipResult(eps[idx].url,nm,'{}',epsJson,idx);
+  } else vipDirectFallback(c,'播放桥不可用');
+}
+
+async function vipDirectRun(c,title){
+  c.done=false;
+  var box=document.getElementById('vipCands'); if(box)box.innerHTML='';
+  var H={'User-Agent':VIP_UA,'Accept':'*/*'};
+  vipPanelSet(c.url,'「'+title+'」搜索片源…');
+  vipLog('DIRECT search title='+title);
+  var sBase=String(c.cfg.suggest||''), list=[];
+  function fetchList(kw){
+    return vipGet(sBase.replace('{title}',encodeURIComponent(kw)),H,9000)
+      .then(function(r){
+        var j=vipJson(r);
+        return (j&&j.list)?j.list.filter(function(x){return x&&x.id&&x.name;}):[];
+      },function(){return [];});
+  }
+  // 联想接口偶发空结果，重试一次；再用清洗后的关键词兜一次
+  for(var a=0;a<2&&!list.length;a++){
+    list=await fetchList(title);
+    if(!list.length){vipLog('DIRECT suggest 空结果，重试 '+(a+1));await new Promise(function(r){setTimeout(r,500);});}
+  }
+  if(!list.length){
+    var alt=vipCleanTitle(title);
+    if(alt&&alt!==title&&alt.length>=2){vipLog('DIRECT 改用「'+alt+'」重搜');list=await fetchList(alt);}
+  }
+  if(!list.length){ vipDirectFallback(c,'片源未收录「'+title+'」'); return; }
+  var cands=vipRank(list,title);
+  vipLog('DIRECT candidates='+cands.length+' top='+cands[0].name+' score='+cands[0]._score);
+  var hit=null, detailMap={};
+  if(cands.length===1){ hit=cands[0]; }
+  else{
+    var ids=cands.slice(0,12).map(function(x){return x.id;}).join(',');
+    var dUrl=String(c.cfg.detail||'').replace('{ids}',encodeURIComponent(ids));
+    var dj=vipJson(await vipGet(dUrl,H,9000));
+    if(dj&&dj.list)dj.list.forEach(function(x){detailMap[String(x.vod_id||x.id||'')]=x;});
+    var num=vipEpNum(c.url,(c.rawTitle||'')+' '+title);
+    if(num>0){
+      var viable=cands.filter(function(x){
+        var o=detailMap[String(x.id)];
+        return o&&vipParseEps(o.vod_play_url).length>=num;
+      });
+      if(viable.length===1){hit=viable[0];vipLog('DIRECT 集数硬判定命中 '+hit.name);}
+    }
+    if(!hit&&cands[0]._score===4&&(cands.length<2||cands[1]._score<3))hit=cands[0];
+    if(!hit){
+      vipPanelSet(c.url,'搜到 '+cands.length+' 个结果，请点选要播放的');
+      vipLog('DIRECT 多候选待用户点选');
+      vipPanelCands(cands.slice(0,12),function(x){vipDirectFinish(c,x,title,detailMap);});
+      return;
+    }
+  }
+  vipDirectFinish(c,hit,title,detailMap);
+}
+
+/** 原生入口：五个参数都是 base64，其中 bUrl/bPlat/bSrc 原样留给一期回落复用 */
+window.__resolveVipDirect=function(bUrl,bCfg,bLabel,bPlat,bSrc){
+  var url='',cfg={},label='',platform='';
+  try{url=decodeB64(bUrl||'');}catch(e){}
+  try{cfg=JSON.parse(decodeB64(bCfg||''))||{};}catch(e){cfg={};}
+  try{label=decodeB64(bLabel||'');}catch(e){}
+  try{platform=decodeB64(bPlat||'');}catch(e){}
+  // rawTitle 保留未清洗的原始标题（含「第N集」），清洗后的片名只用于搜索
+  var c={url:url,cfg:cfg,platform:platform,bUrl:bUrl,bPlat:bPlat,bSrc:bSrc,
+         done:false,rawTitle:label};
+  window.__VIP_CTX__=c;
+  var btn=document.getElementById('vipRetryBtn');
+  if(btn&&!btn.__bound){
+    btn.__bound=true;
+    btn.onclick=function(){
+      var e=document.getElementById('vipTitleEt');
+      var t=vipCleanTitle(e?e.value:'');
+      if(!t){vipPanelSet('', '先填片名再点「重搜」');return;}
+      c.rawTitle=e?e.value:'';
+      vipPanelTitle(t);
+      vipDirectRun(c,t);
+    };
+  }
+  vipPanelSet(url,'正在识别片名…');
+  vipLog('DIRECT start platform='+platform+' label='+label+' url='+url.slice(0,110));
+  (async function(){
+    var t=vipCleanTitle(label);
+    vipPanelTitle(t);
+    if(!t){
+      vipPanelSet(url,'读取官网标题…');
+      vipLog('DIRECT 快捷位名称不含片名，改读官网静态标题');
+      var r=await vipGet(url,{'User-Agent':VIP_UA,'Accept':'text/html'},9000);
+      var raw=vipRawTitle(r&&r.text);
+      c.rawTitle=(label||'')+' '+raw;
+      t=vipCleanTitle(raw);
+      vipPanelTitle(t);
+    }
+    if(!t){
+      // 不直接判失败：独立态没有官网 DOM，标题抓不到时让人手填一次
+      vipPanelSet(url,'识别不出片名，请在上面填片名后点「重搜」');
+      vipLog('DIRECT 片名识别失败，等待手动输入');
+      return;
+    }
+    vipLog('DIRECT title='+t);
+    vipDirectRun(c,t);
   })();
 };
 

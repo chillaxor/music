@@ -155,6 +155,48 @@ object VipParseStore {
         return listOf(sel) + all.filter { it.id != sel.id }
     }
 
+    // ---- 二期：直连搜索（片名联想 → 详情取播放列表）----
+    //
+    // 两条模板由用户自行填写，App 不内置任何第三方接口域名。
+    // suggest 模板用 {title} 占位（会自动做 URL 编码），返回 {"list":[{"id","name"}]}；
+    // detail 模板用 {ids} 占位（逗号分隔的 id），返回 {"list":[{"vod_id","vod_play_url", ...}]}。
+    // 这是通用采集接口的常见形状，具体地址交给使用者，不写进 public 仓库的 git 历史。
+
+    private fun direct(ctx: Context) = read(ctx).optJSONObject("direct") ?: JSONObject()
+
+    fun directEnabled(ctx: Context) = direct(ctx).optBoolean("enabled", false)
+
+    fun directSuggest(ctx: Context) = direct(ctx).optString("suggest", "")
+
+    fun directDetail(ctx: Context) = direct(ctx).optString("detail", "")
+
+    fun setDirectConfig(ctx: Context, enabled: Boolean, suggest: String, detail: String) {
+        put(
+            ctx, "direct", JSONObject()
+                .put("enabled", enabled)
+                .put("suggest", suggest.trim())
+                .put("detail", detail.trim())
+        )
+    }
+
+    /** 模板必须带对应占位符，且是 http(s) 地址 */
+    fun validateTemplate(tpl: String, placeholder: String): String? {
+        val t = tpl.trim()
+        return when {
+            t.isBlank() -> "模板不能为空"
+            !t.startsWith("http://", true) && !t.startsWith("https://", true) ->
+                "必须是 http:// 或 https:// 开头"
+            !t.contains(placeholder) -> "模板里要带 $placeholder 占位符"
+            else -> null
+        }
+    }
+
+    /** 开关打开且两条模板都填对，才启用直连路径；否则仍走一期解析接口 */
+    fun directConfigured(ctx: Context): Boolean =
+        directEnabled(ctx) &&
+            validateTemplate(directSuggest(ctx), "{title}") == null &&
+            validateTemplate(directDetail(ctx), "{ids}") == null
+
     // ---- 输入校验 / 批量导入 ----
 
     /** 返回错误提示；null 表示可以用 */

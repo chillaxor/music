@@ -30,23 +30,29 @@ fun AppCompatActivity.setupVipParseSection() {
     val toggle = findViewById<MaterialButton>(R.id.vipParseToggle)
     val fallback = findViewById<MaterialButton>(R.id.vipFallbackToggle)
     val manage = findViewById<MaterialButton>(R.id.vipSourceBtn)
+    val directBtn = findViewById<MaterialButton>(R.id.vipDirectBtn)
     val status = findViewById<TextView>(R.id.vipParseStatus)
 
     fun refresh() {
         val on = VipParseStore.isEnabled(this)
+        // buildString 的 lambda 里 this 是 StringBuilder，先在此处算好再引用
+        val directOn = VipParseStore.directConfigured(this)
         toggle.text = if (on) "关闭 VIP 链接解析" else "开启 VIP 链接解析"
         val fb = VipParseStore.fallbackOnFail(this)
         fallback.text = if (fb) "失败回退到原网页：开" else "失败回退到原网页：关"
         val src = VipParseStore.sources(this)
         manage.text = if (src.isEmpty()) "管理解析接口…（当前 0 条）"
             else "管理解析接口…（当前 ${src.size} 条）"
+        directBtn.text = if (directOn) "直连搜索设置…（已启用，优先）"
+            else "直连搜索设置…（未启用）"
         val sel = VipParseStore.selectedSource(this)
         status.text = buildString {
             append("当前：").append(if (on) "已开启（点官网链接自动解析）" else "未开启")
             append("\n官网识别：内置 ").append(VipLinkRouter.ruleCount)
                 .append(" 条规则 / ").append(VipLinkRouter.platforms.size).append(" 个平台")
+            append("\n直连搜索：").append(if (directOn) "已启用（片名→联想→播放列表）" else "未配置")
             append("\n默认接口：").append(sel?.name ?: "未设置（按顺序尝试前 8 条）")
-            append("\n接口需自行填写，格式如 https://解析站/?url=；影视仓的采集解析接口对官网链接无效。")
+            append("\n接口需自行填写；直连失败会回落到下面这些解析接口。影视仓的采集接口对官网链接无效。")
             append("\n仅用于你有权观看的内容。")
         }
     }
@@ -68,8 +74,103 @@ fun AppCompatActivity.setupVipParseSection() {
     }
 
     manage.setOnClickListener { showVipSourcesDialog { refresh() } }
+    directBtn.setOnClickListener { showVipDirectDialog { refresh() } }
 
     refresh()
+}
+
+/**
+ * 二期直连搜索：片名联想接口 + 详情接口，两条模板都由使用者自己填。
+ *
+ * 只写占位符说明，不预置任何第三方站点地址——这个仓库是 public，
+ * 一旦把接口写进代码就会永久留在 git 历史里。
+ */
+private fun AppCompatActivity.showVipDirectDialog(onDone: () -> Unit) {
+    val act = this
+    val pad = (16 * resources.displayMetrics.density).toInt()
+
+    fun tv(text: String, size: Float = 13f) = TextView(act).apply {
+        this.text = text
+        textSize = size
+        setPadding(0, 8, 0, 8)
+    }
+
+    val root = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(pad, pad / 2, pad, pad / 2)
+    }
+
+    root.addView(
+        tv(
+            "开启后，点官网播放页会先按片名搜索片源、取回真实播放列表，交给原生播放器；" +
+                "不成功才回落到「管理解析接口」里的页面型接口。\n" +
+                "片名优先取快捷位名称，其次读官网网页标题，识别不出来时解析面板会让你手填。", 12f
+        )
+    )
+
+    val enableCb = CheckBox(act).apply {
+        text = "启用直连搜索（优先于解析接口）"
+        isChecked = VipParseStore.directEnabled(act)
+    }
+    root.addView(enableCb)
+
+    root.addView(tv("联想搜索模板（返回 {\"list\":[{\"id\",\"name\"}]}）", 13f))
+    val suggestEt = EditText(act).apply {
+        hint = "https://你的站点/...?wd={title}"
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        maxLines = 3
+        setText(VipParseStore.directSuggest(act))
+    }
+    root.addView(suggestEt)
+
+    root.addView(tv("详情模板（返回 {\"list\":[{\"vod_play_url\":...}]}）", 13f))
+    val detailEt = EditText(act).apply {
+        hint = "https://你的接口/...?ac=detail&ids={ids}"
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        maxLines = 3
+        setText(VipParseStore.directDetail(act))
+    }
+    root.addView(detailEt)
+
+    root.addView(
+        tv(
+            "{title} 会自动做 URL 编码；{ids} 是候选影片 id 的逗号分隔串。\n" +
+                "播放列表按「三个美元符号分线路 → # 分集 → 单个美元符号分名称与地址」解析。\n" +
+                "接口地址不随包分发，也不会提交到仓库；仅用于你有权观看的内容。", 11f
+        )
+    )
+
+    val result = tv("", 12f)
+    root.addView(result)
+    root.addView(Button(act).apply {
+        text = "保存"
+        setOnClickListener {
+            val s = suggestEt.text.toString().trim()
+            val d = detailEt.text.toString().trim()
+            val on = enableCb.isChecked
+            if (on) {
+                val e1 = VipParseStore.validateTemplate(s, "{title}")
+                val e2 = VipParseStore.validateTemplate(d, "{ids}")
+                if (e1 != null || e2 != null) {
+                    result.text = "未保存：${e1 ?: e2}"
+                    return@setOnClickListener
+                }
+            }
+            VipParseStore.setDirectConfig(act, on, s, d)
+            result.text = if (VipParseStore.directConfigured(act)) "已保存，直连搜索已启用"
+                else "已保存，直连搜索未启用"
+            Toast.makeText(act, result.text, Toast.LENGTH_SHORT).show()
+            onDone()
+        }
+    })
+
+    val scroll = ScrollView(act).apply { addView(root) }
+    AlertDialog.Builder(act)
+        .setTitle("直连搜索设置")
+        .setView(scroll)
+        .setPositiveButton("完成") { _, _ -> onDone() }
+        .setNegativeButton("取消", null)
+        .show()
 }
 
 private fun AppCompatActivity.showVipSourcesDialog(onDone: () -> Unit) {

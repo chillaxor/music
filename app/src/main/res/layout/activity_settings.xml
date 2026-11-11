@@ -590,6 +590,14 @@
                         android:layout_marginTop="8dp"
                         android:text="管理解析接口…"/>
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/vipDirectBtn"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:text="直连搜索设置…"/>
+
                     <TextView
                         android:id="@+id/vipParseStatus"
                         android:layout_width="match_parent"

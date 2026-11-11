@@ -33,7 +33,8 @@ object ShortcutRouter {
                 // VIP 官网播放页：总开关打开时转原生播放器解析链。要放在深链唤起之前，
                 // 否则 v.qq.com / iqiyi.com 这类地址可能被 LinkRouter 交给外部 App 跳走。
                 if (VipLinkDispatcher.shouldHandle(ctx, u)) {
-                    VipLinkDispatcher.open(ctx, u)
+                    // 快捷位名称常常就是真实片名，比官网网页标题可靠，带给直连搜索
+                    VipLinkDispatcher.open(ctx, u, item.label)
                     return
                 }
                 // 深链 / 小红书分享链接 → 先尝试唤起指定的 App
