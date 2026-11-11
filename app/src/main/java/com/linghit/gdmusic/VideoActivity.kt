@@ -1444,10 +1444,14 @@ class VideoActivity : AppCompatActivity() {
         videoBuffering.visibility = View.VISIBLE
         // 小窗状态下又点了新视频 → 先展开回全屏再播
         if (miniMode) exitMini()
-        // 详情页起播默认内嵌在详情页顶部（竖屏、系统栏可见），点全屏按钮才铺满横屏；
-        // 历史续播等用 playVideoFull 走经典全屏。三态布局统一由 applyPlayerLayout 处理。
+        // 三态布局统一由 applyPlayerLayout 处理：
+        // - inlineMode 由调用方按资源形态指定（内嵌源 true / 经典全屏源 false）；
+        // - inlineExpanded（内嵌⇄全屏）不再在此强制复位：它反映「用户当前想要的布局」，
+        //   切集（手动点集 playVideo / 爬虫源自动连播 playResolvedEx）时原样保留，
+        //   故全屏看瓜子类爬虫源切集不会退回内嵌态；
+        //   用户点全屏(enterFullscreen)/收起(shrinkToInline)/关播(closeVideo)/进小窗(clearInlineDock)
+        //   时已各自把 inlineExpanded 复位成内嵌，所以「进入新详情首次起播」默认仍是内嵌态。
         inlineMode = inline
-        inlineExpanded = false
         applyPlayerLayout()
         clockHandler.removeCallbacks(clockTick)
         clockTick.run()
