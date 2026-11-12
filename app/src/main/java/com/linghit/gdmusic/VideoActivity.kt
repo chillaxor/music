@@ -5,6 +5,7 @@ import android.app.PictureInPictureParams
 import android.content.Intent
 import android.graphics.Typeface
 import android.content.pm.ActivityInfo
+import android.content.ContentUris
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -1082,6 +1083,87 @@ class VideoActivity : AppCompatActivity() {
             startDownload(url, h, title)
         }
 
+        /** 列出已下载的视频（Movies/从前慢）：API29+ 走 MediaStore，API28- 列应用私有 Movies 目录。
+         *  返回 JSON 数组 [{name,size,uri,mime}]，uri 可直接喂给 playVideoDownload 在 App 内播放。 */
+        @JavascriptInterface
+        fun listVideoDownloads(): String {
+            val dirName = "从前慢"
+            return try {
+                val list = mutableListOf<org.json.JSONObject>()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val proj = arrayOf(
+                        MediaStore.Video.Media.DISPLAY_NAME,
+                        MediaStore.Video.Media.SIZE,
+                        MediaStore.Video.Media._ID,
+                        MediaStore.Video.Media.RELATIVE_PATH
+                    )
+                    val sel = "${MediaStore.Video.Media.RELATIVE_PATH} = ?"
+                    contentResolver.query(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI, proj, sel,
+                        arrayOf(android.os.Environment.DIRECTORY_MOVIES + "/$dirName"),
+                        "${MediaStore.Video.Media.DISPLAY_NAME} ASC"
+                    )?.use { c ->
+                        val iName = c.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                        val iSize = c.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                        val iId = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                        while (c.moveToNext()) {
+                            val id = c.getLong(iId)
+                            val u = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                            list.add(org.json.JSONObject()
+                                .put("name", c.getString(iName))
+                                .put("size", c.getLong(iSize))
+                                .put("uri", u.toString())
+                                .put("mime", dlMimeOf(c.getString(iName))))
+                        }
+                    }
+                } else {
+                    val dir = java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES), dirName)
+                    dir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }?.forEach {
+                        list.add(org.json.JSONObject()
+                            .put("name", it.name)
+                            .put("size", it.length())
+                            .put("uri", android.net.Uri.fromFile(it).toString())
+                            .put("mime", dlMimeOf(it.name)))
+                    }
+                }
+                org.json.JSONArray(list).toString()
+            } catch (e: Exception) {
+                Log.w("VidDl", "listVideoDownloads fail: ${e.message}")
+                "[]"
+            }
+        }
+
+        /** 在 App 内用 ExoPlayer 播放已下载的视频（uri / mime 来自 listVideoDownloads） */
+        @JavascriptInterface
+        fun playVideoDownload(uri: String, mime: String) {
+            runOnUiThread {
+                ensurePlayer()
+                val item = androidx.media3.common.MediaItem.Builder().setUri(uri).setMimeType(mime).build()
+                val ds = androidx.media3.datasource.DefaultDataSource.Factory(
+                    this@VideoActivity,
+                    androidx.media3.datasource.DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+                )
+                val src = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ds).createMediaSource(item)
+                player?.apply {
+                    setPlaybackParameters(androidx.media3.common.PlaybackParameters(playbackSpeed, playbackParameters.pitch))
+                    setMediaSource(src); prepare(); playWhenReady = true
+                }
+            }
+        }
+
+        /** 删除已下载的视频（file 路径或 MediaStore content URI 都支持） */
+        @JavascriptInterface
+        fun deleteVideoDownload(uri: String) {
+            runOnUiThread {
+                try {
+                    val u = android.net.Uri.parse(uri)
+                    if (u.scheme == "content") contentResolver.delete(u, null, null)
+                    else { val f = java.io.File(u.path ?: ""); if (f.exists()) f.delete() }
+                    this@VideoActivity.toast("已删除")
+                } catch (e: Exception) { this@VideoActivity.toast("删除失败") }
+            }
+        }
+
     @JavascriptInterface
     fun toast(msg: String) {
             runOnUiThread {
@@ -2038,6 +2120,7 @@ class VideoActivity : AppCompatActivity() {
             url.contains(".m3u8", true) -> itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
             url.contains(".mpd", true) -> itemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
             url.contains(".mp4", true) -> itemBuilder.setMimeType(MimeTypes.VIDEO_MP4)
+            url.contains(".ts", true) -> itemBuilder.setMimeType(MimeTypes.VIDEO_MP2T)
         }
         val item = itemBuilder.build()
         val headers = LinkedHashMap<String, String>()
@@ -2094,7 +2177,12 @@ class VideoActivity : AppCompatActivity() {
                 showDlProgress(safeTitle, 0, true)
                 if (isM3u8) downloadM3u8(rawUrl, hdrs, out.stream) else downloadSingle(rawUrl, hdrs, out.stream)
                 out.stream.close()
-                runOnUiThread { toast("下载完成：$safeTitle"); scanDownloaded(out.scanPath) }
+                runOnUiThread {
+                    toast("下载完成：$safeTitle")
+                    scanDownloaded(out.scanPath)
+                    webView.evaluateJavascript(
+                        "if(window.onDlDone)onDlDone(${org.json.JSONObject.quote(safeTitle)})", null)
+                }
             } catch (e: Exception) {
                 Log.w("VidDl", "下载失败: ${e.message}")
                 runOnUiThread { toast("下载失败：${e.message?.take(80)}") }
@@ -2137,7 +2225,9 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    /** m3u8 下载：拉索引 → 处理 master playlist / 加密检测 → 并发下所有 ts → 按序合并 */
+    /** m3u8 下载：拉索引 → 处理 master playlist / 加密检测 → 并发下所有 ts → 按播放列表顺序合并成单个 .ts
+     *  注意：必须按索引顺序拼接，不能按「谁先下完谁先写」——否则合并出的单文件是乱序的，
+     *  播放时会跳着来（一段一段不连续）。做法：并发下到临时文件（按索引命名），全部完成后按序写盘。 */
     private fun downloadM3u8(indexUrl: String, headers: Map<String, String>, out: java.io.OutputStream) {
         val idxText = httpGetText(indexUrl, headers)
         val lines = idxText.lineSequence().map { it.trimEnd() }.filter { it.isNotEmpty() }.toList()
@@ -2154,20 +2244,31 @@ class VideoActivity : AppCompatActivity() {
         val total = segs.size
         val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
         val latch = java.util.concurrent.CountDownLatch(total)
-        val doneCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val ok = BooleanArray(total)
+        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val tmpDir = File(cacheDir, "m3u8_${System.currentTimeMillis()}").also { it.mkdirs() }
         segs.forEachIndexed { i, seg ->
             pool.execute {
                 try {
                     val segUrl = resolveUrl(mediaUrl, seg)
                     val bytes = httpGetBytes(segUrl, headers)
-                    synchronized(out) { out.write(bytes) }
-                    val p = doneCount.incrementAndGet()
-                    updateDlProgress(p * 100 / total)
-                } catch (e: Exception) { Log.w("VidDl", "ts#$i 失败: ${e.message}") }
+                    File(tmpDir, "$i.ts").writeBytes(bytes)   // 先按索引落临时文件
+                    ok[i] = true
+                } catch (e: Exception) { Log.w("VidDl", "ts#$i 失败: ${e.message}"); failed.set(true) }
                 finally { latch.countDown() }
             }
         }
         latch.await(); pool.shutdown()
+        if (failed.get()) { tmpDir.deleteRecursively(); throw Exception("部分切片下载失败，已中止") }
+        var done = 0
+        try {
+            for (i in 0 until total) {   // 严格按播放列表顺序拼接写盘
+                val f = File(tmpDir, "$i.ts")
+                if (!f.exists()) throw Exception("切片#$i 缺失")
+                f.inputStream().use { it.copyTo(out) }
+                done++; updateDlProgress(done * 100 / total)
+            }
+        } finally { tmpDir.deleteRecursively() }
     }
 
     /** 拼接相对/绝对 URL（基于 base 目录） */
@@ -2210,6 +2311,17 @@ class VideoActivity : AppCompatActivity() {
         val p = url.substringBefore("?").substringBefore("#")
         val e = p.substringAfterLast(".", "")
         return if (e.length in 2..4) e.lowercase() else "mp4"
+    }
+    /** 按扩展名推断视频 mime（下载管理页用本地文件精确播放，避免靠 URI 推断失败） */
+    private fun dlMimeOf(name: String): String = when {
+        name.endsWith(".m3u8", true) -> MimeTypes.APPLICATION_M3U8
+        name.endsWith(".mpd", true) -> MimeTypes.APPLICATION_MPD
+        name.endsWith(".mp4", true) -> MimeTypes.VIDEO_MP4
+        name.endsWith(".ts", true) -> MimeTypes.VIDEO_MP2T
+        name.endsWith(".flv", true) -> MimeTypes.VIDEO_FLV
+        name.endsWith(".mkv", true) -> MimeTypes.VIDEO_MATROSKA
+        name.endsWith(".webm", true) -> MimeTypes.VIDEO_WEBM
+        else -> "video/*"
     }
     /** 文件名去除非法字符 */
     private fun sanitizeName(s: String): String =
