@@ -2213,10 +2213,11 @@ class VideoActivity : AppCompatActivity() {
 
     /** 单文件下载（mp4/flv/...），带进度通知 */
     private fun downloadSingle(url: String, headers: Map<String, String>, out: java.io.OutputStream) {
+        Log.d("VidDl", "downloadSingle GET ${url.take(120)} headers=${headers.keys}")
         dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
-            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} ${resp.message}")
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} ${resp.message} @ ${url.take(120)}")
             val total = resp.body?.contentLength() ?: -1L
-            val `in` = resp.body?.byteStream() ?: throw Exception("空响应")
+            val `in` = resp.body?.byteStream() ?: throw Exception("空响应 @ ${url.take(120)}")
             val buf = ByteArray(64 * 1024); var read: Int; var done: Long = 0
             while (`in`.read(buf).also { read = it } > 0) {
                 out.write(buf, 0, read); done += read
@@ -2271,30 +2272,29 @@ class VideoActivity : AppCompatActivity() {
         } finally { tmpDir.deleteRecursively() }
     }
 
-    /** 拼接相对/绝对 URL（基于 base 目录） */
+    /** 拼接相对/绝对 URL（基于 base 目录）—— 用 RFC 3986 解析，与浏览器/ExoPlayer 一致，
+     *  能正确处理「../」回退、相对路径、各段保留，避免手拼路径把 m3u8 的 master→variant
+     *  或 ts 切片地址拼错导致下载 404（播放用 ExoPlayer 解析正常，下载自己拼就歪了）。 */
     private fun resolveUrl(base: String, rel: String): String {
         if (rel.startsWith("//")) return "https:$rel"
         if (rel.startsWith("http://", true) || rel.startsWith("https://", true)) return rel
         try {
-            val b = android.net.Uri.parse(base)
-            if (android.net.Uri.parse(rel).scheme != null) return rel
-            val basePath = (b.path ?: "/").substringBeforeLast("/", "/")
-            val path = "$basePath/${rel.removePrefix("/")}"
-            return android.net.Uri.parse("${b.scheme}://${b.authority}$path").toString()
-        } catch (e: Exception) { return rel }
+            return java.net.URI(base).resolve(rel).toString()
+        } catch (e: Exception) { Log.w("VidDl", "resolveUrl 失败 base=${base.take(80)} rel=$rel"); return rel }
     }
 
     /** 带 headers 的 GET 文本 */
     private fun httpGetText(url: String, headers: Map<String, String>): String {
+        Log.d("VidDl", "httpGetText GET ${url.take(120)} headers=${headers.keys}")
         dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
-            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} ${resp.message} @ ${url.take(120)}")
             return resp.body?.string() ?: ""
         }
     }
     /** 带 headers 的 GET 字节（ts 切片） */
     private fun httpGetBytes(url: String, headers: Map<String, String>): ByteArray {
         dlClient.newCall(headerRequest(url, headers)).execute().use { resp ->
-            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} ${resp.message} @ ${url.take(120)}")
             return resp.body?.bytes() ?: ByteArray(0)
         }
     }
