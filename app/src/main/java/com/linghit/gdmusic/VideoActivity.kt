@@ -1103,10 +1103,12 @@ class VideoActivity : AppCompatActivity() {
                         MediaStore.Video.Media._ID,
                         MediaStore.Video.Media.RELATIVE_PATH
                     )
-                    val sel = "${MediaStore.Video.Media.RELATIVE_PATH} = ?"
+                    // MediaStore 的 RELATIVE_PATH 实际值带尾斜杠（'Movies/从前慢/'），
+                    // 精确匹配 'Movies/从前慢' 会 0 命中，故用 LIKE 通配。
+                    val sel = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
                     contentResolver.query(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI, proj, sel,
-                        arrayOf(android.os.Environment.DIRECTORY_MOVIES + "/$dirName"),
+                        arrayOf(android.os.Environment.DIRECTORY_MOVIES + "/$dirName%"),
                         "${MediaStore.Video.Media.DISPLAY_NAME} ASC"
                     )?.use { c ->
                         val iName = c.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
@@ -2180,7 +2182,7 @@ class VideoActivity : AppCompatActivity() {
             Thread {
                 try {
                     val isM3u8 = isHlsPlaylist(rawUrl, hdrs)
-                    out = prepareDownloadOutput(safeTitle, if (isM3u8) "ts" else guessExt(rawUrl))
+                    out = prepareDownloadOutput(safeTitle, if (isM3u8) "mp4" else guessExt(rawUrl))
                     showDlProgress(safeTitle, 0, true)
                     if (isM3u8) downloadM3u8(rawUrl, hdrs, out!!.stream) else downloadSingle(rawUrl, hdrs, out!!.stream)
                     out!!.stream.close()
@@ -2237,9 +2239,11 @@ class VideoActivity : AppCompatActivity() {
         }
     }
 
-    /** m3u8 下载：拉索引 → 处理 master playlist / 加密检测 → 并发下所有 ts → 按播放列表顺序合并成单个 .ts
-     *  注意：必须按索引顺序拼接，不能按「谁先下完谁先写」——否则合并出的单文件是乱序的，
-     *  播放时会跳着来（一段一段不连续）。做法：并发下到临时文件（按索引命名），全部完成后按序写盘。 */
+    /** m3u8 下载：拉索引 → 检测加密 → 并发下所有 ts 切片到临时目录 → 用 ffmpeg concat demuxer
+     *  把切片无损（-c copy）重封装成标准 MP4（理顺各切片不连续的时间戳），再写入最终 output。
+     *  产物是 .mp4，系统相册 / 系统播放器都能正常播放；App 内下载管理页也能播。
+     *  注意：必须按索引下载（并发到临时文件），全部完成后交给 ffmpeg 按序合并，不能按
+     *  「谁先下完谁先写」——否则文件乱序；时间戳连续性由 ffmpeg 负责。 */
     private fun downloadM3u8(indexUrl: String, headers: Map<String, String>, out: java.io.OutputStream) {
         val idxText = httpGetText(indexUrl, headers)
         val lines = idxText.lineSequence().map { it.trimEnd() }.filter { it.isNotEmpty() }.toList()
@@ -2256,7 +2260,6 @@ class VideoActivity : AppCompatActivity() {
         val total = segs.size
         val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
         val latch = java.util.concurrent.CountDownLatch(total)
-        val ok = BooleanArray(total)
         val failed = java.util.concurrent.atomic.AtomicBoolean(false)
         val tmpDir = File(cacheDir, "m3u8_${System.currentTimeMillis()}").also { it.mkdirs() }
         segs.forEachIndexed { i, seg ->
@@ -2264,23 +2267,42 @@ class VideoActivity : AppCompatActivity() {
                 try {
                     val segUrl = resolveUrl(mediaUrl, seg)
                     val bytes = httpGetBytes(segUrl, headers)
-                    File(tmpDir, "$i.ts").writeBytes(bytes)   // 先按索引落临时文件
-                    ok[i] = true
+                    File(tmpDir, "$i").writeBytes(bytes)   // 按索引落临时切片（无扩展名，交由 ffmpeg 探测 TS / fMP4）
+                    updateDlProgress(i * 100 / total)
                 } catch (e: Exception) { Log.w("VidDl", "ts#$i 失败: ${e.message}"); failed.set(true) }
                 finally { latch.countDown() }
             }
         }
         latch.await(); pool.shutdown()
         if (failed.get()) { tmpDir.deleteRecursively(); throw Exception("部分切片下载失败，已中止") }
-        var done = 0
+        val mp4 = File(cacheDir, "m3u8_${System.currentTimeMillis()}.mp4")
         try {
-            for (i in 0 until total) {   // 严格按播放列表顺序拼接写盘
-                val f = File(tmpDir, "$i.ts")
-                if (!f.exists()) throw Exception("切片#$i 缺失")
-                f.inputStream().use { it.copyTo(out) }
-                done++; updateDlProgress(done * 100 / total)
+            val rc = ffmpegConcatRemux(tmpDir, total, mp4)
+            if (rc != 0 || !mp4.exists() || mp4.length() == 0L)
+                throw Exception("视频封装失败（源可能为加密/特殊编码，请用 IDM/ADM 下载）")
+            mp4.inputStream().use { it.copyTo(out) }
+            out.flush()
+        } finally {
+            tmpDir.deleteRecursively(); mp4.delete()
+        }
+    }
+
+    /** 用 ffmpeg concat demuxer 把按索引命名的切片（无扩展名，TS 或 fMP4 由 ffmpeg 自动探测）
+     *  无损（-c copy）重封装为 mp4（理顺各切片不连续的时间戳）。返回 0 成功。 */
+    private fun ffmpegConcatRemux(tmpDir: File, total: Int, outMp4: File): Int {
+        val list = File(cacheDir, "m3u8_${System.currentTimeMillis()}.txt")
+        return try {
+            list.bufferedWriter().use { w ->
+                for (i in 0 until total) w.write("file '${File(tmpDir, "$i").absolutePath}'\n")
             }
-        } finally { tmpDir.deleteRecursively() }
+            val cmd = "-y -fflags +genpts -f concat -safe 0 -i ${list.absolutePath} " +
+                    "-c copy -movflags +faststart ${outMp4.absolutePath}"
+            Log.d("VidDl", "ffmpeg concat remux: $cmd")
+            val session = com.arthenica.ffmpegkit.FFmpegKit.execute(cmd)
+            val rc = session.returnCode
+            if (com.arthenica.ffmpegkit.ReturnCode.isSuccess(rc)) 0 else rc.value
+        } catch (e: Exception) { Log.w("VidDl", "ffmpeg exec fail: ${e.message}"); -1 }
+        finally { list.delete() }
     }
 
     /** 拼接相对/绝对 URL（基于 base 目录）—— 用 RFC 3986 解析，与浏览器/ExoPlayer 一致，

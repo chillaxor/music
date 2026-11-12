@@ -2323,7 +2323,8 @@ boot();
     arr.forEach(function(it){
       var row=document.createElement('div'); row.className='dl-item';
       var info=document.createElement('div'); info.className='dl-info';
-      var nm=document.createElement('div'); nm.className='dl-name'; nm.textContent=it.name;
+      var disp=(it.name||'').replace(/\.(mp4|ts|mkv|flv|webm|m3u8|mpd)$/i,'');
+      var nm=document.createElement('div'); nm.className='dl-name'; nm.textContent=disp;
       var sz=document.createElement('div'); sz.className='dl-size'; sz.textContent=dlFmtSize(it.size);
       info.appendChild(nm); info.appendChild(sz);
       var acts=document.createElement('div'); acts.className='dl-acts';

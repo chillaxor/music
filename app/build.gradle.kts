@@ -17,7 +17,7 @@ android {
         targetSdk = 34
         // 每次交付递增：真机可在「设置 → 应用」里一眼确认装的是哪一版，
         // 避免 versionCode 长期停在 2 时分不清「改了没生效」还是「没装新包」
-        versionCode = 13
+        versionCode = 15
         versionName = "2.0.1"
         // 构建时间戳：崩溃日志会带上它，用来确认手机上装的是哪一版（排查"改了没生效"）
         val buildTime = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
@@ -100,4 +100,8 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     // 端侧离线语音识别（Vosk，纯本地、不联网）：中文小模型约 42MB
     implementation("com.alphacephei:vosk-android:0.3.47")
+    // 视频下载重封装：把 m3u8 的 TS 切片无损（-c copy）合并成标准 MP4 容器，
+    // 让系统相册 / 系统播放器能正常播放（TS 裸流很多相册认不了，且切片时间戳不连续）。
+    // min 变体只含常用 demuxer/muxer，单 arm64-v8a 约 +15MB。
+    implementation("com.arthenica:ffmpeg-kit-min:6.0-2")
 }
