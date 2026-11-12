@@ -92,8 +92,9 @@
   .vip-eps button:active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .vip-empty{padding:40px 10px;text-align:center;color:var(--sub);font-size:13px;line-height:1.8}
   /* 顶栏 */
-  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;
+  .topbar{position:sticky;top:0;z-index:20;display:flex;flex-direction:column;align-items:stretch;gap:8px;
     padding:10px 12px;background:linear-gradient(180deg,#15171c,#101116);border-bottom:1px solid var(--line)}
+  .topbar-row{display:flex;align-items:center;gap:8px;width:100%}
   .topbar .musicswitch{flex:none;display:flex;align-items:center;gap:5px;height:38px;padding:0 13px;border-radius:10px;
     background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:13px;font-weight:700;cursor:pointer;
     border:1px solid rgba(255,255,255,.15);white-space:nowrap}
@@ -113,7 +114,7 @@
   /* min-width:0 必需：flex 项默认 min-width:auto（取内容最小宽度），
      搜索框里的 input 有默认 size 宽度（约 200px），不置 0 就永远不收缩，
      会把右边的「全网 / 🕘 / ☰」挤出屏幕（手机上表现为看不见） */
-  .search{flex:1 1 0;min-width:0;display:flex;background:var(--card);border:1px solid var(--line);
+  .search{flex:none;width:100%;min-width:0;display:flex;background:var(--card);border:1px solid var(--line);
     border-radius:999px;padding:6px 12px;align-items:center}
   .search input{flex:1 1 0;min-width:0;width:100%;background:none;border:0;color:var(--txt);font-size:14px;outline:none}
   .search .go{color:var(--accent);font-weight:700;padding:0 4px}
@@ -277,16 +278,18 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="musicswitch" onclick="switchToMusic()" title="切到音乐播放页">🎵</div>
+    <div class="topbar-row">
+      <div class="musicswitch" onclick="switchToMusic()" title="切到音乐播放页">🎵</div>
+      <span class="scope" id="scopeBtn" onclick="toggleScope()">全网</span>
+      <span class="scope off" id="spiderBtn" onclick="toggleSpider()" title="爬虫源搜索：默认关闭，打开后全网搜索会额外搜 jar 爬虫源（每个源有超时，会拖慢出结果）">🕷</span>
+      <div class="iconbtn" onclick="openHistory()" title="播放历史">🕘</div>
+      <div class="iconbtn" onclick="openSrcDrawer()">☰</div>
+      <div class="iconbtn" onclick="openDlPage()" title="下载管理">📥</div>
+    </div>
     <div class="search">
       <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()" onfocus="showHistPanel()" onclick="showHistPanel()" onblur="setTimeout(hideHistPanel,180)">
       <span class="go" onclick="doSearch()">搜索</span>
     </div>
-    <span class="scope" id="scopeBtn" onclick="toggleScope()">全网</span>
-    <span class="scope off" id="spiderBtn" onclick="toggleSpider()" title="爬虫源搜索：默认关闭，打开后全网搜索会额外搜 jar 爬虫源（每个源有超时，会拖慢出结果）">🕷</span>
-    <div class="iconbtn" onclick="openHistory()" title="播放历史">🕘</div>
-    <div class="iconbtn" onclick="openSrcDrawer()">☰</div>
-    <div class="iconbtn" onclick="openDlPage()" title="下载管理">📥</div>
   </div>
 
   <!-- 搜索历史下拉：点顶部搜索输入框时弹出（最近 10 条） -->
