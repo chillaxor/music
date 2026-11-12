@@ -1079,8 +1079,14 @@ class VideoActivity : AppCompatActivity() {
         @JavascriptInterface
         fun downloadResolved(url: String, headerJson: String, title: String) {
             val h = parseHeaders(headerJson)
-            Log.d("VidDl", "downloadResolved url=${url.take(90)} headers=${h.keys}")
-            startDownload(url, h, title)
+            // 合并播放链路所用的全量头(curHeaders)：播放时带的是 curHeaders 全量
+            // (UA/Origin/Referer/Cookie…)，很多 CDN 校验这些，下载只带少量头会被 403/404。
+            // 以 curHeaders 为基础、JS 传入的头作为补充覆盖。
+            val merged = LinkedHashMap<String, String>()
+            curHeaders.forEach { (k, v) -> if (v.isNotBlank()) merged[k] = v }
+            h.forEach { (k, v) -> if (v.isNotBlank()) merged[k] = v }
+            Log.d("VidDl", "downloadResolved url=${url.take(90)} headers=${merged.keys}")
+            startDownload(url, merged, title)
         }
 
         /** 列出已下载的视频（Movies/从前慢）：API29+ 走 MediaStore，API28- 列应用私有 Movies 目录。
@@ -2167,31 +2173,36 @@ class VideoActivity : AppCompatActivity() {
     /** 选集下载：后台线程用 okhttp 带完整 headers 拉取，mp4 直下 / m3u8 合并，写公共目录并通知媒体库 */
     private fun startDownload(rawUrl: String, headers: Map<String, String>, title: String) {
         if (rawUrl.isBlank()) { toast("没有可用的下载地址"); return }
-        val safeTitle = sanitizeName(title.ifBlank { "从前慢_${System.currentTimeMillis()}" })
-        val isM3u8 = rawUrl.contains(".m3u8", true)
-        val hdrs = LinkedHashMap<String, String>()
-        headers.forEach { (k, v) -> if (v.isNotBlank() && k.lowercase() !in HOP_BY_HOP) hdrs[k] = v }
-        Thread {
-            try {
-                val out = prepareDownloadOutput(safeTitle, if (isM3u8) "ts" else guessExt(rawUrl))
-                showDlProgress(safeTitle, 0, true)
-                if (isM3u8) downloadM3u8(rawUrl, hdrs, out.stream) else downloadSingle(rawUrl, hdrs, out.stream)
-                out.stream.close()
-                runOnUiThread {
-                    toast("下载完成：$safeTitle")
-                    scanDownloaded(out.scanPath)
-                    webView.evaluateJavascript(
-                        "if(window.onDlDone)onDlDone(${org.json.JSONObject.quote(safeTitle)})", null)
-                }
-            } catch (e: Exception) {
-                Log.w("VidDl", "下载失败: ${e.message}")
-                runOnUiThread { toast("下载失败：${e.message?.take(80)}") }
-            } finally { dismissDlProgress() }
-        }.start()
+            val safeTitle = sanitizeName(title.ifBlank { "从前慢_${System.currentTimeMillis()}" })
+            val hdrs = LinkedHashMap<String, String>()
+            headers.forEach { (k, v) -> if (v.isNotBlank() && k.lowercase() !in HOP_BY_HOP) hdrs[k] = v }
+            var out: DlOutput? = null
+            Thread {
+                try {
+                    val isM3u8 = isHlsPlaylist(rawUrl, hdrs)
+                    out = prepareDownloadOutput(safeTitle, if (isM3u8) "ts" else guessExt(rawUrl))
+                    showDlProgress(safeTitle, 0, true)
+                    if (isM3u8) downloadM3u8(rawUrl, hdrs, out!!.stream) else downloadSingle(rawUrl, hdrs, out!!.stream)
+                    out!!.stream.close()
+                    runOnUiThread {
+                        toast("下载完成：$safeTitle")
+                        scanDownloaded(out!!.scanPath)
+                        webView.evaluateJavascript(
+                            "if(window.onDlDone)onDlDone(${org.json.JSONObject.quote(safeTitle)})", null)
+                    }
+                } catch (e: Exception) {
+                    Log.w("VidDl", "下载失败: ${e.message}")
+                    out?.file?.delete()
+                    out?.uri?.let { runCatching { contentResolver.delete(it, null, null) } }
+                    runOnUiThread { toast("下载失败：${e.message?.take(80)}") }
+                } finally { dismissDlProgress() }
+            }.start()
     }
 
-    /** 输出目标：API29+ 写 MediaStore（公共 Movies/从前慢，免权限）；否则写应用私有 Movies 目录 */
-    private data class DlOutput(val stream: java.io.OutputStream, val scanPath: String)
+    /** 输出目标：API29+ 写 MediaStore（公共 Movies/从前慢，免权限）；否则写应用私有 Movies 目录。
+     *  file/uri 用于在下载失败时回滚(删除已创建的空文件/媒体库条目)。 */
+    private data class DlOutput(val stream: java.io.OutputStream, val scanPath: String,
+                               val file: File? = null, val uri: android.net.Uri? = null)
     private fun prepareDownloadOutput(name: String, ext: String): DlOutput {
         val dirName = "从前慢"
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -2202,12 +2213,12 @@ class VideoActivity : AppCompatActivity() {
             }
             val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cv)
                 ?: throw Exception("无法创建媒体库条目")
-            DlOutput(contentResolver.openOutputStream(uri)!!, "")
+            DlOutput(contentResolver.openOutputStream(uri)!!, "", file = null, uri = uri)
         } else {
             val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES)
             val d = File(dir, dirName); if (!d.exists()) d.mkdirs()
             val f = File(d, "$name.$ext")
-            DlOutput(FileOutputStream(f), f.absolutePath)
+            DlOutput(FileOutputStream(f), f.absolutePath, file = f, uri = null)
         }
     }
 
@@ -2281,6 +2292,32 @@ class VideoActivity : AppCompatActivity() {
         try {
             return java.net.URI(base).resolve(rel).toString()
         } catch (e: Exception) { Log.w("VidDl", "resolveUrl 失败 base=${base.take(80)} rel=$rel"); return rel }
+    }
+
+    /** 判断是否为 HLS 播放列表(m3u8)：不能只靠 .m3u8 后缀——大量影视源直链无后缀
+     *  (如 /play/xxxx、?token= 形式)，播放靠 ExoPlayer 内容探测能识别，下载若误判成单文件
+     *  会直接把 m3u8 文本下成文件。策略：有后缀直接认；否则先 HEAD 看 Content-Type，
+     *  再降级拉前 2KB 检测是否以 #EXTM3U 开头（不全下载，避免拉整个 mp4）。 */
+    private fun isHlsPlaylist(url: String, headers: Map<String, String>): Boolean {
+        if (url.contains(".m3u8", true)) return true
+        // 1) HEAD 看 Content-Type（许多 CDN 返回 application/vnd.apple.mpegurl 等）
+        try {
+            val head = dlClient.newCall(headerRequest(url, headers).newBuilder().head().build()).execute()
+            val ct = (head.header("Content-Type") ?: "").lowercase()
+            if (ct.contains("mpegurl")) return true
+            if (ct.startsWith("video/") || ct.startsWith("audio/")) return false
+        } catch (_: Exception) { }
+        // 2) 降级：拉前 2KB 看是否 #EXTM3U（不全下载，避免拉整个 mp4）
+        try {
+            val req = headerRequest(url, headers).newBuilder().header("Range", "bytes=0-2047").build()
+            val resp = dlClient.newCall(req).execute()
+            val `in` = resp.body?.byteStream() ?: return false
+            val buf = ByteArray(2048); var total = 0; var n = 0
+            while (total < 2048 && `in`.read(buf, total, 2048 - total).also { n = it } > 0) total += n
+            `in`.close()
+            val head = String(buf, 0, total, StandardCharsets.UTF_8).trimStart()
+            return head.startsWith("#EXTM3U")
+        } catch (_: Exception) { return false }
     }
 
     /** 带 headers 的 GET 文本 */
