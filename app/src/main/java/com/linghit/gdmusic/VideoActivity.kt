@@ -2176,6 +2176,8 @@ class VideoActivity : AppCompatActivity() {
     private fun startDownload(rawUrl: String, headers: Map<String, String>, title: String) {
         if (rawUrl.isBlank()) { toast("没有可用的下载地址"); return }
             val safeTitle = sanitizeName(title.ifBlank { "从前慢_${System.currentTimeMillis()}" })
+            curDlTitle = safeTitle
+            lastDlPct = -1
             val hdrs = LinkedHashMap<String, String>()
             headers.forEach { (k, v) -> if (v.isNotBlank() && k.lowercase() !in HOP_BY_HOP) hdrs[k] = v }
             var out: DlOutput? = null
@@ -2394,6 +2396,19 @@ class VideoActivity : AppCompatActivity() {
     // ---- 下载进度通知 ----
     private val DL_CHANNEL = "gdmusic_download"
     private val DL_NOTIFY_ID = 2001
+    /** 当前下载标题与上次推送的进度（去重，避免 evaluateJavascript 洪水） */
+    private var curDlTitle = ""
+    private var lastDlPct = -1
+    /** 把下载进度推到 WebView，让 App 内（视频页 / 下载管理页）也能看到进度条 */
+    private fun dlProgressToJs(title: String, pct: Int, indeterminate: Boolean) {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "if(window.onDlProgress)onDlProgress(${org.json.JSONObject.quote(title)},$pct,${if (indeterminate) "true" else "false"})", null)
+        }
+    }
+    private fun dlHideToJs() {
+        runOnUiThread { webView.evaluateJavascript("if(window.onDlHide)onDlHide()", null) }
+    }
     private fun ensureDlChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -2412,8 +2427,11 @@ class VideoActivity : AppCompatActivity() {
             .setOnlyAlertOnce(true)
             .setProgress(100, pct, indeterminate).build()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(DL_NOTIFY_ID, n)
+        dlProgressToJs(title, pct, indeterminate)
     }
     private fun updateDlProgress(pct: Int) {
+        if (pct == lastDlPct) return
+        lastDlPct = pct
         val n = NotificationCompat.Builder(this, DL_CHANNEL)
             .setContentTitle("下载中")
             .setContentText("$pct%")
@@ -2421,9 +2439,11 @@ class VideoActivity : AppCompatActivity() {
             .setOnlyAlertOnce(true)
             .setProgress(100, pct, false).build()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(DL_NOTIFY_ID, n)
+        dlProgressToJs(curDlTitle, pct, false)
     }
     private fun dismissDlProgress() {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(DL_NOTIFY_ID)
+        dlHideToJs()
     }
 
     // ===================== DLNA 投屏 =====================

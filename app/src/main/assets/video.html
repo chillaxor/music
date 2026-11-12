@@ -216,6 +216,12 @@
   .dl-del{background:rgba(255,255,255,.06);color:var(--bad)}
   .dl-del:active{background:rgba(255,91,91,.18)}
   .dl-empty{padding:48px 16px;text-align:center;color:var(--sub);font-size:13px;line-height:1.9}
+  /* 下载管理页：进行中的任务行（每个正在下载的视频一条进度条） */
+  .dl-item.dl-ing{opacity:.95;border-color:var(--accent)}
+  .dl-item .dlb-ing-track{height:6px;background:rgba(255,255,255,.14);border-radius:4px;margin-top:8px;overflow:hidden}
+  .dl-item .dlb-ing-fill{height:100%;width:0;background:var(--accent);border-radius:4px;transition:width .25s ease}
+  .dl-item .dlb-ing-fill.indet{width:40%!important;animation:dlbSlide 1.1s linear infinite}
+  @keyframes dlbSlide{0%{margin-left:-40%}100%{margin-left:100%}}
   /* 源管理抽屉 */
   .srcDrawer{position:fixed;inset:0;z-index:50;display:none}
   .srcDrawer.show{display:block}
@@ -2310,13 +2316,34 @@ boot();
     if(b<1073741824) return (b/1048576).toFixed(1)+' MB';
     return (b/1073741824).toFixed(2)+' GB';
   }
+  var __dlState=null; // 进行中的下载：{title,pct,indeterminate}，由原生 onDlProgress 推送
   function renderDlList(){
     var box=document.getElementById('dlList'); box.innerHTML='';
     var cnt=document.getElementById('dlCount');
     var arr=[];
     try{ arr=JSON.parse(Android.listVideoDownloads()); }catch(e){ arr=[]; }
     if(cnt) cnt.textContent=arr.length?(' '+arr.length):'';
-    if(!arr.length){
+    // 进行中的下载任务（来自原生 onDlProgress），置顶单独显示一条进度条
+    if(__dlState){
+      var r=document.createElement('div'); r.className='dl-item dl-ing';
+      var inf=document.createElement('div'); inf.className='dl-info';
+      var nm=document.createElement('div'); nm.className='dl-name';
+      nm.textContent=(__dlState.title||'下载中')+'（下载中…）';
+      var sz=document.createElement('div'); sz.className='dl-size';
+      sz.textContent=__dlState.indeterminate?'正在准备…':('已下载 '+__dlState.pct+'%');
+      inf.appendChild(nm); inf.appendChild(sz);
+      var acts=document.createElement('div'); acts.className='dl-acts';
+      var pb=document.createElement('button'); pb.className='dl-play'; pb.textContent='请稍候';
+      pb.disabled=true; pb.style.opacity='.6'; pb.style.pointerEvents='none';
+      acts.appendChild(pb);
+      r.appendChild(inf); r.appendChild(acts);
+      var tr=document.createElement('div'); tr.className='dlb-ing-track';
+      var fl=document.createElement('div'); fl.className='dlb-ing-fill'+(__dlState.indeterminate?' indet':'');
+      if(!__dlState.indeterminate) fl.style.width=Math.max(0,Math.min(100,__dlState.pct))+'%';
+      tr.appendChild(fl); r.appendChild(tr);
+      box.appendChild(r);
+    }
+    if(!arr.length && !__dlState){
       box.innerHTML='<div class="dl-empty">还没有下载的视频。<br>在选集上点右上角 ↓ 即可下载，<br>下完点这里就能直接播放。</div>';
       return;
     }
@@ -2340,10 +2367,16 @@ boot();
       row.appendChild(info); row.appendChild(acts); box.appendChild(row);
     });
   }
+  // 原生下载进度回调：更新进行中状态；若下载页正开着则实时刷新进度条
+  function onDlProgress(title,pct,indeterminate){
+    __dlState={title:title||'',pct:pct||0,indeterminate:!!indeterminate};
+    if(document.getElementById('dlPage').classList.contains('on')) renderDlList();
+  }
+  function onDlHide(){ __dlState=null; if(document.getElementById('dlPage').classList.contains('on')) renderDlList(); }
   function onDlDone(name){ toast('下载完成：'+(name||'')+'（点顶栏 📥 播放）'); }
 
 </script>
-  <!-- 下载管理页：列出已下载的视频，可 App 内播放 / 删除 -->
+  <!-- 下载管理页：列出已下载的视频 + 正在进行中的下载（每条带进度条），可 App 内播放 / 删除 -->
   <div id="dlPage">
     <div class="vip-bar">
       <div class="vip-back" onclick="closeDlPage()">‹ 返回</div>
