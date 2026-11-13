@@ -457,6 +457,27 @@
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:layout_marginTop="6dp"/>
 
+                    <!-- 背景图软开关：只切显示层，不清文件夹 / 当天索引 / 手动序号，
+                         关掉后露当前风格自带的兜底底色，方便对比五套风格的材质。 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="10dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="显示背景图（关掉只看风格底色，方便对比）"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface"/>
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/wallpaperSwitch"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/dailyPick"
                         style="@style/Widget.Material3.Button"

@@ -27,6 +27,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.google.android.material.card.MaterialCardView
 import androidx.core.app.ActivityCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.exoplayer.ExoPlayer
@@ -426,6 +427,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         tabPlaylist.setOnClickListener { switchTab(false) }
         tabSearch.setOnClickListener { switchTab(true) }
         switchTab(false) // 默认进入首页
+        applyStyleToViews() // 按当前风格刷新卡片材质 / pill / 播放条（XML 只给了默认值）
 
         // ===== 左右滑动切页签（与点 pill 等效）：左滑=搜索，右滑=回首页 =====
         tabContent = findViewById(R.id.tabContent)
@@ -458,16 +460,41 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         playlistPanel.visibility=if(search) View.GONE else View.VISIBLE
         searchPanel.visibility=if(search) View.VISIBLE else View.GONE
         syncPlayerBar()
-        tabPlaylist.setBackgroundResource(if(search) R.drawable.bg_pill_glass else R.drawable.bg_pill_white)
-        tabPlaylist.setTextColor(ContextCompat.getColor(this, if(search) R.color.on_primary else R.color.primary))
-        tabSearch.setBackgroundResource(if(search) R.drawable.bg_pill_white else R.drawable.bg_pill_glass)
-        tabSearch.setTextColor(ContextCompat.getColor(this, if(search) R.color.primary else R.color.on_primary))
+        StyleEngine.pill(this, tabPlaylist, !search)
+        StyleEngine.pill(this, tabSearch, search)
         if(!search) refreshQueueEntry()
         // 今日榜单：第一次切到搜索页签时才拉数据（不占首页启动流量）
         if(search && !chartLoaded){
             chartLoaded=true
             selectChart(NeteaseApi.CHARTS.first())
         }
+    }
+
+    /**
+     * 把当前风格刷到首页所有「drawable 级」控件上。
+     * XML 里的 @drawable/bg_liquid_glass 只是玻璃默认值，五种风格各有自己的材质，
+     * 所以必须代码覆盖；纯色 token（字色 / tint / 播放条底色）已由 ?attr/gdXxx 处理。
+     * 外层 MaterialCardView 的 radius 也要跟着改，否则方角风格会被外层 18dp 圆角裁掉。
+     */
+    private fun applyStyleToViews() {
+        val p = ThemePrefs.currentPack(this)
+        val cardIds = intArrayOf(
+            R.id.poemRow, R.id.goldCardRow, R.id.railCardRow,
+            R.id.spendCardRow, R.id.newsCardRow, R.id.shortcutCard
+        )
+        cardIds.forEach { id -> findViewById<View>(id)?.let { StyleEngine.card(this, it, p) } }
+        val outerIds = intArrayOf(
+            R.id.poemCard, R.id.goldCard, R.id.railCard, R.id.spendCard, R.id.newsCard
+        )
+        outerIds.forEach { id -> findViewById<MaterialCardView>(id)?.let { StyleEngine.outerCardRadius(this, it, p) } }
+        findViewById<MaterialCardView>(R.id.playerBar)?.let { StyleEngine.playerBar(this, it, p) }
+        // 续听 chips 与诗卡内的小按钮：统一 pill 材质
+        val pillIds = intArrayOf(
+            R.id.chipResumeMusic, R.id.chipResumePodcast, R.id.chipResumeRadio,
+            R.id.poemExplainBtn, R.id.poemShareBtn, R.id.poemFavBtn, R.id.poemCollapseBtn
+        )
+        pillIds.forEach { id -> findViewById<TextView>(id)?.let { StyleEngine.pill(this, it, false, p) } }
+        Log.i("ThemeStyle", "applyStyleToViews style=${p.name} material=${p.material} cards=${cardIds.size}")
     }
 
     companion object {
@@ -557,8 +584,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         else resources.displayMetrics.widthPixels - (20 * d).toInt()
         val gapH = ((rowW - badgeSize * perRow) / (perRow - 1)).coerceAtLeast(0)
         val labelW = badgeSize + gapH
-        val primary = ThemePrefs.currentPack(this).primary
-        val softPrimary = (primary and 0x00FFFFFF) or 0x55000000.toInt()
+        val p = ThemePrefs.currentPack(this)
+        val softPrimary = StyleEngine.badgeSoft(p)
 
         /** 固定入口（原工具行的四个 pill，现收编为网格前 4 格，点击走 ShortcutRouter 同一套路由） */
         val fixed = fixedShortcuts
@@ -605,7 +632,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val label = TextView(this).apply {
                 text = item.label
                 textSize = 11f
-                setTextColor(0xFFFFFFFF.toInt())
+                setTextColor(p.textPrimary)
                 gravity = Gravity.CENTER
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -647,7 +674,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             TextView(this).apply {
                 text = "＋"
                 textSize = 24f
-                setTextColor(0xFFFFFFFF.toInt())
+                setTextColor(p.textPrimary)
                 paint.isFakeBoldText = true
                 gravity = Gravity.CENTER
                 includeFontPadding = false
@@ -682,33 +709,11 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     }
 
     private fun applyThemeColors() {
-        val pack = ThemePrefs.currentPack(this)
-        val end = pack.primaryEnd
-        // A+D 冷灰统一补漏（2026-11-06）：兜底底图不再铺满屏主题色。
-        // 没配每日一图时 themeFallbackBg 就是整屏底色；原先直接用 primary→primaryDark
-        // 画满屏渐变（如抹茶绿），27% 半透明玻璃卡会把绿透上来，播放条被染成一整条灰绿，
-        // 再叠 ① 白亮边 + ③ 白高光就成了「上半发白、下半透绿」的两块色叠加感。
-        // 现在改为中性冷灰深底 + 8% 极淡主题染；主题色只留细字强调，不再铺大块实色。
-        val baseA = 0xFF161B21.toInt()
-        val baseB = 0xFF232A31.toInt()
-        val tintA = mixColor(baseA, pack.primary, 0.08f)
-        val tintB = mixColor(baseB, end ?: pack.primaryDark, 0.08f)
-        fallbackBg.background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(tintA, tintB)
-        )
-        // A+D 续（2026-11-06）：播放圆按钮原本用 pack.primary 实色，抹茶绿主题下是
-        // 播放条里唯一剩下的亮绿块。改中性冷灰渐变，白色播放图标不变。
-        val btnA = 0xFF46525E.toInt()
-        val btnB = 0xFF2E3842.toInt()
-        playPauseBtn.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            colors = intArrayOf(btnA, btnB)
-            orientation = GradientDrawable.Orientation.TL_BR
-        }
-        Log.i("ThemeStyle", "pack=${pack.name} primary=${pack.primary} end=$end " +
-                "fallback=${Integer.toHexString(tintA)}/${Integer.toHexString(tintB)} " +
-                "playBtn=${Integer.toHexString(btnA)}/${Integer.toHexString(btnB)}")
+        val st = ThemePrefs.currentPack(this)
+        // 兜底底色与播放圈都由风格包决定：关掉壁纸时露出的就是这一套渐变
+        StyleEngine.fallback(this, fallbackBg, st)
+        StyleEngine.playButton(this, playPauseBtn, st)
+        Log.i("ThemeStyle", "style=" + st.name + " material=" + st.material + " primary=" + Integer.toHexString(st.primary) + " fallback=" + Integer.toHexString(st.fallbackA))
     }
 
     /**
@@ -716,77 +721,57 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 渐变套的圆点也画成渐变的，所见即所得；当前选中的格子加浅底 + 白描边 + 加粗。
      */
     private fun showThemePicker() {
-        val density = resources.displayMetrics.density
-        fun dp(v: Int) = (v * density).toInt()
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
         val curIdx = ThemePrefs.currentIndex(this)
-        val onSurface = ContextCompat.getColor(this, R.color.on_surface)
-
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var picker: AlertDialog? = null
-
-        for (rowStart in ThemePrefs.PACKS.indices step 4) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            for (i in rowStart until minOf(rowStart + 4, ThemePrefs.PACKS.size)) {
-                val p = ThemePrefs.packAt(i)
-                val selected = i == curIdx
-                val cell = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    setPadding(dp(4), dp(10), dp(4), dp(10))
-                    if (selected) {
-                        background = GradientDrawable().apply {
-                            shape = GradientDrawable.RECTANGLE
-                            cornerRadius = dp(12).toFloat()
-                            setColor(0x1A000000)
-                        }
-                    }
-                    setOnClickListener {
-                        ThemePrefs.set(this@MainActivity, i)
-                        picker?.dismiss()
-                        recreate()
-                    }
-                }
-                val dot = View(this).apply {
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        if (p.primaryEnd != null) {
-                            colors = intArrayOf(p.primary, p.primaryEnd)
-                            orientation = GradientDrawable.Orientation.TL_BR
-                        } else {
-                            setColor(p.primary)
-                        }
-                        if (selected) setStroke(dp(3), 0xFFFFFFFF.toInt())
-                    }
-                }
-                cell.addView(dot, LinearLayout.LayoutParams(dp(46), dp(46)))
-                val label = TextView(this).apply {
-                    text = p.name
-                    textSize = 11f
-                    setTextColor(onSurface)
-                    gravity = Gravity.CENTER
-                    if (selected) setTypeface(typeface, Typeface.BOLD)
-                }
-                cell.addView(
-                    label,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = dp(6) }
-                )
-                row.addView(cell, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            }
-            root.addView(
-                row,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
-
+        // 风格预览卡：每张卡用该风格自己的兜底渐变 + 卡片材质渲染，所见即所得
+        ThemePrefs.PACKS.forEachIndexed { i, p ->
+            val selected = i == curIdx
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(p.fallbackA, p.fallbackB)
+                ).apply {
+                    cornerRadius = dp(12).toFloat()
+                    if (selected) setStroke(dp(2), p.primary)
+                }
+                setOnClickListener {
+                    ThemePrefs.set(this@MainActivity, i)
+                    picker?.dismiss()
+                    recreate()
+                }
+            }
+            val mini = View(this).apply { background = StyleEngine.cardDrawable(this@MainActivity, p) }
+            cell.addView(mini, LinearLayout.LayoutParams(dp(52), dp(52)).apply { marginEnd = dp(12) })
+            val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            texts.addView(TextView(this).apply {
+                text = if (selected) p.name + "  ·  当前" else p.name
+                textSize = 15f
+                setTextColor(p.textPrimary)
+                if (selected) setTypeface(typeface, Typeface.BOLD)
+            })
+            texts.addView(TextView(this).apply {
+                text = p.desc
+                textSize = 11f
+                setTextColor(p.textSecondary)
+            })
+            cell.addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            root.addView(cell, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) })
+        }
         picker = AlertDialog.Builder(this)
-            .setTitle("选个颜色")
-            .setView(root)
+            .setTitle("选个风格（共 " + ThemePrefs.PACKS.size + " 套）")
+            .setView(ScrollView(this).apply { addView(root) })
             .setNegativeButton("取消", null)
             .create()
         picker.show()
@@ -1143,10 +1128,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         greetingText.text = greetingByTime()
         // 日期/星期/农历：无论有没有设每日一图都先写上（没图时不再回退成「未设置…」提示）
         updateDateText()
+        // 风格包加工层：5 套风格全部保留壁纸，只改去饱和 / 罩染 / 蒙层；
+        // 关掉开关只隐藏显示层，不碰 DailyImageStore 的文件夹 / 当天索引 / 手动序号。
+        val dim = findViewById<View>(R.id.dimOverlay)
+        val enabled = ThemePrefs.wallpaperEnabled(this)
         val imgs = runCatching { DailyImageStore.listImages(this) }.getOrElse { emptyList() }
         if (imgs.isEmpty()) {
             dailyImage.setImageDrawable(null)
-            dailyImage.visibility = View.GONE
+            StyleEngine.applyWallpaper(this, dailyImage, dim, fallbackBg, null, enabled, 128)
             return
         }
         val idx = DailyImageStore.todayIndex(this).coerceAtLeast(0)
@@ -1159,14 +1148,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             val screenLong = Math.max(dm.widthPixels, dm.heightPixels)
             val target = Math.min(screenLong * 2, 4000)
             val bmp = withContext(Dispatchers.IO) { ImagePrep.decodeSampled(this@MainActivity, uri, target) }
-            if (bmp != null) {
-                dailyImage.setImageBitmap(bmp)
-                dailyImage.visibility = View.VISIBLE
-            } else {
-                // 单张图解码失败：退兜底底色，别留一张黑的
-                dailyImage.setImageDrawable(null)
-                dailyImage.visibility = View.GONE
-            }
+            // 亮度采样放到 IO：16×16 缩放遍历，供蒙层自适应（亮图加压暗 / 暗图加提亮）
+            val luma = if (bmp != null) withContext(Dispatchers.IO) { StyleEngine.avgLuma(bmp) } else 128
+            if (bmp != null) dailyImage.setImageBitmap(bmp) else dailyImage.setImageDrawable(null)
+            StyleEngine.applyWallpaper(this@MainActivity, dailyImage, dim, fallbackBg, bmp, enabled, luma)
         }
     }
 

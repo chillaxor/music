@@ -308,17 +308,27 @@ class SettingsActivity : AppCompatActivity() {
         val pickBtn = findViewById<MaterialButton>(R.id.dailyPick)
         val resetBtn = findViewById<MaterialButton>(R.id.dailyReset)
         val statusText = findViewById<TextView>(R.id.dailyStatus)
+        val wallSwitch = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.wallpaperSwitch)
 
         fun refresh() {
             val uri = DailyImageStore.treeUri(this)
             val n = DailyImageStore.imageCount(this)
             pickBtn.text = if (uri != null) "更换每日一图文件夹…" else "选择每日一图文件夹…"
             resetBtn.isVisible = uri != null
+            wallSwitch.isChecked = ThemePrefs.wallpaperEnabled(this)
             statusText.text = when {
                 uri == null -> "未设置：首页显示主题渐变底色。选一个文件夹即可开启每日一图。"
                 n == 0 -> "已选文件夹「${DailyImageStore.folderName(this)}」，但里面还没有图片\n支持的格式：jpg / jpeg / png / webp / bmp，往文件夹里扔图即生效"
                 else -> "已选文件夹「${DailyImageStore.folderName(this)}」，共 $n 张图\n每天 0 点自动换一张，放 $n 张就 $n 天一个循环；点首页问候行可手动换"
-            }
+            } + "\n背景图显示：" + (if (ThemePrefs.wallpaperEnabled(this)) "开" else "关") +
+                    "（本页开关，返回首页即时生效；不清除已选文件夹）"
+        }
+
+        // 软开关：只写 wallpaper_enabled，首页 onResume → loadDailyImage 读取，
+        // 再打开会显示同一张图（DailyImageStore 的索引完全没动）。
+        wallSwitch.setOnCheckedChangeListener { _, on ->
+            ThemePrefs.setWallpaperEnabled(this, on)
+            refresh()
         }
 
         pickBtn.setOnClickListener { dailyFolderLauncher.launch(null) }

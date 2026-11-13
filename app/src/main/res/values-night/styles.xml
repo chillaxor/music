@@ -12,5 +12,13 @@
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:fontFamily">sans-serif</item>
+        <!-- 系统深色已让位给风格包（MODE_NIGHT_NO），这里只补 token 兜底，
+             防止极少数机型在系统 night 配置下 inflate ?attr/gdXxx 时报属性缺失。 -->
+        <item name="gdTextPrimary">#FFFFFFFF</item>
+        <item name="gdTextSecondary">#B8FFFFFF</item>
+        <item name="gdTextHint">#99FFFFFF</item>
+        <item name="gdIconTint">#FFFFFFFF</item>
+        <item name="gdPlayerBarBg">#1F2B3641</item>
+        <item name="gdAccent">#FF46525E</item>
     </style>
 </resources>

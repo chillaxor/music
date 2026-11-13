@@ -23,6 +23,13 @@
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:fontFamily">sans-serif</item>
+        <!-- 风格包 token 默认值 = 玻璃风格，保证任何情况下 ?attr/gdXxx 都能解析 -->
+        <item name="gdTextPrimary">#FFFFFFFF</item>
+        <item name="gdTextSecondary">#B8FFFFFF</item>
+        <item name="gdTextHint">#99FFFFFF</item>
+        <item name="gdIconTint">#FFFFFFFF</item>
+        <item name="gdPlayerBarBg">#1F2B3641</item>
+        <item name="gdAccent">#FF46525E</item>
         <!-- 启动窗口兜底：冷启动/系统闪屏以此画布为底，与首页底色一致，无白灰闪烁。
              12 套主题只换主色，中性底色共享 → 子主题自动继承，无需逐套覆盖 -->
         <item name="android:windowBackground">@drawable/bg_splash_window</item>
@@ -103,6 +110,110 @@
         <item name="colorPrimary">#FF6B8A</item>
         <item name="colorPrimaryDark">#E05270</item>
         <item name="colorAccent">#FF6B8A</item>
+    </style>
+
+    <!-- ===== 风格包 5 套（2026-11-13）：每套绑定固定配色，同时覆盖材质字色与中性色 =====
+         主页面（设置页、队列、下载、收藏等）用 ?attr/colorSurface / colorOnSurface，
+         这里一并覆盖，所以切风格时「首页 + 主页面」一起变，不只是主色。
+         系统深色已让位（ThemePrefs.applyTheme 固定 MODE_NIGHT_NO），明暗由这里决定。 -->
+
+    <style name="AppTheme_StyleGlass" parent="AppTheme">
+        <item name="colorPrimary">#0E9C8F</item>
+        <item name="colorPrimaryDark">#00796B</item>
+        <item name="colorAccent">#0E9C8F</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#241A14</item>
+        <item name="colorOnSurfaceVariant">#7A6A60</item>
+        <item name="android:colorBackground">#FAF6F2</item>
+        <item name="android:statusBarColor">#FAF6F2</item>
+        <item name="android:navigationBarColor">#FAF6F2</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="gdTextPrimary">#FFFFFFFF</item>
+        <item name="gdTextSecondary">#B8FFFFFF</item>
+        <item name="gdTextHint">#99FFFFFF</item>
+        <item name="gdIconTint">#FFFFFFFF</item>
+        <item name="gdPlayerBarBg">#1F2B3641</item>
+        <item name="gdAccent">#FF46525E</item>
+    </style>
+
+    <style name="AppTheme_StylePaper" parent="AppTheme">
+        <item name="colorPrimary">#B4462F</item>
+        <item name="colorPrimaryDark">#8C3321</item>
+        <item name="colorAccent">#B4462F</item>
+        <item name="colorSurface">#FFFDF8</item>
+        <item name="colorOnSurface">#2A2622</item>
+        <item name="colorOnSurfaceVariant">#7A6F60</item>
+        <item name="android:colorBackground">#F6F1E7</item>
+        <item name="android:statusBarColor">#F6F1E7</item>
+        <item name="android:navigationBarColor">#F6F1E7</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:fontFamily">serif</item>
+        <item name="gdTextPrimary">#2A2622</item>
+        <item name="gdTextSecondary">#7A6F60</item>
+        <item name="gdTextHint">#A99E8C</item>
+        <item name="gdIconTint">#2A2622</item>
+        <item name="gdPlayerBarBg">#FFFDF8</item>
+        <item name="gdAccent">#B4462F</item>
+    </style>
+
+    <style name="AppTheme_StyleInk" parent="AppTheme">
+        <item name="colorPrimary">#4FD1C5</item>
+        <item name="colorPrimaryDark">#2E9B8F</item>
+        <item name="colorAccent">#4FD1C5</item>
+        <item name="colorSurface">#171B20</item>
+        <item name="colorOnSurface">#F2F4F6</item>
+        <item name="colorOnSurfaceVariant">#A8B2BC</item>
+        <item name="android:colorBackground">#0E1114</item>
+        <item name="android:statusBarColor">#0E1114</item>
+        <item name="android:navigationBarColor">#0E1114</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="gdTextPrimary">#F2F4F6</item>
+        <item name="gdTextSecondary">#A8B2BC</item>
+        <item name="gdTextHint">#78838E</item>
+        <item name="gdIconTint">#F2F4F6</item>
+        <item name="gdPlayerBarBg">#171B20</item>
+        <item name="gdAccent">#4FD1C5</item>
+    </style>
+
+    <style name="AppTheme_StyleLine" parent="AppTheme">
+        <item name="colorPrimary">#1F2933</item>
+        <item name="colorPrimaryDark">#0F161D</item>
+        <item name="colorAccent">#1F2933</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#1F2933</item>
+        <item name="colorOnSurfaceVariant">#5A6672</item>
+        <item name="android:colorBackground">#F7F8FA</item>
+        <item name="android:statusBarColor">#F7F8FA</item>
+        <item name="android:navigationBarColor">#F7F8FA</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="gdTextPrimary">#1F2933</item>
+        <item name="gdTextSecondary">#5A6672</item>
+        <item name="gdTextHint">#8A95A0</item>
+        <item name="gdIconTint">#1F2933</item>
+        <item name="gdPlayerBarBg">#00000000</item>
+        <item name="gdAccent">#1F2933</item>
+    </style>
+
+    <style name="AppTheme_StyleClay" parent="AppTheme">
+        <item name="colorPrimary">#6C8AA5</item>
+        <item name="colorPrimaryDark">#4E6A83</item>
+        <item name="colorAccent">#6C8AA5</item>
+        <item name="colorSurface">#E8EBF0</item>
+        <item name="colorOnSurface">#37414C</item>
+        <item name="colorOnSurfaceVariant">#71808F</item>
+        <item name="android:colorBackground">#E8EBF0</item>
+        <item name="android:statusBarColor">#E8EBF0</item>
+        <item name="android:navigationBarColor">#E8EBF0</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="gdTextPrimary">#37414C</item>
+        <item name="gdTextSecondary">#71808F</item>
+        <item name="gdTextHint">#9AA7B4</item>
+        <item name="gdIconTint">#37414C</item>
+        <item name="gdPlayerBarBg">#E8EBF0</item>
+        <item name="gdAccent">#6C8AA5</item>
     </style>
 
     <!-- 常驻悬浮按钮配置页：透明底，只弹一个 AlertDialog（ThemePrefs.applyTheme 会换成当前套件） -->

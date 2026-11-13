@@ -69,7 +69,7 @@
                 android:text="彬💖冰 颢👣涵"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="#FFFFFF"
+                android:textColor="?attr/gdTextPrimary"
                 android:maxLines="1"
                 android:includeFontPadding="false"/>
 
@@ -86,7 +86,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_wallpaper"
-                android:tint="#FFFFFF"
+                app:tint="?attr/gdIconTint"
                 android:scaleType="centerInside"
                 android:contentDescription="切换背景图"/>
 
@@ -96,7 +96,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_mic"
-                android:tint="#FFFFFF"
+                app:tint="?attr/gdIconTint"
                 android:scaleType="centerInside"
                 android:contentDescription="语音助手"/>
 
@@ -106,7 +106,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_theme"
-                android:tint="#FFFFFF"
+                app:tint="?attr/gdIconTint"
                 android:scaleType="centerInside"
                 android:contentDescription="切换主题"/>
 
@@ -116,7 +116,7 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_settings"
-                android:tint="#FFFFFF"
+                app:tint="?attr/gdIconTint"
                 android:scaleType="centerInside"
                 android:contentDescription="设置"/>
         </LinearLayout>
@@ -154,7 +154,7 @@
                 android:text="🔍 搜索歌曲"
                 android:textSize="14sp"
                 android:background="@drawable/bg_pill_glass"
-                android:textColor="#FFFFFF"/>
+                android:textColor="?attr/gdTextPrimary"/>
         </LinearLayout>
 
         <!-- 页签内容区：左右滑动切页签（见 SwipeFrameLayout：只拦横向，竖向/子视图放行；
@@ -207,7 +207,7 @@
                         android:text="你好"
                         android:textSize="20sp"
                         android:textStyle="bold"
-                        android:textColor="#FFFFFF"
+                        android:textColor="?attr/gdTextPrimary"
                         android:includeFontPadding="false"/>
 
                     <TextView
@@ -217,7 +217,7 @@
                         android:text=""
                         android:textSize="12sp"
                         android:paddingTop="2dp"
-                        android:textColor="#D9FFFFFF"
+                        android:textColor="?attr/gdTextSecondary"
                         android:includeFontPadding="false"/>
                 </LinearLayout>
 
@@ -274,7 +274,7 @@
                                 android:layout_height="wrap_content"
                                 android:text=""
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:ellipsize="end"
                                 android:includeFontPadding="false"/>
@@ -294,7 +294,7 @@
                                 android:layout_weight="1"
                                 android:text=""
                                 android:textSize="13sp"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:maxLines="1"
                                 android:ellipsize="end"
                                 android:includeFontPadding="false"/>
@@ -311,7 +311,7 @@
                                 android:paddingBottom="5dp"
                                 android:text="显示解释"
                                 android:textSize="12sp"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:visibility="gone" />
 
                             <ImageView
@@ -320,7 +320,7 @@
                                 android:layout_height="20dp"
                                 android:layout_marginStart="8dp"
                                 android:src="@drawable/ic_expand_more"
-                                android:tint="#FFFFFF"
+                                app:tint="?attr/gdIconTint"
                                 android:contentDescription="展开或收起"/>
                         </LinearLayout>
 
@@ -340,7 +340,7 @@
                                 android:text=""
                                 android:textSize="16sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:includeFontPadding="false"/>
 
                             <TextView
@@ -349,7 +349,7 @@
                                 android:layout_height="wrap_content"
                                 android:text=""
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:paddingTop="3dp"
                                 android:includeFontPadding="false"/>
 
@@ -359,7 +359,7 @@
                                 android:layout_height="wrap_content"
                                 android:text=""
                                 android:textSize="13sp"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:lineSpacingExtra="5dp"
                                 android:paddingTop="8dp"
                                 android:includeFontPadding="false"/>
@@ -370,7 +370,7 @@
                                 android:layout_height="wrap_content"
                                 android:text=""
                                 android:textSize="12sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:lineSpacingExtra="3dp"
                                 android:paddingTop="8dp"
                                 android:includeFontPadding="false"/>
@@ -393,7 +393,7 @@
                                     android:paddingBottom="7dp"
                                     android:text="生成分享图"
                                     android:textSize="13sp"
-                                    android:textColor="#FFFFFF"/>
+                                    android:textColor="?attr/gdTextPrimary"/>
 
                                 <TextView
                                     android:id="@+id/poemFavBtn"
@@ -407,7 +407,7 @@
                                     android:paddingBottom="7dp"
                                     android:text="收藏此诗"
                                     android:textSize="13sp"
-                                    android:textColor="#FFFFFF"/>
+                                    android:textColor="?attr/gdTextPrimary"/>
 
                                 <View
                                     android:layout_width="0dp"
@@ -425,7 +425,7 @@
                                     android:paddingBottom="7dp"
                                     android:text="收起"
                                     android:textSize="13sp"
-                                    android:textColor="#FFFFFF"/>
+                                    android:textColor="?attr/gdTextPrimary"/>
                             </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
@@ -470,7 +470,7 @@
                                 android:text="💰 黄金金价"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
@@ -481,7 +481,7 @@
                                 android:text="国内 --"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:paddingTop="3dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
@@ -492,7 +492,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="国际 --"
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:paddingTop="2dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
@@ -532,7 +532,7 @@
                                 android:text="🚄 高铁日程"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
@@ -543,7 +543,7 @@
                                 android:text="暂无行程"
                                 android:textSize="13sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:paddingTop="3dp"
                                 android:maxLines="1"
                                 android:ellipsize="end"
@@ -556,7 +556,7 @@
                                 android:layout_height="wrap_content"
                                 android:text=""
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:paddingTop="2dp"
                                 android:maxLines="2"
                                 android:ellipsize="end"
@@ -604,7 +604,7 @@
                                 android:text="💳 今日消费"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
@@ -615,7 +615,7 @@
                                 android:text="¥0"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:paddingTop="3dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
@@ -626,7 +626,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="今天还没记账"
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:paddingTop="2dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
@@ -666,7 +666,7 @@
                                 android:text="🔥 新闻热榜"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
@@ -679,7 +679,7 @@
                                 android:text="加载中…"
                                 android:textSize="13sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:paddingTop="3dp"
                                 android:maxLines="2"
                                 android:ellipsize="end"
@@ -693,7 +693,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="今日热榜 ›"
                                 android:textSize="11sp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:paddingTop="2dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
@@ -706,6 +706,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
+                    android:id="@+id/shortcutCard"
                     android:background="@drawable/bg_liquid_glass"
                     android:paddingTop="12dp"
                     android:paddingBottom="12dp"
@@ -751,7 +752,7 @@
                         android:paddingTop="8dp"
                         android:paddingBottom="8dp"
                         android:textSize="13sp"
-                        android:textColor="#FFFFFF"
+                        android:textColor="?attr/gdTextPrimary"
                         android:text="继续音乐 ▶"
                         android:visibility="gone"/>
 
@@ -766,7 +767,7 @@
                         android:paddingTop="8dp"
                         android:paddingBottom="8dp"
                         android:textSize="13sp"
-                        android:textColor="#FFFFFF"
+                        android:textColor="?attr/gdTextPrimary"
                         android:text="继续播客 ▶"
                         android:visibility="gone"/>
 
@@ -781,7 +782,7 @@
                         android:paddingTop="8dp"
                         android:paddingBottom="8dp"
                         android:textSize="13sp"
-                        android:textColor="#FFFFFF"
+                        android:textColor="?attr/gdTextPrimary"
                         android:text="继续电台 ▶"
                         android:visibility="gone"/>
                 </LinearLayout>
@@ -801,7 +802,7 @@
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="14dp"
-                    app:cardBackgroundColor="#1F2B3641"
+                    app:cardBackgroundColor="?attr/gdPlayerBarBg"
                     app:strokeWidth="0dp"
                     android:layout_marginBottom="12dp">
 
@@ -820,7 +821,7 @@
                             android:layout_height="38dp"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:src="@drawable/ic_prev"
-                            android:tint="#FFFFFF"
+                            app:tint="?attr/gdIconTint"
                             android:scaleType="centerInside"
                             android:contentDescription="上一首"/>
 
@@ -842,7 +843,7 @@
                             android:layout_marginStart="2dp"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:src="@drawable/ic_next"
-                            android:tint="#FFFFFF"
+                            app:tint="?attr/gdIconTint"
                             android:scaleType="centerInside"
                             android:contentDescription="下一首"/>
 
@@ -862,7 +863,7 @@
                                 android:text="未播放"
                                 android:textSize="14sp"
                                 android:textStyle="bold"
-                                android:textColor="#FFFFFF"
+                                android:textColor="?attr/gdTextPrimary"
                                 android:maxLines="1"
                                 android:ellipsize="end"/>
 
@@ -873,7 +874,7 @@
                                 android:text="还没有在播放的歌"
                                 android:textSize="11sp"
                                 android:paddingTop="1dp"
-                                android:textColor="#B8FFFFFF"
+                                android:textColor="?attr/gdTextSecondary"
                                 android:maxLines="1"
                                 android:ellipsize="end"/>
                         </LinearLayout>
@@ -885,7 +886,7 @@
                             android:layout_marginStart="2dp"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:src="@drawable/ic_sequence"
-                            android:tint="#FFFFFF"
+                            app:tint="?attr/gdIconTint"
                             android:scaleType="centerInside"
                             android:contentDescription="播放模式"/>
                     </LinearLayout>
@@ -922,8 +923,8 @@
                         android:paddingStart="14dp"
                         android:paddingEnd="14dp"
                         android:hint="搜索歌曲 / 歌手"
-                        android:textColor="#FFFFFF"
-                        android:textColorHint="#99FFFFFF"
+                        android:textColor="?attr/gdTextPrimary"
+                        android:textColorHint="?attr/gdTextHint"
                         android:inputType="text"
                         android:imeOptions="actionSearch"
                         android:maxLines="1"/>
@@ -937,8 +938,8 @@
                         android:insetBottom="0dp"
                         android:layout_marginStart="8dp"
                         app:cornerRadius="12dp"
-                        app:backgroundTint="#FF46525E"
-                        android:textColor="#FFFFFF"
+                        app:backgroundTint="?attr/gdAccent"
+                        android:textColor="?attr/gdTextPrimary"
                         android:text="搜索"/>
                 </LinearLayout>
 
@@ -964,7 +965,7 @@
                             android:text="今日榜单"
                             android:textSize="14sp"
                             android:textStyle="bold"
-                            android:textColor="#FFFFFF"
+                            android:textColor="?attr/gdTextPrimary"
                             android:includeFontPadding="false"/>
 
                         <View
@@ -978,7 +979,7 @@
                             android:layout_height="wrap_content"
                             android:text="刷新"
                             android:textSize="12sp"
-                            android:textColor="#B8FFFFFF"
+                            android:textColor="?attr/gdTextSecondary"
                             android:padding="6dp"
                             android:includeFontPadding="false"/>
                     </LinearLayout>
@@ -1011,7 +1012,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="搜索后点击歌曲即可播放"
-                    android:textColor="#B8FFFFFF"
+                    android:textColor="?attr/gdTextSecondary"
                     android:textSize="13sp"
                     android:padding="4dp"/>
 

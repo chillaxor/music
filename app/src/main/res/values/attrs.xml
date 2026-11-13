@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        风格包自定义属性：把首页原本硬编码的 45 处白字 / tint / 播放条底色抽成 token。
+        布局用 ?attr/gdXxx 引用，styles.xml 里 5 套风格各自覆盖，
+        于是「切风格」时字色和播放条也会跟着变，而不是只有 colorPrimary 变。
+        更复杂的多层材质（玻璃亮边 / 高光 / 双向浮雕）XML 表达不了，交给 StyleEngine。
+    -->
+    <attr name="gdTextPrimary" format="color"/>
+    <attr name="gdTextSecondary" format="color"/>
+    <attr name="gdTextHint" format="color"/>
+    <attr name="gdIconTint" format="color"/>
+    <attr name="gdPlayerBarBg" format="color"/>
+    <attr name="gdAccent" format="color"/>
+</resources>
