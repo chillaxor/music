@@ -433,5 +433,94 @@
                     android:contentDescription="下一集" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- 2026-11-13 用户要求：全屏播放时控制条「倍数」旁的「选集」按钮弹出的选集抽屉。
+             做成 Activity 内的覆盖层而不是 AlertDialog / PopupWindow：全屏沉浸状态下
+             独立窗口容易被系统栏、控制条自动显隐干扰；覆盖层还能自带滚动，几十上百集都放得下。
+             默认 gone、clickable 吞掉下层触摸；左侧遮罩点一下关闭，右侧卡片里是剧集网格。
+             与 videoMiniLayer / castLayer 同为 overlay 直属子层，放在最后保证在最上层，
+             进小窗 / 投屏 / 锁定 / 关播时由 VideoActivity 主动收起。 -->
+        <LinearLayout
+            android:id="@+id/videoEpisodePanel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:background="#99000000"
+            android:visibility="gone"
+            android:clickable="true">
+
+            <View
+                android:id="@+id/episodePanelMask"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@+id/episodePanelCard"
+                android:layout_width="340dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:background="#F014151C"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:clickable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/episodePanelTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="选集"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFFFF" />
+
+                    <TextView
+                        android:id="@+id/episodePanelClose"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:background="#33FFFFFF"
+                        android:gravity="center"
+                        android:text="✕"
+                        android:textSize="16sp"
+                        android:textColor="#FFFFFFFF"
+                        android:contentDescription="关闭选集" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/episodePanelHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:text="点任意一集立即播放"
+                    android:textSize="12sp"
+                    android:textColor="#99FFFFFF" />
+
+                <GridView
+                    android:id="@+id/episodeGrid"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="12dp"
+                    android:numColumns="4"
+                    android:horizontalSpacing="8dp"
+                    android:verticalSpacing="8dp"
+                    android:stretchMode="columnWidth"
+                    android:gravity="center_horizontal"
+                    android:scrollbars="none" />
+            </LinearLayout>
+        </LinearLayout>
     </FrameLayout>
 </FrameLayout>

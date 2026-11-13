@@ -140,12 +140,25 @@
        联动：exo_bottom_bar 上移到 90dp、exo_minimal_controls 上移到 92dp，
        给下移后的进度条让位；activity_video.xml 的全屏键与 positionSideBtns()
        贴右下角 4dp/8dp（配置行居中，右侧留白够，不与时间/按钮行重叠）。 -->
-  <LinearLayout
-      android:id="@+id/skipCfgRow"
+  <!-- 2026-11-13：加了第 5 个「选集」chip 后，窄屏（详情页内嵌竖条）一行摆不下 5 个，
+       外面套一层可横向滚动的容器。宽屏（全屏横屏）下 fillViewport + gravity=center
+       仍是居中一排，与原来完全一致；窄屏则能滑到最右侧的「选集」。
+       ⚠️ id 仍叫 skipCfgRow 且仍是那一排 chip 的 LinearLayout：setupPlayGestures()
+       用它的 getLocationOnScreen / width 判断「手势不接管区域」，结构变化不影响。 -->
+  <HorizontalScrollView
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:layout_gravity="bottom"
       android:layout_marginBottom="4dp"
+      android:fillViewport="true"
+      android:scrollbars="none"
+      android:overScrollMode="never">
+
+  <LinearLayout
+      android:id="@+id/skipCfgRow"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="center_horizontal"
       android:orientation="horizontal"
       android:gravity="center"
       android:paddingStart="12dp"
@@ -209,7 +222,26 @@
         android:textSize="13sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="播放倍数" />
+
+    <!-- 2026-11-13 用户要求：全屏播放时在「倍数」旁边加「选集」。
+         点它弹出右侧抽屉列出当前线路全部剧集，点任意一集立即播放（复用 playIndex，
+         直链 / 播放页嗅探 / 爬虫源解析三条分支都照旧走）。
+         VideoActivity.showEpisodePanel() 负责填充 GridView，当前集高亮。 -->
+    <TextView
+        android:id="@+id/episodesBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="34dp"
+        android:layout_marginStart="10dp"
+        android:background="#40000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:gravity="center"
+        android:text="选集"
+        android:textSize="13sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="打开选集列表" />
   </LinearLayout>
+  </HorizontalScrollView>
 
   <LinearLayout android:id="@id/exo_minimal_controls"
       android:layout_width="wrap_content"

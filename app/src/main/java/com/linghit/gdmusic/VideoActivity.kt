@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.content.pm.ActivityInfo
 import android.content.ContentUris
 import android.net.Uri
@@ -17,6 +18,7 @@ import android.util.Base64
 import android.util.Log
 import android.util.Rational
 import android.view.View
+import android.view.ViewGroup
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -28,8 +30,11 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
+import android.widget.AbsListView
+import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.GridView
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -239,6 +244,16 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var castBtn: TextView
     /** 控制条上的倍速 chip：显示当前档位，点开选档（长按临时 3× 松手后回到该档位） */
     private lateinit var speedBtn: TextView
+    /** 控制条上紧挨倍速的「选集」chip：点开右侧抽屉，列出当前线路全部剧集 */
+    private lateinit var episodesBtn: TextView
+    /** 全屏选集抽屉（activity_video.xml）：遮罩 / 卡片 / 关闭 / 标题 / 提示 / 剧集网格 */
+    private lateinit var episodePanel: View
+    private lateinit var episodePanelMask: View
+    private lateinit var episodePanelCard: View
+    private lateinit var episodePanelClose: TextView
+    private lateinit var episodePanelTitle: TextView
+    private lateinit var episodePanelHint: TextView
+    private lateinit var episodeGrid: GridView
     /** 用户选定的播放倍速（换集 / 重建 ExoPlayer 后仍保持） */
     private var playbackSpeed = 1f
     /** 可选倍速档位 */
@@ -509,6 +524,25 @@ class VideoActivity : AppCompatActivity() {
         speedBtn = playerView.findViewById(R.id.speedBtn)
         speedBtn.setOnClickListener { showSpeedMenu() }
         updateSpeedChip()
+        // 选集 chip（紧挨倍速）+ 右侧抽屉：点任意一集直接复用 playIndex() 切集
+        episodesBtn = playerView.findViewById(R.id.episodesBtn)
+        episodesBtn.setOnClickListener { showEpisodePanel() }
+        episodePanel = findViewById(R.id.videoEpisodePanel)
+        episodePanelMask = findViewById(R.id.episodePanelMask)
+        episodePanelCard = findViewById(R.id.episodePanelCard)
+        episodePanelClose = findViewById(R.id.episodePanelClose)
+        episodePanelTitle = findViewById(R.id.episodePanelTitle)
+        episodePanelHint = findViewById(R.id.episodePanelHint)
+        episodeGrid = findViewById(R.id.episodeGrid)
+        episodePanel.setOnClickListener { hideEpisodePanel() }
+        episodePanelMask.setOnClickListener { hideEpisodePanel() }
+        episodePanelCard.setOnClickListener { /* 卡片空白吞掉点击，免得误关 */ }
+        episodePanelClose.setOnClickListener { hideEpisodePanel() }
+        episodeGrid.setOnItemClickListener { _, _, position, _ ->
+            hideEpisodePanel()
+            Log.d("VidPlay", "选集面板点选第 ${position + 1} 集 -> playIndex($position)")
+            playIndex(position)
+        }
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
             // 锁定态不允许控制条再冒出来（自动 show / 播放状态变化都会触发这里），
@@ -643,6 +677,10 @@ class VideoActivity : AppCompatActivity() {
         // 返回键逐层回退：小窗→展开回全屏；播放中→关播放器(回到该视频详情页)；详情/搜索等浮层开着→交给页面关掉(回到搜索位置)；都没有才退出
         backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // 选集抽屉开着时，返回键先只收抽屉，不退出播放
+                if (::episodePanel.isInitialized && episodePanel.visibility == View.VISIBLE) {
+                    hideEpisodePanel(); return
+                }
                 // 锁定态按返回先解锁，不直接退出播放（锁的意义就是防误触）
                 if (locked) { toggleLock(); return }
                 if (miniMode) { exitMini(); return }
@@ -1551,6 +1589,7 @@ class VideoActivity : AppCompatActivity() {
         headers: Map<String, String>? = null
     ) {
         Log.d("VidPlay", "startVideo: $title | $url | referer=$referer | idx=$idx | inline=$inline")
+        hideEpisodePanel()      // 起播新片：收掉可能还开着、内容属于上一部的选集抽屉
         // 只有 playResolvedEx 会带完整 header；历史续播/旧桥没有这份信息，必须清掉，
         // 否则会把上一部片的 UA/Origin 沿用到新片上，反而被判 403。
         curHeaders = headers ?: emptyMap()
@@ -2018,6 +2057,81 @@ class VideoActivity : AppCompatActivity() {
             true
         }
         popup.show()
+    }
+
+    /**
+     * 点「选集」chip：右侧抽屉列出当前线路全部剧集，点一格直接切（复用 playIndex）。
+     * 数据就是 startVideo 时 JS 带过来的 epsJson（epsList），与「上一集/下一集」同源，
+     * 因此直链 / 播放页嗅探 / 爬虫源解析三条切集路径全都照旧可用，不另写一套。
+     */
+    private fun showEpisodePanel() {
+        if (locked) return                       // 锁定态控制条都不该露出来
+        if (miniMode || isInPictureInPictureMode) {
+            toast("小窗播放时请展开后再选集")
+            return
+        }
+        if (casting) { toast("投屏中请在遥控层切集"); return }
+        if (epsList.isEmpty()) {
+            toast("这一路没有剧集列表，请在选集页重新点一集")
+            return
+        }
+        val d = resources.displayMetrics.density
+        val land = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        // 横屏抽屉放宽到 420dp / 5 列，竖屏 320dp / 4 列；左侧遮罩是 weight=1，
+        // 改卡片宽度后会自动吃掉剩下的宽度。
+        (episodePanelCard.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.width = ((if (land) 420 else 320) * d).toInt()
+            episodePanelCard.layoutParams = it
+        }
+        episodeGrid.numColumns = if (land) 5 else 4
+        episodePanelTitle.text = "选集 · 共 ${epsList.size} 集"
+        episodePanelHint.text = if (curIdx in epsList.indices) {
+            val n = epsList[curIdx].name.ifBlank { "第${curIdx + 1}集" }
+            "当前：$n · 点任意一集立即播放"
+        } else "点任意一集立即播放"
+        val cur = curIdx
+        episodeGrid.adapter = object : BaseAdapter() {
+            override fun getCount(): Int = epsList.size
+            override fun getItem(p: Int): Any = epsList[p]
+            override fun getItemId(p: Int): Long = p.toLong()
+            override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
+                val tv = (cv as? TextView) ?: TextView(this@VideoActivity).apply {
+                    layoutParams = AbsListView.LayoutParams(
+                        AbsListView.LayoutParams.MATCH_PARENT, (40 * d).toInt()
+                    )
+                    gravity = Gravity.CENTER
+                    textSize = 12f
+                    setSingleLine(true)
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    val pad = (4 * d).toInt()
+                    setPadding(pad, pad, pad, pad)
+                }
+                val name = epsList[p].name.ifBlank { "第${p + 1}集" }
+                tv.text = if (p == cur) "✓ $name" else name
+                tv.background = GradientDrawable().apply {
+                    cornerRadius = 8 * d
+                    setColor(if (p == cur) 0xFF7B5CFF.toInt() else 0x33FFFFFF)
+                }
+                tv.setTextColor(if (p == cur) 0xFFFFFFFF.toInt() else 0xCCFFFFFF.toInt())
+                tv.setTypeface(null, if (p == cur) Typeface.BOLD else Typeface.NORMAL)
+                return tv
+            }
+        }
+        // 集数多时自动滚到当前集附近，不用每次从第 1 集翻起
+        if (cur in epsList.indices) episodeGrid.setSelection(cur)
+        episodePanel.visibility = View.VISIBLE
+        episodePanel.bringToFront()
+        playerView.showController()
+        Log.d("VidPlay", "选集面板打开 共${epsList.size}集 当前第${cur + 1}集 横屏=$land")
+    }
+
+    /** 收起选集抽屉：返回键 / 遮罩 / 关闭 / 选完集 / 锁定 / 小窗 / 投屏 / 关播都会走到 */
+    private fun hideEpisodePanel() {
+        if (::episodePanel.isInitialized && episodePanel.visibility == View.VISIBLE) {
+            episodePanel.visibility = View.GONE
+            Log.d("VidPlay", "选集面板关闭")
+        }
     }
 
     /** 轻点视频区域 = 切换控制条显隐 */
@@ -2821,6 +2935,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun closeVideo() {
+        hideEpisodePanel()
         forceUnlock()
         if (casting) stopCast(false)   // 关播放器：电视端也要停，但不切回本地
         saveHisPosition()
@@ -2882,6 +2997,8 @@ class VideoActivity : AppCompatActivity() {
      *  用它一刀切会把「小窗按钮」整个藏掉 —— 这就是「影视播放时小窗按钮不见了」的根因。
      *  真正要区分的是「紧凑短条」还是「已展开全屏」，所以用 isCompactInline。 */
     private fun updatePipButton() {
+        // 形态切到小窗 / 系统 PiP / 投屏 / 锁定 时，选集抽屉不该继续盖在上面
+        if (miniMode || isInPictureInPictureMode || locked || casting) hideEpisodePanel()
         // 小窗 / 系统 PiP / 投屏 / 暂停 / 控制条隐藏 / 锁定态 时都不显示
         val show = !miniMode && !isInPictureInPictureMode && !locked &&
             player?.isPlaying == true && controlsVisible
@@ -2910,6 +3027,8 @@ class VideoActivity : AppCompatActivity() {
         if (miniMode || isInPictureInPictureMode || casting || isCompactInline) return
         locked = !locked
         if (locked) {
+            // 锁屏时顺手收掉选集抽屉，否则它会盖在锁屏层上面还能点
+            hideEpisodePanel()
             // 记下锁定前状态，解锁时原样恢复（fullBtn 在经典全屏本来就是 GONE，
             // 不能一律设成 VISIBLE；也别用 applyPlayerLayout 重置，那会连带改方向/系统栏）
             fullBtnVisBeforeLock = fullBtn.visibility
