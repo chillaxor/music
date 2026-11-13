@@ -225,6 +225,17 @@
 
   </LinearLayout>
 
+  <!-- 2026-11-13 用户要求：上一集 / 下一集 紧挨中间「播放 / 暂停」按钮的左右。
+       原布局是 media3 默认的按钮组 上一个 / 快退 / 播放暂停 / 快进 / 下一个，
+       其中 exo_prev / exo_next 是「上一个/下一个媒体项」，跟影视仓的「上一集」不是一回事，
+       用户真正要的切集按钮却在右侧中部竖排、离播放键很远。这里精简成三个：
+           [⏮ 上一集] [▶/⏸ 播放暂停] [⏭ 下一集]
+       用自定义 id（videoCenterPrev / videoCenterNext）而不用 exo_prev / exo_next：
+       media3 PlayerControlView 会按 id 给后者绑 seekToPrevious/Next，并在 updateNavigation()
+       里按 player 的 COMMAND 可用性改 enabled/visibility，单片播放时会被禁用；
+       自定义 id 它完全不管，切集逻辑由 VideoActivity 绑 playPrev()/playNext()，走 epsList。
+       快退/快进按钮（exo_rew / exo_ffwd）一并去掉：进度条拖动 + 左右滑动手势仍可快进，
+       留着反而与「上一集/下一集」图标混淆。PlayerControlView 对这些 id 都判空，删掉安全。 -->
   <LinearLayout
       android:id="@id/exo_center_controls"
       android:layout_width="wrap_content"
@@ -236,18 +247,16 @@
       android:clipToPadding="false"
       android:layoutDirection="ltr">
 
-    <ImageButton android:id="@id/exo_prev"
-        style="@style/ExoStyledControls.Button.Center.Previous"/>
-
-    <include layout="@layout/exo_player_control_rewind_button" />
+    <ImageButton android:id="@+id/videoCenterPrev"
+        style="@style/ExoStyledControls.Button.Center.Previous"
+        android:contentDescription="上一集" />
 
     <ImageButton android:id="@id/exo_play_pause"
         style="@style/ExoStyledControls.Button.Center.PlayPause"/>
 
-    <include layout="@layout/exo_player_control_ffwd_button" />
-
-    <ImageButton android:id="@id/exo_next"
-        style="@style/ExoStyledControls.Button.Center.Next"/>
+    <ImageButton android:id="@+id/videoCenterNext"
+        style="@style/ExoStyledControls.Button.Center.Next"
+        android:contentDescription="下一集" />
 
   </LinearLayout>
 

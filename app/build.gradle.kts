@@ -17,7 +17,7 @@ android {
         targetSdk = 34
         // 每次交付递增：真机可在「设置 → 应用」里一眼确认装的是哪一版，
         // 避免 versionCode 长期停在 2 时分不清「改了没生效」还是「没装新包」
-        versionCode = 16
+        versionCode = 17
         versionName = "2.0.1"
         // 构建时间戳：崩溃日志会带上它，用来确认手机上装的是哪一版（排查"改了没生效"）
         val buildTime = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())

@@ -100,7 +100,27 @@
             android:textStyle="bold"
             android:textColor="#ffffff" />
 
+        <!-- 左侧中部：锁定播放界面（仅全屏态显示）。
+             未锁时显示开锁图标，跟控制条一起显隐；点它锁住整个播放界面：
+             控制条 / 顶部标题 / 时钟 / 右侧上下集 / 全屏键全隐藏，屏幕手势全部吞掉，
+             只留本按钮常驻（图标变闭合锁）用于解锁。 -->
+        <TextView
+            android:id="@+id/videoLock"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/bg_pill_glass"
+            android:gravity="center"
+            android:text="🔓"
+            android:textSize="18sp"
+            android:textColor="#ffffff"
+            android:visibility="gone"
+            android:contentDescription="锁定播放界面" />
+
         <!-- 右侧中部：上一集 / 下一集。
+             全屏态已把上下集搬到中间播放/暂停按钮左右，本竖排由 VideoActivity 隐藏，
+             避免同屏两套；只有紧凑内嵌短条（控制条进 minimal、中间按钮组不可见）时才保留。
              内嵌态（详情页顶部短条）时由 VideoActivity 动态改成 bottom|end 下沉，
              避开顶部右侧的全屏切换按钮，避免误触；全屏态保持 center_vertical|end。 -->
         <LinearLayout

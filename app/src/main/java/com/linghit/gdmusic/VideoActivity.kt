@@ -126,8 +126,19 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var brightnessInd: TextView
     /** 内嵌态 ↔ 全屏切换按钮（图标：展开 / 收起） */
     private lateinit var fullBtn: ImageButton
-    /** 右侧上一集/下一集按钮容器：全屏态 center_vertical|end；内嵌态下沉到 bottom|end 避开全屏键 */
+    /** 右侧上一集/下一集按钮容器：仅紧凑内嵌短条保留；全屏态上下集已搬到中间播放键左右 */
     private lateinit var sideBtns: LinearLayout
+    /** 中间控制条里紧挨「播放 / 暂停」左右的上一集 / 下一集（全屏态主入口） */
+    private lateinit var centerPrev: ImageButton
+    private lateinit var centerNext: ImageButton
+    /** 全屏左侧锁按钮：未锁跟控制条显隐，锁定后常驻用于解锁 */
+    private lateinit var videoLock: TextView
+    /** 全屏锁定态：隐藏全部 HUD + 吞掉屏幕手势，播放继续，只留左侧锁按钮可点 */
+    private var locked = false
+    /** 锁定前全屏键 / 时钟的可见性，解锁时原样恢复（不用 applyPlayerLayout 硬重置，
+     *  那会连带改屏幕方向、系统栏、详情页占位，副作用太大） */
+    private var fullBtnVisBeforeLock = View.GONE
+    private var clockVisBeforeLock = View.GONE
     /** 小窗（App 内悬浮小窗）模式：播放器缩到角落，页面可继续浏览 */
     private var miniMode = false
     /** 用户是否手动拖过小窗：拖动后不再被 applyMiniLayout 复位回右下角 */
@@ -469,6 +480,14 @@ class VideoActivity : AppCompatActivity() {
         videoPrev = findViewById(R.id.videoPrev)
         videoNext = findViewById(R.id.videoNext)
         sideBtns = findViewById(R.id.videoSideBtns)
+        videoLock = findViewById(R.id.videoLock)
+        // 中间控制条覆写后新增的两个按钮（见 exo_player_control_view.xml 注释）：
+        // 用自定义 id，media3 不会给它们绑默认行为，切集完全走 epsList。
+        centerPrev = playerView.findViewById(R.id.videoCenterPrev)
+        centerNext = playerView.findViewById(R.id.videoCenterNext)
+        videoLock.setOnClickListener { toggleLock() }
+        centerPrev.setOnClickListener { playPrev() }
+        centerNext.setOnClickListener { playNext() }
         videoBuffering = findViewById(R.id.videoBuffering)
         videoSeekHint = findViewById(R.id.videoSeekHint)
         videoMiniLayer = findViewById(R.id.videoMiniLayer)
@@ -492,9 +511,15 @@ class VideoActivity : AppCompatActivity() {
         updateSpeedChip()
         // 控制条显隐同步小窗按钮：只有播放中且控制条可见时才显示小窗按钮
         playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
-            controlsVisible = visibility == View.VISIBLE
-            Log.d("VidPlay", "控制条可见=$controlsVisible 播放中=${player?.isPlaying}")
-            updatePipButton()
+            // 锁定态不允许控制条再冒出来（自动 show / 播放状态变化都会触发这里），
+            // 否则屏幕上又出现一排可点的按钮，锁就形同虚设。
+            if (locked && visibility == View.VISIBLE) {
+                playerView.hideController()
+            } else {
+                controlsVisible = visibility == View.VISIBLE
+                Log.d("VidPlay", "控制条可见=$controlsVisible 播放中=${player?.isPlaying}")
+                updatePipButton()
+            }
         })
 
         // 耳机断开暂停本地视频（与 App 全局广播互补，覆盖本页前台播放场景）
@@ -613,13 +638,13 @@ class VideoActivity : AppCompatActivity() {
                 else -> false
             }
         }
-        videoPrev.setOnClickListener {
-            if (curIdx <= 0) toast("已经是第一集（共 ${epsList.size} 集）") else playIndex(curIdx - 1)
-        }
+        videoPrev.setOnClickListener { playPrev() }
         videoNext.setOnClickListener { playNext() }
         // 返回键逐层回退：小窗→展开回全屏；播放中→关播放器(回到该视频详情页)；详情/搜索等浮层开着→交给页面关掉(回到搜索位置)；都没有才退出
         backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // 锁定态按返回先解锁，不直接退出播放（锁的意义就是防误触）
+                if (locked) { toggleLock(); return }
                 if (miniMode) { exitMini(); return }
                 // 内嵌态全屏 → 收回详情页顶部内嵌继续播（不中断）
                 if (inlineMode && inlineExpanded) { shrinkToInline(); return }
@@ -1768,6 +1793,10 @@ class VideoActivity : AppCompatActivity() {
         var takeOver = false
 
         playerView.setOnTouchListener { v, ev ->
+            // 锁定态吞掉所有触摸：轻点不会唤出控制条，左右滑不会快进，
+            // 上下滑不会调亮度/音量，长按不会临时 3 倍速。锁按钮在 overlay 上层、
+            // 是独立 View，不受本 listener 影响，仍可点它解锁。
+            if (locked) return@setOnTouchListener true
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = ev.x; downY = ev.y
@@ -1993,6 +2022,7 @@ class VideoActivity : AppCompatActivity() {
 
     /** 轻点视频区域 = 切换控制条显隐 */
     private fun toggleController() {
+        if (locked) return
         if (!playerView.useController) return
         if (controlsVisible) playerView.hideController() else playerView.showController()
     }
@@ -2504,6 +2534,10 @@ class VideoActivity : AppCompatActivity() {
         playerView.visibility = View.GONE
         videoPip.visibility = View.GONE
         videoTitle.visibility = View.GONE
+        // 投屏遥控层是全屏覆盖，但锁按钮在 overlay 里、不在 PlayerView 内，
+        // 不显式收掉会浮在遥控层上；同时把锁态解掉，免得退出投屏回来还锁着。
+        forceUnlock()
+        updatePipButton()
         stopSkipTick()                       // 本地轮询停，位置改由 castTick 提供
         player?.pause()
         player?.stop()
@@ -2787,6 +2821,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun closeVideo() {
+        forceUnlock()
         if (casting) stopCast(false)   // 关播放器：电视端也要停，但不切回本地
         saveHisPosition()
         hisHandler.removeCallbacks(hisTick)
@@ -2827,6 +2862,7 @@ class VideoActivity : AppCompatActivity() {
         setKeepScreenOn(false)
         videoPip.visibility = View.GONE
         videoTitle.visibility = View.GONE
+        updatePipButton()
         // 返回后把"播放前那一页"找回来：若刚才是全网搜索，恢复搜索页+该视频详情弹窗，
         // 避免退回 App 首页推荐流（页面 DOM 仍在，只是要让对应浮层重新显示）。
         webView.post { safeEval("if(window.__restoreAfterPlay)window.__restoreAfterPlay()") }
@@ -2846,14 +2882,93 @@ class VideoActivity : AppCompatActivity() {
      *  用它一刀切会把「小窗按钮」整个藏掉 —— 这就是「影视播放时小窗按钮不见了」的根因。
      *  真正要区分的是「紧凑短条」还是「已展开全屏」，所以用 isCompactInline。 */
     private fun updatePipButton() {
-        // 小窗 / 系统 PiP / 投屏 / 暂停 / 控制条隐藏时，小窗按钮与标题都不显示
-        val show = !miniMode && !isInPictureInPictureMode && player?.isPlaying == true && controlsVisible
+        // 小窗 / 系统 PiP / 投屏 / 暂停 / 控制条隐藏 / 锁定态 时都不显示
+        val show = !miniMode && !isInPictureInPictureMode && !locked &&
+            player?.isPlaying == true && controlsVisible
         // 小窗按钮：所有形态都显示（含紧凑短条）—— 顶部左侧是空的，不挡任何东西。
         videoPip.visibility = if (show) View.VISIBLE else View.GONE
         // 标题只在「非紧凑短条」时显示：紧凑短条里标题居中（maxWidth 300dp）会与小窗按钮撞上，
         // 而详情页下方本来就有片名，藏掉不亏；尚未起播（标题为空）时也不占位。
         videoTitle.visibility =
             if (show && !isCompactInline && curVideoTitle.isNotBlank()) View.VISIBLE else View.GONE
+        // 所有形态切换都汇到这里，锁按钮 / 右侧竖排上下集的显隐统一在这两个方法里收口
+        syncLockButton()
+        syncEpisodeButtons()
+    }
+
+    /** 上一集：中间控制条（全屏主入口）与右侧竖排（紧凑内嵌短条）共用同一套切集逻辑 */
+    private fun playPrev() {
+        if (curIdx <= 0) toast("已经是第一集（共 ${epsList.size} 集）") else playIndex(curIdx - 1)
+    }
+
+    /**
+     * 点左侧锁按钮：锁住 / 解开播放界面。锁定只作用于交互层，视频照常播放、进度照常走。
+     * 锁定时：控制条强制隐藏且不许再冒出来、屏幕手势全部吞掉、顶部标题/时钟/小窗/
+     * 全屏键/右侧上下集一并隐藏，只留左侧锁按钮常驻（图标变闭合锁）用来解锁。
+     */
+    private fun toggleLock() {
+        if (miniMode || isInPictureInPictureMode || casting || isCompactInline) return
+        locked = !locked
+        if (locked) {
+            // 记下锁定前状态，解锁时原样恢复（fullBtn 在经典全屏本来就是 GONE，
+            // 不能一律设成 VISIBLE；也别用 applyPlayerLayout 重置，那会连带改方向/系统栏）
+            fullBtnVisBeforeLock = fullBtn.visibility
+            clockVisBeforeLock = videoClock.visibility
+            playerView.hideController()
+            videoPip.visibility = View.GONE
+            videoTitle.visibility = View.GONE
+            videoClock.visibility = View.GONE
+            fullBtn.visibility = View.GONE
+            toast("已锁定播放界面，点左侧 🔒 解锁")
+        } else {
+            playerView.showController()
+            videoClock.visibility = clockVisBeforeLock
+            fullBtn.visibility = fullBtnVisBeforeLock
+            toast("已解锁播放界面")
+        }
+        Log.d("VidPlay", "锁定播放界面=$locked")
+        updatePipButton()
+    }
+
+    /** 锁按钮：只在「全屏 + 本地播放 + 播放层可见」时出现。
+     *  未锁时跟控制条一起显隐（控制条自动隐藏后不碍眼）；锁定后常驻，否则无法解锁。 */
+    private fun syncLockButton() {
+        val canShow = !miniMode && !isInPictureInPictureMode && !casting &&
+            !isCompactInline && overlay.visibility == View.VISIBLE
+        videoLock.visibility =
+            if (!canShow) View.GONE
+            else if (locked || controlsVisible) View.VISIBLE
+            else View.GONE
+        videoLock.text = if (locked) "🔒" else "🔓"
+        videoLock.contentDescription = if (locked) "解锁播放界面" else "锁定播放界面"
+        videoLock.alpha = if (locked) 1f else 0.85f
+    }
+
+    /** 右侧竖排上下集：全屏态已搬到中间播放/暂停左右 → 隐藏，避免同屏两套；
+     *  紧凑内嵌短条控制条进 minimal、中间按钮组不可见 → 保留，切集功能不丢。
+     *  小窗 / 系统 PiP / 投屏 / 锁定态一律隐藏。 */
+    private fun syncEpisodeButtons() {
+        val usable = !miniMode && !isInPictureInPictureMode && !casting &&
+            !locked && overlay.visibility == View.VISIBLE
+        val show = usable && isCompactInline
+        sideBtns.visibility = if (show) View.VISIBLE else View.GONE
+        // 顺手兜住一个老问题：进 App 内小窗时 enterMini() 把两个子按钮单独 GONE 了，
+        // 退出小窗的 exitMini() 没恢复；容器虽然 VISIBLE，按钮却是空的。
+        // 这里在「确定要显示右侧竖排」时把子按钮显式拉回来。
+        if (show) {
+            videoPrev.visibility = View.VISIBLE
+            videoNext.visibility = View.VISIBLE
+        }
+    }
+
+    /** 离开全屏形态（进小窗 / 系统 PiP / 关播放器 / 切投屏）时强制解锁，
+     *  否则锁态会残留到别的界面：控制条被 hide、手势被吞、回到全屏还锁着。 */
+    private fun forceUnlock() {
+        if (!locked) return
+        locked = false
+        videoClock.visibility = clockVisBeforeLock
+        fullBtn.visibility = fullBtnVisBeforeLock
+        Log.d("VidPlay", "离开全屏形态，自动解锁")
     }
 
     // ===================== App 内小窗（悬浮小播放器） =====================
@@ -2905,6 +3020,7 @@ class VideoActivity : AppCompatActivity() {
     /** 交给系统悬浮窗播放：同一个 player 实例挂到浮层上，不重新缓冲 */
     private fun startFloat() {
         val p = player ?: return
+        forceUnlock()
         clearInlineDock()                 // 撤掉详情页顶部占位，别留空白
         VideoFloatState.player = p
         playerView.player = null            // 先摘下来，交给浮层
@@ -2956,6 +3072,7 @@ class VideoActivity : AppCompatActivity() {
         lp.setMargins(0, 0, 0, 0)
         overlay.layoutParams = lp
         overlay.visibility = View.GONE
+        updatePipButton()
     }
 
     /** 恢复全屏播放层尺寸并显示 */
@@ -2972,6 +3089,7 @@ class VideoActivity : AppCompatActivity() {
     /** 进 App 内小窗：播放器缩到屏幕角落继续播，页面回到竖屏可继续浏览/搜索 */
     private fun enterMini() {
         if (miniMode) return
+        forceUnlock()
         miniMode = true
         clearInlineDock()                 // 撤掉详情页顶部占位，别留空白
         miniUserMoved = false   // 每次进小窗回到默认右下角；拖动后不再被转屏/换清晰度弹回
@@ -2988,6 +3106,7 @@ class VideoActivity : AppCompatActivity() {
         videoNext.visibility = View.GONE
         videoMiniLayer.visibility = View.VISIBLE
         playerView.useController = false
+        updatePipButton()
         Log.d("VidPlay", "进入 App 内小窗")
         webView.post { safeEval("if(window.__onMiniChange)window.__onMiniChange(true)") }
     }
@@ -3195,6 +3314,7 @@ class VideoActivity : AppCompatActivity() {
         // 否则会被 handleOnBackPressed 的 closeVideo() 把播放层关掉，出现"画面没了、后台还在响"。
         backCallback?.isEnabled = !isInPictureInPictureMode
         if (isInPictureInPictureMode) {
+            forceUnlock()
             wasMiniBeforePip = miniMode
             videoPip.visibility = View.GONE
             videoTitle.visibility = View.GONE
@@ -3244,6 +3364,7 @@ class VideoActivity : AppCompatActivity() {
         // PlayerView 自带的播放控制条也隐藏：系统小窗只几寸大，控制条会糊满画面；
         // 退出小窗恢复（useController 切换会重建 SubtitleView 等子视图，必须主线程）
         playerView.useController = !isInPictureInPictureMode && !miniMode
+        updatePipButton()
         if (!isInPictureInPictureMode) clockTick.run()
     }
 
