@@ -106,7 +106,7 @@ object ThemePrefs {
             primary = 0xFFB4462F.toInt(), primaryDark = 0xFF8C3321.toInt(),
             desc = "实底纸白卡 · 细描边方角 · 衬线标题 · 墨色字",
             material = Material.PAPER,
-            cardFill = 0xFFFFFDF8.toInt(), cardEdge = 0xFFE4DAC6.toInt(),
+            cardFill = 0xCCF6F1E7.toInt(), cardEdge = 0xFFE4DAC6.toInt(),
             cardHighlight = 0x00000000, cardRadiusDp = 8f,
             cardStrokeDp = 1f, cardStrokeColor = 0xFFE4DAC6.toInt(),
             playerBarFill = 0xFFFFFDF8.toInt(), playerBarRadiusDp = 8f,
@@ -119,14 +119,14 @@ object ThemePrefs {
             surface = 0xFFFFFDF8.toInt(), background = 0xFFF6F1E7.toInt(),
             onSurface = 0xFF2A2622.toInt(), onSurfaceVariant = 0xFF7A6F60.toInt(),
             lightStatusBar = true, fontFamily = "serif",
-            wall = WallSpec(0.65f, 0xFFF6F1E7.toInt(), 0.32f, -0.14f, 0.18f, 0.55f, 235)
+            wall = WallSpec(0.85f, 0xFFF6F1E7.toInt(), 0.18f, -0.14f, 0.12f, 0.45f, 235)
         ),
         StylePack(
             name = "墨夜", themeRes = R.style.AppTheme_StyleInk,
             primary = 0xFF4FD1C5.toInt(), primaryDark = 0xFF2E9B8F.toInt(),
             desc = "实底墨黑卡 · 细描边 · 高对比浅字 · OLED 友好",
             material = Material.INK,
-            cardFill = 0xFF171B20.toInt(), cardEdge = 0xFF2A3038.toInt(),
+            cardFill = 0xB3171B20.toInt(), cardEdge = 0xFF2A3038.toInt(),
             cardHighlight = 0x00000000, cardRadiusDp = 12f,
             cardStrokeDp = 1f, cardStrokeColor = 0xFF2A3038.toInt(),
             playerBarFill = 0xFF171B20.toInt(), playerBarRadiusDp = 12f,
@@ -139,7 +139,7 @@ object ThemePrefs {
             surface = 0xFF171B20.toInt(), background = 0xFF0E1114.toInt(),
             onSurface = 0xFFF2F4F6.toInt(), onSurfaceVariant = 0xFFA8B2BC.toInt(),
             lightStatusBar = false, fontFamily = "sans-serif",
-            wall = WallSpec(0.60f, 0xFF000000.toInt(), 0.45f, 0.10f, 0.28f, 0.70f, 200)
+            wall = WallSpec(0.75f, 0xFF000000.toInt(), 0.22f, 0.10f, 0.14f, 0.50f, 200)
         ),
         StylePack(
             name = "线稿", themeRes = R.style.AppTheme_StyleLine,
@@ -159,14 +159,14 @@ object ThemePrefs {
             surface = 0xFFFFFFFF.toInt(), background = 0xFFF7F8FA.toInt(),
             onSurface = 0xFF1F2933.toInt(), onSurfaceVariant = 0xFF5A6672.toInt(),
             lightStatusBar = true, fontFamily = "sans-serif",
-            wall = WallSpec(0.10f, 0xFFFFFFFF.toInt(), 0.28f, -0.16f, 0.14f, 0.58f, 230)
+            wall = WallSpec(0.70f, 0xFFFFFFFF.toInt(), 0.18f, -0.16f, 0.10f, 0.45f, 230)
         ),
         StylePack(
             name = "软陶", themeRes = R.style.AppTheme_StyleClay,
             primary = 0xFF6C8AA5.toInt(), primaryDark = 0xFF4E6A83.toInt(),
             desc = "拟物软浮雕 · 双向明暗边 · 大圆角 · 雾霾蓝",
             material = Material.CLAY,
-            cardFill = 0xFFE8EBF0.toInt(), cardEdge = 0xFFFFFFFF.toInt(),
+            cardFill = 0x99E8EBF0.toInt(), cardEdge = 0xFFFFFFFF.toInt(),
             cardHighlight = 0xFFB9C3D0.toInt(), cardRadiusDp = 20f,
             playerBarFill = 0xFFE8EBF0.toInt(), playerBarRadiusDp = 20f,
             textPrimary = 0xFF37414C.toInt(), textSecondary = 0xFF71808F.toInt(),
@@ -178,7 +178,7 @@ object ThemePrefs {
             surface = 0xFFE8EBF0.toInt(), background = 0xFFE8EBF0.toInt(),
             onSurface = 0xFF37414C.toInt(), onSurfaceVariant = 0xFF71808F.toInt(),
             lightStatusBar = true, fontFamily = "sans-serif",
-            wall = WallSpec(0.75f, 0xFFE8EBF0.toInt(), 0.38f, -0.12f, 0.22f, 0.60f, 220)
+            wall = WallSpec(0.85f, 0xFFE8EBF0.toInt(), 0.18f, -0.12f, 0.10f, 0.45f, 220)
         )
     )
 

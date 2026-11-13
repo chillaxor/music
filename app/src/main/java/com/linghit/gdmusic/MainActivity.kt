@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -174,6 +175,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var greetingRow: View
     private lateinit var greetingText: TextView
     private lateinit var dateText: TextView
+    private lateinit var topTitle: TextView
     // —— 首页自定义入口拖动排序状态（长按抓起 → 移动=实时换序，按住不动=删除） ——
     private var dragChip: View? = null
     private var dragIndex = -1
@@ -381,7 +383,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         greetingRow = findViewById(R.id.greetingRow)
         greetingText = findViewById(R.id.greetingText)
         dateText = findViewById(R.id.dateText)
+        topTitle = findViewById(R.id.topTitle)
         applyThemeColors() // 按当前主题重画兜底底色与播放按钮圆圈（drawable 无法用 ?attr 上色）
+        applyWallpaperShadows() // 顶栏/问候行文字在壁纸上，加自适应描边阴影保证可读
         // 每日一图：载入今天该显示的那张；顶栏「切背景图」按钮 / 点问候行 = 手动换一张，长按=更换图片文件夹
         loadDailyImage()
         greetingRow.setOnClickListener { switchDailyImage() }
@@ -638,6 +642,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 includeFontPadding = false
                 setPadding(0, (5 * d).toInt(), 0, 0)
+                // 名称压在半透卡片/壁纸上，加反向描边阴影兜底可读
+                paint.setShadowLayer(3f, 1f, 1f, shadowColorForText(p.textPrimary))
             }
             cell.addView(
                 label,
@@ -678,6 +684,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 paint.isFakeBoldText = true
                 gravity = Gravity.CENTER
                 includeFontPadding = false
+                paint.setShadowLayer(3f, 1f, 1f, shadowColorForText(p.textPrimary))
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(softPrimary)
@@ -714,6 +721,21 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         StyleEngine.fallback(this, fallbackBg, st)
         StyleEngine.playButton(this, playPauseBtn, st)
         Log.i("ThemeStyle", "style=" + st.name + " material=" + st.material + " primary=" + Integer.toHexString(st.primary) + " fallback=" + Integer.toHexString(st.fallbackA))
+    }
+
+    /**
+     * 顶栏标题 / 问候行 / 日期 直接压在壁纸上（不在卡片里），亮图会把字糊掉。
+     * 按文字自身亮度选反向描边阴影：亮字→暗阴影，暗字→亮阴影，保证任何壁纸下都可读。
+     */
+    private fun shadowColorForText(textColor: Int): Int {
+        val lum = Color.red(textColor) * 0.299 + Color.green(textColor) * 0.587 + Color.blue(textColor) * 0.114
+        return if (lum > 140) 0x66000000.toInt() else 0x66FFFFFF.toInt()
+    }
+
+    private fun applyWallpaperShadows() {
+        listOf(topTitle, greetingText, dateText).forEach { tv ->
+            tv.apply { paint.setShadowLayer(3f, 1f, 1f, shadowColorForText(currentTextColor)) }
+        }
     }
 
     /**

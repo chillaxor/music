@@ -64,6 +64,7 @@
             android:paddingBottom="4dp">
 
             <TextView
+                android:id="@+id/topTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="彬💖冰 颢👣涵"
