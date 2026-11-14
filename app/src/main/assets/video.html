@@ -375,7 +375,7 @@
             <button id="vipRetryBtn" type="button">搜索</button>
           </div>
           <div class="vip-cands" id="vipCands"></div>
-          <div class="vip-tip">搜到片单后由你挑一部、进详情页选集，不会自动播放。<br>影视仓的订阅与搜索不会加载。</div>
+          <div class="vip-tip">片名会先自动填好，确认后点「搜索」才开始找片源。<br>搜到片单后由你挑一部、进详情页选集，不会自动播放。影视仓的订阅与搜索不会加载。</div>
         </div>
       </div>
     </section>
@@ -2284,8 +2284,12 @@ window.__resolveVipDirect=function(bUrl,bCfg,bLabel,bPlat,bSrc){
       vipLog('DIRECT 片名识别失败，等待手动输入');
       return;
     }
-    vipLog('DIRECT title='+t);
-    vipDirectRun(c,t);
+    // 只把片名预填进输入框，停在输入页等用户点「搜索」，不再自动发起搜索 / 跳结果页。
+    // 片名第一候选是首页自定义链接的名称，用户常随手填「77」之类标记，自动搜会
+    // 直接跳到一堆无关片源；官网标题也只是预填建议，改不改、搜不搜都由用户决定。
+    vipPanelTitle(t);
+    vipLog('DIRECT 片名已预填，等待用户点「搜索」: '+t);
+    vipPanelSet(url,'片名「'+t+'」已填好，确认后点「搜索」找片源');
   })();
 };
 
