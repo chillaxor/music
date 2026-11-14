@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.os.Bundle
+import android.util.Log
 
 /**
  * 自定义 Application：进程级初始化 + 给「每一个」Activity 自动挂上导入进度浮层。
@@ -34,6 +35,27 @@ class App : Application() {
             // 悬浮窗视频：本地播放器实例还在，直接暂停
             if (VideoFloatState.running) runCatching { VideoFloatState.player?.pause() }
         }
+    }
+
+    /**
+     * 与 VideoActivity 的权限页拦截互补：部分爬虫 jar 会用 Application context 而不是
+     * Activity 去拉起系统「所有文件访问」设置页，那条路径不经过 Activity.startActivity。
+     * 只挡这一个 action，自有功能的页面跳转不受影响。
+     */
+    override fun startActivity(intent: Intent?) {
+        if (intent?.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 的权限页(ApplicationContext): ${intent.action}")
+            return
+        }
+        super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent?, options: Bundle?) {
+        if (intent?.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 的权限页(ApplicationContext): ${intent.action}")
+            return
+        }
+        super.startActivity(intent, options)
     }
 
     override fun onCreate() {

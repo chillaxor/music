@@ -454,6 +454,43 @@ class VideoActivity : AppCompatActivity() {
         private const val DEFAULT_SOURCES =
             "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
             "{\"name\":\"盒子迷动漫仓\",\"url\":\"https://盒子迷.top/摸鱼\"}]"
+
+        /** 爬虫 dex jar 私自拉起的「所有文件访问」权限设置页（见 isSpiderPermissionIntent） */
+        const val ACTION_MANAGE_ALL_FILES_ACCESS =
+            "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
+    }
+
+    /**
+     * 拦住爬虫 dex jar 私自拉起的系统权限页。
+     *
+     * 盒子迷「禁止贩卖」仓自带的 dex jar 里，com.github.catvod.spider.Init.checkPermission()
+     * 在 Config / Market 等多个爬虫的 init() 里被调用：只要 targetSdk>=30 且
+     * Environment.isExternalStorageManager() 为 false，就用 Init.getActivity() 反射拿到当前
+     * Activity 并 startActivity(ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)，把用户从搜索
+     * 结果页直接甩到「所有文件访问」设置页（实测 11-14：开启 🕷 全网搜索后必弹一次）。
+     *
+     * 那是 TVBox 给本地文件 / 网盘源用的能力，本 App 的 csp_ 源全是网络采集，不需要它。
+     * 这些类被多个源共用，按源名过滤拦不住；jar 又是动态加载的、不能改字节码，所以统一
+     * 在宿主 Activity / Application 的 startActivity 出口拦掉。只挡这一个 action，不碰自有
+     * 功能（小窗的悬浮窗授权、设置页的电池优化授权照旧）。
+     *
+     * 低版本系统的另一分支会走 Activity.requestPermissions 申请读写存储等 5 个权限，但那些
+     * 权限 Manifest 里都已声明、系统自动授予，jar 自己会判空直接返回，不会弹框；且该方法是
+     * final 不能覆写，无需处理。
+     */
+    private fun isSpiderPermissionIntent(intent: Intent?): Boolean {
+        val action = intent?.action ?: return false
+        if (action != ACTION_MANAGE_ALL_FILES_ACCESS) return false
+        Log.w("VidSpider", "拦截爬虫 jar 拉起的系统权限页: $action")
+        return true
+    }
+
+    override fun startActivity(intent: Intent) {
+        if (!isSpiderPermissionIntent(intent)) super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        if (!isSpiderPermissionIntent(intent)) super.startActivity(intent, options)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
