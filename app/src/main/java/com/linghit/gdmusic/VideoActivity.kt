@@ -1010,7 +1010,9 @@ class VideoActivity : AppCompatActivity() {
         }
 
         /**
-         * VIP 官网链接解析成功：全屏起播（独立态只显示解析面板，不适合内嵌播放器）。
+         * VIP 官网链接解析成功：内嵌在详情页顶部起播（inline=true）。
+         * 这样点选集后视频 dock 在详情页上部而非跳经典全屏；点全屏键展开、按返回又收回
+         * 详情页顶部继续播（进度保留），符合「详情页上部播放 / 全屏返回也在详情页上部」的需求。
          * idx 是官网链接里识别出的当前集下标，直连搜索会把整份剧集表一并传回来，
          * 这样上一集/下一集/播完连播都能直接复用影视仓已有的 epsList 逻辑。
          */
@@ -1020,7 +1022,7 @@ class VideoActivity : AppCompatActivity() {
             val ref = h.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: ""
             Log.i("VipParse", "playVipResult headers=${h.keys} idx=$idx url=${url.take(120)}")
             runOnUiThread {
-                startVideo(url, title, ref, epsJson, idx, "", "", inline = false, headers = h)
+                startVideo(url, title, ref, epsJson, idx, "", "", inline = true, headers = h)
             }
         }
 

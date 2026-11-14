@@ -31,7 +31,8 @@
   body.vip-only #vipPanel{display:block;padding:0}
   .vip-view{display:none;min-height:100vh}
   .vip-view.on{display:block}
-  .vip-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+  /* 内嵌播放器 docking 在详情页顶部时，把返回栏顶到播放器下方，滚动时也不会钻到播放器下面 */
+  .vip-bar{position:sticky;top:var(--vipDock,0px);z-index:5;display:flex;align-items:center;gap:10px;
     padding:12px 14px;background:rgba(14,15,19,.94);border-bottom:1px solid var(--line)}
   .vip-back{flex:none;border:1px solid var(--line);background:rgba(255,255,255,.07);color:#fff;
     border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer}
@@ -394,6 +395,9 @@
 
     <!-- 3) 详情页：信息 + 播放源 + 选集 -->
     <section class="vip-view" id="vipDetailView">
+      <!-- 内嵌播放器占位：inline 起播时原生把播放器 docking 在详情页顶部，这里撑出等高空白，
+           让标题/简介/选集落到播放器下方不被挡。高度由 __setInlineSpace 设置。 -->
+      <div id="vipDock" style="height:0"></div>
       <div class="vip-bar">
         <button class="vip-back" id="vipDetailBack" type="button">‹ 结果</button>
         <div class="vip-bar-t" id="vipDetailTitle">详情</div>
@@ -590,8 +594,14 @@ function isSpiderSite(site){
  *  h<=0 时复位为 0（全屏播放或被关掉）。 */
 function __setInlineSpace(h){
   try{
+    var hh=(h>0?h+'px':'0px');
     var el=document.getElementById('dPlayerSpace');
-    if(el) el.style.height=(h>0?h+'px':'0px');
+    if(el) el.style.height=hh;
+    // VIP 详情页占位：独立态起播也走 inline docking，顶部需要同样腾出空间
+    var v=document.getElementById('vipDock');
+    if(v) v.style.height=hh;
+    // 让返回栏 sticky 顶到播放器下方（滚动时也不钻到播放器下面）
+    document.documentElement.style.setProperty('--vipDock', hh);
   }catch(e){}
 }
 window.__setInlineSpace=__setInlineSpace;
