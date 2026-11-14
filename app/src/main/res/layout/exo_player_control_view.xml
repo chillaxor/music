@@ -154,40 +154,46 @@
       android:scrollbars="none"
       android:overScrollMode="never">
 
+  <!-- 2026-11-14：用户要求进度条下方这排（片头/片尾/投屏/倍数/选集）字体小一点，
+       以免窄屏（详情页内嵌竖条 ~400dp）一行摆不下。统一 textSize 13sp→11sp、高度
+       34dp→28dp、chip 内边距 14dp→9dp、chip 间距 10dp→7dp。
+       ⚠️ 之前 layout_gravity=center_horizontal + fillViewport：chip 超宽时整行被居中、
+       左边溢出到屏幕外且滚不到（就是用户说的「超过屏幕」）。改成 start：chip 不多时
+       由 fillViewport 撑满容器宽 + 内部 gravity=center 仍居中；超宽时左对齐、可横滑到最左。 -->
   <LinearLayout
       android:id="@+id/skipCfgRow"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:layout_gravity="center_horizontal"
+      android:layout_gravity="start"
       android:orientation="horizontal"
       android:gravity="center"
-      android:paddingStart="12dp"
-      android:paddingEnd="12dp">
+      android:paddingStart="10dp"
+      android:paddingEnd="10dp">
 
     <TextView
         android:id="@+id/skipStartBtn"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
+        android:layout_height="28dp"
         android:background="#40000000"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
         android:gravity="center"
         android:text="片头 未设置"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="设置开始播放时间" />
 
     <TextView
         android:id="@+id/skipEndBtn"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
-        android:layout_marginStart="10dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="7dp"
         android:background="#40000000"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
         android:gravity="center"
         android:text="片尾 未设置"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="设置结束播放时间" />
 
@@ -195,14 +201,14 @@
     <TextView
         android:id="@+id/castBtn"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
-        android:layout_marginStart="10dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="7dp"
         android:background="#40000000"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
         android:gravity="center"
         android:text="投屏"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="投屏到电视" />
 
@@ -212,14 +218,14 @@
     <TextView
         android:id="@+id/speedBtn"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
-        android:layout_marginStart="10dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="7dp"
         android:background="#40000000"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
         android:gravity="center"
         android:text="倍数 1.0×"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="播放倍数" />
 
@@ -230,14 +236,14 @@
     <TextView
         android:id="@+id/episodesBtn"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
-        android:layout_marginStart="10dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="7dp"
         android:background="#40000000"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
         android:gravity="center"
         android:text="选集"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#99FFFFFF"
         android:contentDescription="打开选集列表" />
   </LinearLayout>
