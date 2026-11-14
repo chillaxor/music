@@ -281,6 +281,11 @@
   .hist-item .hi-del{flex:none;color:var(--sub);font-size:14px;padding:2px 6px;cursor:pointer}
   .hist-item .hi-del:active{color:var(--bad)}
   .hist-empty{padding:26px 14px;text-align:center;color:var(--sub);font-size:13px}
+  /* VIP 搜索历史下拉：点 VIP 搜索框弹出最近 10 条（独立 key，不与影视仓混） */
+  #vipHistPanel{position:fixed;left:0;right:0;z-index:60;background:var(--card);
+    border-bottom:1px solid var(--line);box-shadow:0 14px 28px rgba(0,0,0,.5);
+    display:none;flex-direction:column;max-height:72%;overflow-y:auto}
+  #vipHistPanel.show{display:flex}
 </style>
 </head>
 <body>
@@ -372,13 +377,17 @@
           <div class="vip-url" id="vipUrl"></div>
           <div class="vip-state" id="vipState">正在准备…</div>
           <div class="vip-row" id="vipTitleRow">
-            <input id="vipTitleEt" type="text" placeholder="输入片名后点「搜索」" />
+            <input id="vipTitleEt" type="text" placeholder="输入片名后点「搜索」"
+              onfocus="showVipHistPanel()" onclick="showVipHistPanel()"
+              onblur="setTimeout(hideVipHistPanel,180)" onkeydown="if(event.key==='Enter')vipDoSearch()" />
             <button id="vipRetryBtn" type="button">搜索</button>
           </div>
           <div class="vip-cands" id="vipCands"></div>
           <div class="vip-tip">片名会先自动填好，确认后点「搜索」才开始找片源。<br>搜到片单后由你挑一部、进详情页选集，不会自动播放。影视仓的订阅与搜索不会加载。</div>
         </div>
       </div>
+      <!-- VIP 搜索历史下拉：点搜索框弹出最近 10 条 -->
+      <div id="vipHistPanel"></div>
     </section>
 
     <!-- 2) 搜索结果：带海报的片单，用户自己选 -->
@@ -1990,6 +1999,56 @@ function vipGet(url,h,ms){
 }
 function vipJson(r){ try{return r&&r.ok?JSON.parse(r.text):null; }catch(e){return null;} }
 function vipPanelTitle(t){ var e=document.getElementById('vipTitleEt'); if(e)e.value=t||''; }
+/* ============ VIP 搜索历史：点 VIP 搜索框弹出最近 10 条（独立 key） ============ */
+var VIP_HIST_MAX=10;
+var VIP_HIST_LS_KEY='gd_vip_search_history';
+function loadVipHist(){
+  try{ var a=JSON.parse(localStorage.getItem(VIP_HIST_LS_KEY)||'[]'); if(Array.isArray(a))return a; }catch(e){}
+  return [];
+}
+function persistVipHist(a){ try{ localStorage.setItem(VIP_HIST_LS_KEY,JSON.stringify(a)); }catch(e){} }
+function saveVipHist(w){
+  w=(w||'').trim(); if(!w)return;
+  var a=loadVipHist().filter(function(x){return x!==w;});
+  a.unshift(w); a=a.slice(0,VIP_HIST_MAX); persistVipHist(a);
+}
+function delVipHist(w){ persistVipHist(loadVipHist().filter(function(x){return x!==w;})); renderVipHistPanel(); }
+function clearVipHist(){ persistVipHist([]); renderVipHistPanel(); toast('已清空 VIP 搜索记录'); }
+function renderVipHistPanel(){
+  var hp=$('vipHistPanel'); if(!hp)return;
+  var a=loadVipHist();
+  if(!a.length){ hp.innerHTML='<div class="hist-empty">暂无搜索记录</div>'; return; }
+  var h='<div class="hist-hd"><span>搜索记录</span><span class="hist-clear" onclick="clearVipHist()">清空</span></div>';
+  a.forEach(function(w){
+    h+='<div class="hist-item" data-w="'+esc(w)+'"><span class="hi-ic">🕘</span><span class="hi-w">'+esc(w)+'</span><span class="hi-del">✕</span></div>';
+  });
+  hp.innerHTML=h;
+  Array.prototype.forEach.call(hp.querySelectorAll('.hist-item'),function(row){
+    row.addEventListener('click',function(ev){
+      if(ev.target&&ev.target.classList.contains('hi-del')){ ev.stopPropagation(); delVipHist(row.getAttribute('data-w')); return; }
+      var e=document.getElementById('vipTitleEt'); if(e)e.value=row.getAttribute('data-w')||'';
+      vipDoSearch();
+    });
+  });
+}
+function showVipHistPanel(){
+  var hp=$('vipHistPanel'); if(!hp)return;
+  renderVipHistPanel();
+  var row=document.getElementById('vipTitleRow');
+  hp.style.top=((row||document.body).getBoundingClientRect().bottom)+'px';
+  hp.classList.add('show');
+}
+function hideVipHistPanel(){ var hp=$('vipHistPanel'); if(hp)hp.classList.remove('show'); }
+function vipDoSearch(){
+  var c=window.__VIP_CTX__; if(!c)return;
+  var e=document.getElementById('vipTitleEt');
+  var t=vipCleanTitle(e?e.value:'');
+  if(!t){vipPanelSet('', '先填片名再点「搜索」');return;}
+  c.rawTitle=e?e.value:'';
+  vipPanelTitle(t);
+  hideVipHistPanel();
+  vipDirectRun(c,t);
+}
 function vipPanelCands(list,pick){
   var box=document.getElementById('vipCands');
   if(!box)return;
@@ -2246,6 +2305,7 @@ async function vipDirectRun(c,title){
   c.detailMap={};
   vipLog('DIRECT candidates='+cands.length+' top='+cands[0].name+' score='+cands[0]._score);
   vipPanelSet(c.url,'搜到 '+cands.length+' 部，挑一部进详情');
+  saveVipHist(title);
   vipRenderResults(c,cands,title);
 }
 
@@ -2265,14 +2325,7 @@ window.__resolveVipDirect=function(bUrl,bCfg,bLabel,bPlat,bSrc){
   var btn=document.getElementById('vipRetryBtn');
   if(btn&&!btn.__bound){
     btn.__bound=true;
-    btn.onclick=function(){
-      var e=document.getElementById('vipTitleEt');
-      var t=vipCleanTitle(e?e.value:'');
-      if(!t){vipPanelSet('', '先填片名再点「搜索」');return;}
-      c.rawTitle=e?e.value:'';
-      vipPanelTitle(t);
-      vipDirectRun(c,t);
-    };
+    btn.onclick=function(){ vipDoSearch(); };
   }
   vipPanelSet(url,'正在识别片名…');
   vipLog('DIRECT start platform='+platform+' label='+label+' url='+url.slice(0,110));
