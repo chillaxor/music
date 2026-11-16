@@ -131,6 +131,19 @@
   .chip{flex:none;padding:6px 14px;border-radius:999px;background:var(--card);border:1px solid var(--line);
     color:var(--sub);font-size:13px;cursor:pointer;white-space:nowrap}
   .chip.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  /* 豆瓣榜单条：一行一条，序号 + 剧名 + 评分，整行可点 */
+  .dchart{display:flex;flex-direction:column;gap:0;padding:2px 12px 6px}
+  .dbrow{display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+  .dbrow:active{opacity:.6}
+  .dbrow .no{flex:none;width:22px;text-align:center;font-size:14px;font-weight:800;color:var(--sub);font-variant-numeric:tabular-nums}
+  .dbrow.top .no{color:var(--accent);font-size:16px}
+  .dbrow .info{flex:1;min-width:0}
+  .dbrow .nm{font-size:14px;line-height:1.35;color:var(--txt);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dbrow .meta{font-size:11px;color:var(--sub);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dbrow .score{flex:none;font-size:14px;font-weight:800;color:#e8a33d;font-variant-numeric:tabular-nums}
+  .dbrow .score.none{color:var(--sub);font-size:11px;font-weight:400}
+  .dbrow .arrow{flex:none;color:var(--sub);font-size:15px}
+  .dbempty{padding:26px 16px;text-align:center;color:var(--sub);font-size:13px;line-height:1.7}
   /* 网格 */
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:10px 12px 24px}
   @media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}}
@@ -446,6 +459,8 @@ var STATE={
   playFrom:'',playEps:[],playIdx:-1,playEpsJson:'',playSpJson:'',
   playVodId:'',             // 正在播放的片子 vod_id，选集页用它高亮「正在播放」的集
   played:{},               // 当前详情「已播」集签名集合（from$$$idx → true），本地持久化
+  homeMode:'douban',       // 首页 chips/推荐流模式：douban=豆瓣多维度榜单（默认）/ cms=影视仓分类列表
+  doubanChart:'tv_hot',    // 当前选中的豆瓣榜 id
 };
 /* 进入详情是否自动起播第一集（内嵌在详情页顶部，非全屏）。
  * 仅「打开详情」时置 true；恢复播放前那一页（__restoreAfterPlay）、点选集重画等
@@ -754,8 +769,7 @@ async function preloadAllSources(){
 async function selectSource(){
   var s=STATE.sources[STATE.cur]; if(!s)return;
   $('curSrc').textContent=' · '+esc(s.name);
-  setState('正在加载接口…');
-  $('chips').innerHTML=''; $('grid').innerHTML='';
+  if(STATE.homeMode!=='douban'){ setState('正在加载接口…'); $('chips').innerHTML=''; $('grid').innerHTML=''; }
   // 当前源没缓存过（刚添加/切源）就先拉一次
   if(!STATE.srcSites[STATE.cur]) await loadOneSource(STATE.cur);
   var sites=STATE.srcSites[STATE.cur]||[];
@@ -771,6 +785,7 @@ async function selectSource(){
   await loadSite(sites[STATE.siteIdx]);
 }
 function renderSiteChips(){
+  if(STATE.homeMode==='douban')return; // 豆瓣模式下 chips 归榜单所有，站点切换走 ☰ 抽屉
   var box=$('chips'); box.innerHTML='';
   STATE.sites.forEach(function(s,i){
     var c=document.createElement('div'); c.className='chip'+(i===STATE.siteIdx?' on':'');
@@ -781,7 +796,6 @@ function renderSiteChips(){
 }
 async function loadSite(site){
   STATE.site=site; STATE.t=0; STATE.pg=1; STATE.wd=""; STATE.groups=[];
-  $('grid').innerHTML='';
   var api=site.api;
   // 分类
   if(site.type!==3){
@@ -789,11 +803,98 @@ async function loadSite(site){
     if(rc.ok){try{var cj=JSON.parse(rc.text);STATE.classes=cj.class||[];}catch(e){STATE.classes=[];}}
     console.log('loadSite cate:',site.name,'code='+rc.code,'分类',STATE.classes.length,'个');
   } else { STATE.classes=[]; }
+  // 豆瓣模式：站点只作为搜索后端，首页 grid 归豆瓣榜所有，不渲染影视仓列表/分类 chip
+  if(STATE.homeMode==='douban')return;
+  $('grid').className='grid'; $('grid').innerHTML='';
   renderClassChips();
   await loadList();
 }
-function renderClassChips(){
+/* ============ 豆瓣榜单（首页推荐流 · 发现层） ============
+ * tab = 多维度榜单；条目 = 剧名，点一下把剧名填进搜索框并触发全网搜索，
+ * 播放/下载仍走原有影视仓链路。数据按天缓存到 localStorage，冷启动不重复请求。
+ * 保留影视仓原分类浏览：设 homeMode='cms' 可切回（见 toggleHomeMode）。 */
+var DB_CHARTS=[
+  {id:'tv_hot',name:'热播剧集'},
+  {id:'tv_global_best_weekly',name:'全球口碑'},
+  {id:'tv_chinese_best_weekly',name:'华语口碑'},
+  {id:'tv_domestic',name:'国产剧'},
+  {id:'tv_korean',name:'韩剧'},
+  {id:'tv_american',name:'美剧'},
+  {id:'tv_japanese',name:'日剧'},
+  {id:'tv_variety_show',name:'综艺'},
+  {id:'tv_animation',name:'动画'},
+  {id:'movie_showing',name:'正在热映'},
+  {id:'movie_top250',name:'电影Top250'}
+];
+var DB_KEY='gd_douban_chart_v1';
+function dbToday(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+function dbCacheGet(id){
+  try{var c=JSON.parse(localStorage.getItem(DB_KEY)||'{}')[id];if(c&&c.day===dbToday()&&c.items&&c.items.length)return c.items;}catch(e){}
+  return null;
+}
+function dbCachePut(id,items){
+  try{var all=JSON.parse(localStorage.getItem(DB_KEY)||'{}');all[id]={day:dbToday(),items:items};
+    localStorage.setItem(DB_KEY,JSON.stringify(all));}catch(e){}
+}
+function renderDoubanChips(){
   var box=$('chips'); box.innerHTML='';
+  DB_CHARTS.forEach(function(c){
+    var el=document.createElement('div'); el.className='chip'+(c.id===STATE.doubanChart?' on':'');
+    el.textContent=c.name;
+    el.onclick=function(){STATE.doubanChart=c.id;renderDoubanChips();loadDouban(c.id);};
+    box.appendChild(el);
+  });
+}
+function dbName(id){var f=DB_CHARTS.filter(function(c){return c.id===id;})[0];return f?f.name:id;}
+function renderDoubanItems(items){
+  var box=$('grid'); box.className='dchart'; box.innerHTML='';
+  if(!items.length){box.innerHTML='<div class="dbempty">该榜暂时没有数据<br>点上面的榜单切换试试</div>';return;}
+  items.forEach(function(x,i){
+    var row=document.createElement('div'); row.className='dbrow'+(i<3?' top':'');
+    var score=(x.rating>0)?('<div class="score">'+x.rating.toFixed(1)+'</div>'):'<div class="score none">暂无评分</div>';
+    row.innerHTML='<div class="no">'+(i+1)+'</div><div class="info"><div class="nm">'+esc(x.title)+'</div>'+
+      '<div class="meta">'+esc(x.sub||'')+'</div></div>'+score+'<div class="arrow">›</div>';
+    row.onclick=function(){
+      // 点条目 = 用剧名填入搜索框并搜索（全网），播放/下载仍走影视仓
+      $('kw').value=x.title; STATE.doubanSearchFrom=x.title; doSearch();
+    };
+    box.appendChild(row);
+  });
+}
+async function loadDouban(id){
+  STATE.noMoreHome=true; // 豆瓣榜一次性拉全，禁止首页无限翻页（翻页是影视仓列表逻辑）
+  var name=dbName(id);
+  var cache=dbCacheGet(id);
+  if(cache){renderDoubanItems(cache);setState('豆瓣 · '+name+' · '+cache.length+' 部 · 点剧名搜索片源');return;}
+  setState('正在加载豆瓣「'+name+'」…');
+  var u='https://m.douban.com/rexxar/api/v2/subject_collection/'+id+'/items?start=0&count=21';
+  var r=await getEx(u,{'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+    'Referer':'https://m.douban.com/'});
+  var items=[];
+  if(r.ok&&r.text){try{
+    var j=JSON.parse(r.text);
+    (j.subject_collection_items||[]).forEach(function(v){
+      if(!v.title)return;
+      var rating=(v.rating&&v.rating.value)||0;
+      var sub=(v.card_subtitle||'').replace(/\s*\/\s*/g,' · ');
+      if(sub.length>52)sub=sub.slice(0,52)+'…';
+      items.push({title:v.title,rating:rating,sub:sub});
+    });
+  }catch(e){console.log('douban parse fail',e);}}
+  if(!items.length){
+    renderDoubanItems([]);
+    setState('豆瓣「'+name+'」加载失败（网络或限流），点其他榜重试');
+    console.log('douban FAIL '+id+' code='+r.code);
+    return;
+  }
+  dbCachePut(id,items);
+  renderDoubanItems(items);
+  setState('豆瓣 · '+name+' · '+items.length+' 部 · 点剧名搜索片源');
+  console.log('douban OK '+id+' '+items.length+' 首='+items[0].title);
+}
+function renderClassChips(){
+  if(STATE.homeMode==='douban'){ renderDoubanChips(); return; }
+  var box=$('chips'); box.className='chips'; box.innerHTML='';
   var all=document.createElement('div'); all.className='chip'+(STATE.t===0&&!STATE.wd?' on':''); all.textContent='推荐';
   all.onclick=function(){STATE.t=0;STATE.wd="";renderClassChips();reloadList();};
   box.appendChild(all);
@@ -802,7 +903,6 @@ function renderClassChips(){
     el.textContent=c.type_name; el.onclick=function(){STATE.t=c.type_id;STATE.wd="";renderClassChips();reloadList();};
     box.appendChild(el);
   });
-  // 站点切换 chip 也补上（多站点入口）
   if(STATE.sites&&STATE.sites.length>1){
     var sep=document.createElement('div'); sep.style.flex='none'; sep.style.width='1px'; sep.style.background='var(--line)'; box.appendChild(sep);
     STATE.sites.forEach(function(s,i){
@@ -813,7 +913,11 @@ function renderClassChips(){
     });
   }
 }
-function reloadList(){STATE.pg=1;STATE.wd="";STATE.groups=[];$('grid').innerHTML='';loadList();}
+function reloadList(){
+  STATE.pg=1;STATE.wd="";STATE.groups=[];
+  if(STATE.homeMode==='douban'){ $('grid').className='dchart'; renderDoubanChips(); loadDouban(STATE.doubanChart); return; }
+  $('grid').className='grid'; $('grid').innerHTML='';loadList();
+}
 
 /* ============ 列表 / 搜索 ============ */
 async function loadList(){
@@ -1270,8 +1374,9 @@ function doSearch(){
   // 「请先选接口源」直接 return，表现为点搜索毫无反应；改按 srcSites 判断。
   var srcReady=(STATE.srcSites||[]).some(function(x){return x&&x.length;});
   if((!STATE.sites||!STATE.sites.length)&&!srcReady){toast('接口还在加载，请稍候再搜');return;}
-  if(!w){ // 清空搜索：全网模式刷新推荐流（进结果页），本站模式回推荐列表
+  if(!w){ // 清空搜索：豆瓣模式回豆瓣榜；影视仓全网刷新推荐流、本站回推荐列表
     STATE.groups=[];
+    if(STATE.homeMode==='douban'){ closeSearchPage();reloadList();return; }
     if(STATE.searchScope==='all'){
       var t=collectDirectSites();
       if(t.length){SRC_TAB_IDX=-1;searchAll('');return;} // 空词不回列表，直接刷新推荐
@@ -1281,7 +1386,7 @@ function doSearch(){
   saveHist(w);          // 记一条搜索历史（去重、置顶、最多 10 条）
   hideHistPanel();
   if(STATE.searchScope==='all'){SRC_TAB_IDX=-1;searchAll(w);}
-  else { closeSearchPage(); STATE.wd=w;STATE.pg=1;STATE.groups=[];$('grid').innerHTML='';renderClassChips();loadList(); }
+  else { closeSearchPage(); STATE.wd=w;STATE.pg=1;STATE.groups=[];$('grid').className='grid';$('grid').innerHTML='';renderClassChips();loadList(); }
 }
 
 /* ============ 详情 + 选集 ============ */
@@ -2434,8 +2539,15 @@ async function boot(){
   $('scopeBtn').textContent = STATE.searchScope==='all' ? '全网' : '本站';
   try{ STATE.spiderOn = localStorage.getItem('gd_video_spider')==='1'; }catch(e){}
   paintSpiderBtn();
-  // 先渲染当前源（不等其他源），再后台预加载其余订阅供全网搜索
-  selectSource();
+  // 影视仓源先加载（供点豆瓣条目后的全网搜索用），完成后再渲染首页豆瓣榜，
+  // 避免 selectSource 里的「正在加载接口…」状态/列表逻辑覆盖豆瓣 DOM。
+  selectSource().then(function(){
+    if(STATE.homeMode==='douban'){
+      $('grid').className='dchart';
+      renderDoubanChips();
+      loadDouban(STATE.doubanChart);
+    }
+  });
   preloadAllSources().then(function(){
     var n=collectDirectSites().length;
     console.log('preloadAllSources done: 直连站',n,'个');
