@@ -1,40 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- QQ 音乐榜单横滑卡片：纯文字双行（歌名 + 歌手），无封面 -->
+<!-- QQ 音乐榜单卡片：网格项（一行2个），纯文字双行（歌名 + 歌手）。
+     文字色一律走主题属性 gdTextPrimary/gdTextSecondary，深浅主题都能看清；
+     旧版硬编码白字在浅色主题下等于白底白字。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="132dp"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@drawable/bg_pill_glass"
     android:paddingStart="10dp"
     android:paddingEnd="10dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:layout_marginEnd="8dp">
+    android:paddingTop="9dp"
+    android:paddingBottom="9dp"
+    android:layout_marginEnd="6dp"
+    android:layout_marginBottom="6dp">
 
     <TextView
         android:id="@+id/chartRank"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="01"
-        android:textSize="11sp"
+        android:textSize="12sp"
         android:textStyle="bold"
-        android:textColor="#8CFFFFFF"
+        android:textColor="?attr/gdTextSecondary"
         android:includeFontPadding="false"/>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="7dp"
+        android:layout_marginStart="6dp"
         android:orientation="vertical">
 
         <TextView
             android:id="@+id/chartTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textColor="?attr/gdTextPrimary"
             android:maxLines="1"
             android:ellipsize="end"
             android:includeFontPadding="false"/>
@@ -44,8 +47,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
-            android:textSize="10sp"
-            android:textColor="#B8FFFFFF"
+            android:textSize="11sp"
+            android:textColor="?attr/gdTextSecondary"
             android:maxLines="1"
             android:ellipsize="end"
             android:includeFontPadding="false"/>

@@ -998,12 +998,14 @@
                             android:orientation="horizontal"/>
                     </HorizontalScrollView>
 
+                    <!-- 榜单卡片：一行2个网格、垂直排布，一屏能看十余首。
+                         高度固定让列表内部纵向滚动，不挤占下方搜索结果区。
+                         LayoutManager 在代码里设 GridLayoutManager(this, 2)。 -->
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/chartList"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        android:layout_height="300dp"
                         android:layout_marginTop="8dp"
-                        android:orientation="horizontal"
                         android:clipToPadding="false"
                         android:scrollbars="none"/>
                 </LinearLayout>

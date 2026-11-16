@@ -32,6 +32,7 @@ import com.google.android.material.card.MaterialCardView
 import androidx.core.app.ActivityCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.*
@@ -1559,7 +1560,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             input.setText(kw)
             search()
         }
-        chartList.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
+        chartList.layoutManager = GridLayoutManager(this, 2)
         chartList.adapter = chartAdapter
 
         chartTabs.removeAllViews()
