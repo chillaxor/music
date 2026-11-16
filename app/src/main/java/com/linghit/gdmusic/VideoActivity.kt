@@ -71,6 +71,7 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -823,6 +824,40 @@ class VideoActivity : AppCompatActivity() {
                     pendingResumeJson = null
                     fireVipParse(it)
                 } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
+            }
+
+            /**
+             * 豆瓣图床（img*.doubanio.com）有防盗链：不带 Referer 一律 418，
+             * 而本页是 file:// 加载，<img src> 带不出豆瓣 Referer → 海报全裂。
+             * 这里只拦豆瓣 /view/photo/ 的图片请求，用 OkHttp 补 Referer + UA 取回，
+             * 包装成 WebResourceResponse 交给 WebView。其余请求照常返回 null。
+             */
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                val url = request.url.toString()
+                if (!url.contains("doubanio.com") || !url.contains("/view/photo/")) return null
+                return try {
+                    val req = Request.Builder().url(url)
+                        .header("Referer", "https://m.douban.com/")
+                        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15")
+                        .build()
+                    client.newCall(req).execute().use { resp ->
+                        val body = resp.body ?: return null
+                        if (!resp.isSuccessful) {
+                            Log.w("VidDoubanImg", "HTTP ${resp.code} ${url.take(100)}")
+                            return null
+                        }
+                        val bytes = body.bytes()
+                        val mime = body.contentType()?.toString()?.ifBlank { null } ?: "image/jpeg"
+                        Log.d("VidDoubanImg", "OK ${bytes.size}B ${url.take(90)}")
+                        WebResourceResponse(mime, null, ByteArrayInputStream(bytes))
+                    }
+                } catch (e: Exception) {
+                    Log.w("VidDoubanImg", "失败 ${e.message} ${url.take(90)}")
+                    null
+                }
             }
 
             // 网页万一跳到 baiduboxapp:// 之类的私有协议，静默拦截避免错误页

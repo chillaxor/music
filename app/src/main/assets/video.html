@@ -137,6 +137,8 @@
   .dbrow:active{opacity:.6}
   .dbrow .no{flex:none;width:22px;text-align:center;font-size:14px;font-weight:800;color:var(--sub);font-variant-numeric:tabular-nums}
   .dbrow.top .no{color:var(--accent);font-size:16px}
+  .dbrow .poster{flex:none;width:42px;height:59px;object-fit:cover;border-radius:4px;background:#2a2a30}
+  .dbrow .poster.ph{background:linear-gradient(135deg,#3a3a44,#26262e)}
   .dbrow .info{flex:1;min-width:0}
   .dbrow .nm{font-size:14px;line-height:1.35;color:var(--txt);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dbrow .meta{font-size:11px;color:var(--sub);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -826,7 +828,7 @@ var DB_CHARTS=[
   {id:'movie_showing',name:'正在热映'},
   {id:'movie_top250',name:'电影Top250'}
 ];
-var DB_KEY='gd_douban_chart_v1';
+var DB_KEY='gd_douban_chart_v2'; // v2：条目带海报 pic，旧 v1 缓存没有图，升级后自动重拉
 function dbToday(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
 function dbCacheGet(id){
   try{var c=JSON.parse(localStorage.getItem(DB_KEY)||'{}')[id];if(c&&c.day===dbToday()&&c.items&&c.items.length)return c.items;}catch(e){}
@@ -852,7 +854,9 @@ function renderDoubanItems(items){
   items.forEach(function(x,i){
     var row=document.createElement('div'); row.className='dbrow'+(i<3?' top':'');
     var score=(x.rating>0)?('<div class="score">'+x.rating.toFixed(1)+'</div>'):'<div class="score none">暂无评分</div>';
-    row.innerHTML='<div class="no">'+(i+1)+'</div><div class="info"><div class="nm">'+esc(x.title)+'</div>'+
+    // 海报：豆瓣图床 Referer 由原生 WebViewClient 拦截补齐（见 VideoActivity shouldInterceptRequest）
+    var pic=x.pic?('<img class="poster" src="'+esc(x.pic)+'" alt="" onerror="this.style.visibility=\'hidden\'">'):'<div class="poster ph"></div>';
+    row.innerHTML='<div class="no">'+(i+1)+'</div>'+pic+'<div class="info"><div class="nm">'+esc(x.title)+'</div>'+
       '<div class="meta">'+esc(x.sub||'')+'</div></div>'+score+'<div class="arrow">›</div>';
     row.onclick=function(){
       // 点条目 = 用剧名填入搜索框并搜索（全网），播放/下载仍走影视仓
@@ -878,7 +882,9 @@ async function loadDouban(id){
       var rating=(v.rating&&v.rating.value)||0;
       var sub=(v.card_subtitle||'').replace(/\s*\/\s*/g,' · ');
       if(sub.length>52)sub=sub.slice(0,52)+'…';
-      items.push({title:v.title,rating:rating,sub:sub});
+      // pic.normal = s_ratio_poster 小图（约 22KB），21 条约 450KB；图床 Referer 由原生层补
+      var pic=(v.pic&&(v.pic.normal||v.pic.large))||'';
+      items.push({title:v.title,rating:rating,sub:sub,pic:pic});
     });
   }catch(e){console.log('douban parse fail',e);}}
   if(!items.length){
