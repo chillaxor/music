@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- 全屏锁定态常驻的锁按钮底：暗色半透明圆角，避免在暗色播放画面上形成亮块 -->
+    <solid android:color="#66000000"/>
+    <corners android:radius="20dp"/>
+</shape>

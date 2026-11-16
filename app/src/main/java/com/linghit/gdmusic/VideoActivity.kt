@@ -3170,7 +3170,9 @@ class VideoActivity : AppCompatActivity() {
             else View.GONE
         videoLock.text = if (locked) "🔒" else "🔓"
         videoLock.contentDescription = if (locked) "解锁播放界面" else "锁定播放界面"
-        videoLock.alpha = if (locked) 1f else 0.85f
+        // 锁屏常驻图标压暗：锁定态画面全暗只剩它一个，原来的 alpha=1f + 亮白玻璃底太扎眼，
+        // 现用暗色底（bg_lock_dark）+ 低透明度，低调不抢戏，但仍看得清可点。
+        videoLock.alpha = if (locked) 0.45f else 0.55f
     }
 
     /** 右侧竖排上下集：全屏态已搬到中间播放/暂停左右 → 隐藏，避免同屏两套；

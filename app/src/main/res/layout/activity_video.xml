@@ -103,14 +103,16 @@
         <!-- 左侧中部：锁定播放界面（仅全屏态显示）。
              未锁时显示开锁图标，跟控制条一起显隐；点它锁住整个播放界面：
              控制条 / 顶部标题 / 时钟 / 右侧上下集 / 全屏键全隐藏，屏幕手势全部吞掉，
-             只留本按钮常驻（图标变闭合锁）用于解锁。 -->
+             只留本按钮常驻（图标变闭合锁）用于解锁。
+             底色用暗色半透明圆角（bg_lock_dark），不用亮色玻璃——锁定态画面全暗只剩它，
+             亮底 + 白色 emoji 会格外扎眼；暗底 + 降透明度后才低调不抢戏。 -->
         <TextView
             android:id="@+id/videoLock"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_gravity="center_vertical|start"
             android:layout_marginStart="10dp"
-            android:background="@drawable/bg_pill_glass"
+            android:background="@drawable/bg_lock_dark"
             android:gravity="center"
             android:text="🔓"
             android:textSize="18sp"
