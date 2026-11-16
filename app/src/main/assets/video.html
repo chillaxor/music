@@ -847,6 +847,36 @@ function renderDoubanChips(){
     box.appendChild(el);
   });
 }
+/* 豆瓣榜左右滑动切榜：在榜单列表区横向滑一下 = 上一榜/下一榜，不必只能点 tab。
+ * 只在 homeMode='douban' 生效；横向位移 >60px 且明显大于纵向、 且 900ms 内才算，
+ * 竖滑（页面滚动）、慢拖、点条目搜索都不会误切。向左滑看下一榜，向右滑回上一榜。 */
+function setupDoubanSwipe(){
+  if(window.__doubanSwipeReady)return;
+  window.__doubanSwipeReady=true;
+  var g=$('grid'), sx=0, sy=0, st=0, tracking=false;
+  g.addEventListener('touchstart',function(e){
+    if(STATE.homeMode!=='douban'||e.touches.length!==1){tracking=false;return;}
+    var t=e.touches[0]; sx=t.clientX; sy=t.clientY; st=Date.now(); tracking=true;
+  },{passive:true});
+  g.addEventListener('touchend',function(e){
+    if(!tracking)return; tracking=false;
+    if(STATE.homeMode!=='douban'||!e.changedTouches.length)return;
+    var t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy, dt=Date.now()-st;
+    if(Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.5||dt>900)return;
+    var cur=-1;
+    for(var i=0;i<DB_CHARTS.length;i++){if(DB_CHARTS[i].id===STATE.doubanChart){cur=i;break;}}
+    if(cur<0)return;
+    var next=cur+(dx<0?1:-1); // 左滑→下一榜，右滑→上一榜
+    if(next<0||next>=DB_CHARTS.length)return;
+    STATE.doubanChart=DB_CHARTS[next].id;
+    renderDoubanChips();
+    loadDouban(STATE.doubanChart);
+    // 让高亮 tab 滑进可见区（只动 chips 自己的横向滚动，不碰页面）
+    var box=$('chips'), on=box.querySelector('.chip.on');
+    if(on)box.scrollLeft=on.offsetLeft-box.clientWidth/2+on.offsetWidth/2;
+  },{passive:true});
+  g.addEventListener('touchcancel',function(){tracking=false;},{passive:true});
+}
 function dbName(id){var f=DB_CHARTS.filter(function(c){return c.id===id;})[0];return f?f.name:id;}
 function renderDoubanItems(items){
   var box=$('grid'); box.className='dchart'; box.innerHTML='';
@@ -869,7 +899,7 @@ async function loadDouban(id){
   STATE.noMoreHome=true; // 豆瓣榜一次性拉全，禁止首页无限翻页（翻页是影视仓列表逻辑）
   var name=dbName(id);
   var cache=dbCacheGet(id);
-  if(cache){renderDoubanItems(cache);setState('豆瓣 · '+name+' · '+cache.length+' 部 · 点剧名搜索片源');return;}
+  if(cache){renderDoubanItems(cache);setState('豆瓣 · '+name+' · '+cache.length+' 部 · 左右滑切榜 / 点剧名搜索');return;}
   setState('正在加载豆瓣「'+name+'」…');
   var u='https://m.douban.com/rexxar/api/v2/subject_collection/'+id+'/items?start=0&count=21';
   var r=await getEx(u,{'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
@@ -895,7 +925,7 @@ async function loadDouban(id){
   }
   dbCachePut(id,items);
   renderDoubanItems(items);
-  setState('豆瓣 · '+name+' · '+items.length+' 部 · 点剧名搜索片源');
+  setState('豆瓣 · '+name+' · '+items.length+' 部 · 左右滑切榜 / 点剧名搜索');
   console.log('douban OK '+id+' '+items.length+' 首='+items[0].title);
 }
 function renderClassChips(){
@@ -2541,6 +2571,7 @@ window.__resolveVipDirect=function(bUrl,bCfg,bLabel,bPlat,bSrc){
 async function boot(){
   // 官网链接解析是独立态：不加载任何影视仓订阅，也不拉首页列表
   if(/[?&]vip=1(?:&|$)/.test(location.search)){ window.enterVipOnly(); return; }
+  setupDoubanSwipe(); // 榜单区左右滑切榜（只绑一次，非豆瓣模式自动不响应）
   loadSources();
   $('scopeBtn').textContent = STATE.searchScope==='all' ? '全网' : '本站';
   try{ STATE.spiderOn = localStorage.getItem('gd_video_spider')==='1'; }catch(e){}

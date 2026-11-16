@@ -150,6 +150,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var chartTabs: LinearLayout
     private lateinit var chartList: RecyclerView
     private lateinit var chartRefresh: TextView
+    private lateinit var chartToggle: TextView
+    private var chartCollapsed = false
     private lateinit var chartAdapter: ChartAdapter
     private var chartId: String = QQChartApi.CHARTS.first().id
     private var chartLoaded = false
@@ -1552,6 +1554,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         chartTabs = findViewById(R.id.chartTabs)
         chartList = findViewById(R.id.chartList)
         chartRefresh = findViewById(R.id.chartRefresh)
+        chartToggle = findViewById(R.id.chartToggle)
+        chartToggle.setOnClickListener { setChartCollapsed(!chartCollapsed) }
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
 
@@ -1589,8 +1593,16 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
     }
 
-    /** 切榜单：先吃当天缓存，没有再联网 */
+    /** 榜单卡片区收起/展开：只收卡片，保留榜签行，切榜或点展开随时能开 */
+    private fun setChartCollapsed(collapsed: Boolean) {
+        chartCollapsed = collapsed
+        chartList.visibility = if (collapsed) View.GONE else View.VISIBLE
+        chartToggle.text = if (collapsed) "展开 ▾" else "收起 ▴"
+    }
+
+    /** 切榜单：先吃当天缓存，没有再联网；切榜即展开 */
     private fun selectChart(c: QQChartApi.Chart) {
+        setChartCollapsed(false)
         chartId = c.id
         styleChartChips(QQChartApi.CHARTS.indexOfFirst { it.id == c.id })
         val cached = QQChartStore.load(this, c.id)
@@ -1637,6 +1649,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
 
     private fun search(){
         val kw=input.text.toString().trim(); if(kw.isEmpty())return
+        setChartCollapsed(true) // 搜索后榜单卡片自动缩起，让出空间给搜索结果；点展开或切榜签再开
         lastKeyword=kw; currentPage=1; hasMore=true; isLoadingMore=false
         status.text="正在搜索……"
         scope.launch{
