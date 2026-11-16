@@ -229,6 +229,22 @@
         android:textColor="#99FFFFFF"
         android:contentDescription="播放倍数" />
 
+    <!-- 2026-11-16 用户要求：快进/后退步进秒数设置，默认 5 秒。点它就地弹菜单选秒数，
+         中间控制条的 −Ns / +Ns 按钮按此值跳转；全局生效（不按影片区分），持久化到 SharedPreferences。 -->
+    <TextView
+        android:id="@+id/seekStepBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="28dp"
+        android:layout_marginStart="7dp"
+        android:background="#40000000"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
+        android:gravity="center"
+        android:text="步进 5s"
+        android:textSize="11sp"
+        android:textColor="#99FFFFFF"
+        android:contentDescription="设置快进后退秒数" />
+
     <!-- 2026-11-13 用户要求：全屏播放时在「倍数」旁边加「选集」。
          点它弹出右侧抽屉列出当前线路全部剧集，点任意一集立即播放（复用 playIndex，
          直链 / 播放页嗅探 / 爬虫源解析三条分支都照旧走）。
@@ -289,8 +305,36 @@
         style="@style/ExoStyledControls.Button.Center.Previous"
         android:contentDescription="上一集" />
 
+    <!-- 2026-11-16 用户要求：全屏时一键后退/快进固定秒数（默认 5 秒）。
+         用 −Ns / +Ns 文字而不用 media3 的 exo_rew/exo_ffwd 图标：图标与两侧
+         「上一集/下一集」箭头太像曾混淆过。秒数由配置行 seekStepBtn 设置，
+         点一下跳一步，文案随设置实时更新。自定义 id → media3 不接管显隐/行为。 -->
+    <TextView android:id="@+id/videoCenterRew"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="52dp"
+        android:minHeight="48dp"
+        android:gravity="center"
+        android:text="−5s"
+        android:textSize="13sp"
+        android:textColor="#FFFFFF"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="后退，默认5秒" />
+
     <ImageButton android:id="@id/exo_play_pause"
         style="@style/ExoStyledControls.Button.Center.PlayPause"/>
+
+    <TextView android:id="@+id/videoCenterFfwd"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="52dp"
+        android:minHeight="48dp"
+        android:gravity="center"
+        android:text="+5s"
+        android:textSize="13sp"
+        android:textColor="#FFFFFF"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="快进，默认5秒" />
 
     <ImageButton android:id="@+id/videoCenterNext"
         style="@style/ExoStyledControls.Button.Center.Next"

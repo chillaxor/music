@@ -244,6 +244,11 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var castBtn: TextView
     /** 控制条上的倍速 chip：显示当前档位，点开选档（长按临时 3× 松手后回到该档位） */
     private lateinit var speedBtn: TextView
+    /** 2026-11-16：快进/后退步进秒数（毫秒），全局持久化，默认 5 秒 */
+    private var seekStepMs: Long = 5000L
+    private lateinit var seekStepBtn: TextView
+    private lateinit var centerRew: TextView
+    private lateinit var centerFfwd: TextView
     /** 控制条上紧挨倍速的「选集」chip：点开右侧抽屉，列出当前线路全部剧集 */
     private lateinit var episodesBtn: TextView
     /** 全屏选集抽屉（activity_video.xml）：遮罩 / 卡片 / 关闭 / 标题 / 提示 / 剧集网格 */
@@ -537,6 +542,11 @@ class VideoActivity : AppCompatActivity() {
         // 用自定义 id，media3 不会给它们绑默认行为，切集完全走 epsList。
         centerPrev = playerView.findViewById(R.id.videoCenterPrev)
         centerNext = playerView.findViewById(R.id.videoCenterNext)
+        // 全屏一键后退/快进：文案 −Ns/+Ns，秒数由「步进」chip 设置
+        centerRew = playerView.findViewById(R.id.videoCenterRew)
+        centerFfwd = playerView.findViewById(R.id.videoCenterFfwd)
+        centerRew.setOnClickListener { seekByStep(-1) }
+        centerFfwd.setOnClickListener { seekByStep(1) }
         videoLock.setOnClickListener { toggleLock() }
         centerPrev.setOnClickListener { playPrev() }
         centerNext.setOnClickListener { playNext() }
@@ -561,6 +571,12 @@ class VideoActivity : AppCompatActivity() {
         speedBtn = playerView.findViewById(R.id.speedBtn)
         speedBtn.setOnClickListener { showSpeedMenu() }
         updateSpeedChip()
+        // 「步进」chip：快进/后退一键跳转的秒数，默认 5 秒，全局持久化
+        seekStepBtn = playerView.findViewById(R.id.seekStepBtn)
+        seekStepBtn.setOnClickListener { showSeekStepMenu() }
+        seekStepMs = getSharedPreferences("video_player", MODE_PRIVATE)
+            .getLong("seek_step_ms", 5000L).coerceIn(1000L, 60000L)
+        updateSeekStepUi()
         // 选集 chip（紧挨倍速）+ 右侧抽屉：点任意一集直接复用 playIndex() 切集
         episodesBtn = playerView.findViewById(R.id.episodesBtn)
         episodesBtn.setOnClickListener { showEpisodePanel() }
@@ -2097,6 +2113,61 @@ class VideoActivity : AppCompatActivity() {
         }
         popup.show()
     }
+
+    /** 同步「步进 Ns」chip 与中间 −Ns/+Ns 按钮的文案 */
+    private fun updateSeekStepUi() {
+        val s = seekStepMs / 1000L
+        if (::seekStepBtn.isInitialized) seekStepBtn.text = "步进 ${s}s"
+        if (::centerRew.isInitialized) centerRew.text = "−${s}s"
+        if (::centerFfwd.isInitialized) centerFfwd.text = "+${s}s"
+    }
+
+    /** 点「步进」chip：就地弹菜单选秒数（默认 5 秒），全局持久化，当前档打勾 */
+    private fun showSeekStepMenu() {
+        val opts = longArrayOf(3_000L, 5_000L, 10_000L, 15_000L, 30_000L, 60_000L)
+        val popup = android.widget.PopupMenu(this, seekStepBtn, Gravity.END)
+        opts.forEachIndexed { i, ms ->
+            val mark = if (ms == seekStepMs) "✓ " else "   "
+            popup.menu.add(0, i, i, mark + "${ms / 1000} 秒")
+        }
+        popup.setOnMenuItemClickListener { item ->
+            val ms = opts[item.itemId]
+            seekStepMs = ms
+            getSharedPreferences("video_player", MODE_PRIVATE).edit()
+                .putLong("seek_step_ms", ms).apply()
+            updateSeekStepUi()
+            Log.d("VidPlay", "快进/后退步进 -> ${ms / 1000}s")
+            toast("快进/后退步进 ${ms / 1000} 秒")
+            true
+        }
+        popup.show()
+    }
+
+    /** 按步进跳转一步：sign=-1 后退、+1 快进；本地 ExoPlayer 与投屏双路径。
+     *  提示复用横向拖动的居中 hint，1.2s 后自动消失。 */
+    private fun seekByStep(sign: Int) {
+        val dur = runCatching { player?.duration }.getOrNull() ?: 0L
+        val base = currentPosMs()
+        var target = base + sign * seekStepMs
+        target = if (dur > 0) target.coerceIn(0L, dur) else target.coerceAtLeast(0L)
+        if (target == base) {
+            toast(if (sign > 0) "已经到片尾" else "已经到片头")
+            return
+        }
+        if (casting) castCtrl?.seekTo(target) { _, _ -> }
+        else runCatching { player?.seekTo(target) }
+        videoSeekHint.text = buildString {
+            append(fmtTime(target))
+            append("   ")
+            append(if (sign > 0) "快进 ${seekStepMs / 1000} 秒" else "后退 ${seekStepMs / 1000} 秒")
+        }
+        videoSeekHint.visibility = View.VISIBLE
+        mainHandler.removeCallbacks(seekHintHide)
+        mainHandler.postDelayed(seekHintHide, 1200)
+        Log.d("VidPlay", "步进跳转 sign=$sign ${base}ms -> ${target}ms (${seekStepMs}ms)")
+    }
+
+    private val seekHintHide = Runnable { videoSeekHint.visibility = View.GONE }
 
     /**
      * 点「选集」chip：右侧抽屉列出当前线路全部剧集，点一格直接切（复用 playIndex）。
