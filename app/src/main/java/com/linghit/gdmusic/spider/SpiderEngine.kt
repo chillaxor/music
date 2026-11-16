@@ -82,6 +82,21 @@ class SpiderEngine private constructor(private val appCtx: Context) {
 
     // ===================== 对外异步 API =====================
 
+    /**
+     * 后台预热内置 jar 类表。
+     *
+     * 原本 11 个 dex jar 的类表在首次 spider() 调用时同步构建（写盘 + DexClassLoader +
+     * injectContext），这段耗时算进 playAsync 的 15s 看门狗窗口，是首次点播慢的主因之一。
+     * App 启动后闲时调本方法提前建好，首播链路直接命中 builtInLoaded 跳过。
+     * 独立 daemon 线程，不占 4 线程的搜索执行池。
+     */
+    fun prewarm() {
+        Thread {
+            runCatching { ensureBuiltInLoaders() }
+                .onFailure { Log.w(TAG, "预热内置 jar 失败: ${it.javaClass.simpleName}: ${it.message}") }
+        }.apply { isDaemon = true; name = "spider-prewarm" }.start()
+    }
+
     fun searchAsync(jar: String, api: String, ext: String, key: String, wd: String, cb: (String?) -> Unit) {
         submit(15_000, cb) {
             val sp = spider(jar, api, ext, key) ?: return@submit null

@@ -93,5 +93,9 @@ class App : Application() {
                 ImportOverlay.detach(a)
             }
         })
+        // 后台预热爬虫 jar 类表：11 个 dex 的写盘 + DexClassLoader 原本在首次点播时
+        // 同步做，耗时刻进 playAsync 的 15s 看门狗窗口。这里在进程启动时提前建好，
+        // 首播直接命中缓存。独立线程异步，不拖慢冷启动也不占搜索执行池。
+        runCatching { com.linghit.gdmusic.spider.SpiderEngine.get(this).prewarm() }
     }
 }

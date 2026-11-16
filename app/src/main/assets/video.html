@@ -1604,6 +1604,47 @@ async function sniffPlayPage(url,headers,t){
   }catch(e){ console.log('SPIDERDBG 直嗅播放页异常 '+e); }
   return null;
 }
+/* ===== 解析直链落盘缓存（二次点播 / 续播跳过慢解析链）=====
+ * 爬虫源解析链是 spiderPlay→直嗅→parses→sniff 串行，最坏叠到 90s（11-10 实测）。
+ * 把最终直链 + 请求头落到 localStorage，命中即直接交播放器。
+ * key 用「类型|源|线路|剧集地址hash」——剧集地址在成功后会被回填成直链，
+ * 所以必须在回填前取 seed；hash 避开 url 里的查询串/中文导致 localStorage key 过长。
+ * TTL 6h（直链会过期，宁可失效重解析也不拿坏链给用户）；上限 200 条 FIFO 防撑爆。
+ */
+var RESOLVE_LS='gd_resolve_v1', RESOLVE_MAX=200, RESOLVE_TTL=6*3600*1000;
+function resolveHash(s){
+  s=String(s||''); var h=5381;
+  for(var i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))|0;
+  return (h>>>0).toString(36);
+}
+function resolveCKey(kind,src,flag,seed){
+  return kind+'|'+String(src||'?')+'|'+String(flag||'')+'|'+resolveHash(seed);
+}
+function resolveCAll(){
+  try{ var o=JSON.parse(localStorage.getItem(RESOLVE_LS)||'{}');
+       return (o&&typeof o==='object'&&!Array.isArray(o))?o:{};
+  }catch(e){ return {}; }
+}
+function resolveCGet(key){
+  try{
+    var o=resolveCAll(), v=o[key];
+    if(!v||!v.url)return null;
+    if(Date.now()-(v.ts||0)>RESOLVE_TTL){
+      delete o[key]; try{localStorage.setItem(RESOLVE_LS,JSON.stringify(o));}catch(e2){}
+      return null;
+    }
+    return v;
+  }catch(e){ return null; }
+}
+function resolveCPut(key,url,headers){
+  if(!url)return;
+  try{
+    var o=resolveCAll(), keys=Object.keys(o);
+    if(keys.length>=RESOLVE_MAX && !(key in o)) delete o[keys[0]];
+    o[key]={url:url, headers:headers||{}, ts:Date.now()};
+    localStorage.setItem(RESOLVE_LS,JSON.stringify(o));
+  }catch(e){}
+}
 /** 爬虫源播放：playerContent 返回 {url,parse,header}，直链才交原生播放器。
  *  headers 可以是 Referer 字符串，也可以是完整请求头对象——后者走新桥全量透传。 */
 function playResolved(url,name,headers,idx,epsJson,spJson,meta){
@@ -1620,6 +1661,20 @@ function playResolved(url,name,headers,idx,epsJson,spJson,meta){
   else toast('当前环境不支持播放');
 }
 async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta,mode){
+  // 落盘缓存命中：必须在 e.url 被回填成直链之前取 seed（成功出口会改 e.url）
+  var ck=resolveCKey('s', t.key||t.api, flag, e.url);
+  var hit=resolveCGet(ck);
+  if(hit){
+    console.log('RESOLVECACHE HIT spider '+ck+' => '+String(hit.url).slice(0,120));
+    e.url=hit.url;
+    try{ var _a=JSON.parse(epsJson||'[]'); if(_a[idx])_a[idx].url=hit.url; epsJson=JSON.stringify(_a); STATE.playEpsJson=epsJson; }catch(err){}
+    var _hn=(STATE.detail&&STATE.detail.vod_name||'')+' · '+t.name+' · '+e.name;
+    if(mode==='download'){
+      if(window.Android&&Android.downloadResolved) Android.downloadResolved(hit.url, JSON.stringify(hit.headers||{}), _hn);
+      else toast('当前环境不支持下载');
+    } else playResolved(hit.url,_hn,hit.headers||{},idx,epsJson,spJson,meta);
+    return;
+  }
   toast('正在解析播放地址…');
   var txt=await spiderPlay(t,flag,e.url);
   var j=null; try{j=JSON.parse(txt);}catch(err){}
@@ -1641,6 +1696,7 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta,mode){
   // 已是直链媒体 → 直接播（header 全量透传，Jpys 这类要 UA+Origin+Referer）
   if(url && !parse && isDirectMedia(url)){
     console.log('SPIDERDBG['+tag+'] DIRECT '+url.slice(0,140));
+    resolveCPut(ck,url,headers);
     playResolved(url,name,headers,idx,epsJson,spJson,meta);
     return;
   }
@@ -1676,6 +1732,7 @@ async function playSpiderEp(t,flag,e,idx,epsJson,spJson,meta,mode){
       epsJson=JSON.stringify(arr); STATE.playEpsJson=epsJson;
     }catch(err){}
     console.log('SPIDERDBG['+tag+'] FINAL '+finalUrl.slice(0,140));
+    resolveCPut(ck,finalUrl,finalHeaders);
     if(mode==='download'){
       if(window.Android&&Android.downloadResolved) Android.downloadResolved(finalUrl, JSON.stringify(finalHeaders), name);
       else toast('当前环境不支持下载');
@@ -1709,6 +1766,18 @@ window.__resolveDirectAt=function(i,b64){
   try{ if(STATE.detailSite&&STATE.detailSite.api) ref=new URL(STATE.detailSite.api).origin; }catch(err){}
   if(!u){ done('',ref); return; }
   if(isDirectMedia(u)){ done(u,ref); return; }
+  // b64 是原生带来的原始播放页地址，页面上下文丢失时仍稳定，作缓存 seed 最可靠
+  var seed=u;
+  if(b64){ try{ seed=decodeB64(b64)||u; }catch(err){} }
+  var ck=resolveCKey('d', STATE.detailSite&&STATE.detailSite.api||'', '', seed);
+  var hit=resolveCGet(ck);
+  if(hit){
+    console.log('RESOLVECACHE HIT direct '+ck+' => '+String(hit.url).slice(0,120));
+    e.url=hit.url;
+    try{ var _a=JSON.parse(STATE.playEpsJson||'[]'); if(_a[i])_a[i].url=hit.url; STATE.playEpsJson=JSON.stringify(_a); }catch(err){}
+    done(hit.url, (hit.headers&&(hit.headers.Referer||hit.headers.referer))||ref);
+    return;
+  }
   sniff(u,ref).then(function(j){
     if(j&&j.ok&&j.url){
       e.url=j.url;
@@ -1717,6 +1786,7 @@ window.__resolveDirectAt=function(i,b64){
         if(arr[i])arr[i].url=j.url;
         STATE.playEpsJson=JSON.stringify(arr);
       }catch(err){}
+      resolveCPut(ck,j.url,{Referer:ref});
       done(j.url,ref);
     }else done('',ref);
   });
