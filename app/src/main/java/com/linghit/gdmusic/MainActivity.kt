@@ -144,13 +144,13 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private var poemExpanded = false
     private var poemExplainShown = false   // 译文是否展开（默认收起，由「显示解释」按钮控制）
     private var poemLoading = false
-    // —— 搜索页签「今日榜单」（网易云官方榜 · 发现层；点卡片=自动搜索，下方可播放/下载）——
+    // —— 搜索页签「今日榜单」（QQ 音乐巅峰榜 · 发现层；点卡片=自动搜索，下方可播放/下载）——
     private lateinit var chartSection: View
     private lateinit var chartTabs: LinearLayout
     private lateinit var chartList: RecyclerView
     private lateinit var chartRefresh: TextView
     private lateinit var chartAdapter: ChartAdapter
-    private var chartId: String = NeteaseApi.CHARTS.first().id
+    private var chartId: String = QQChartApi.CHARTS.first().id
     private var chartLoaded = false
     private lateinit var newsCard: View
     private lateinit var newsTitle: TextView
@@ -470,7 +470,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         // 今日榜单：第一次切到搜索页签时才拉数据（不占首页启动流量）
         if(search && !chartLoaded){
             chartLoaded=true
-            selectChart(NeteaseApi.CHARTS.first())
+            selectChart(QQChartApi.CHARTS.first())
         }
     }
 
@@ -1540,10 +1540,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun dedupKey(x:Song)=x.source.lowercase()+"|"+x.name.lowercase()+"|"+x.artist.lowercase()
 
     /**
-     * 搜索页签的「今日榜单」区（网易云官方榜 · 发现层）。
-     * - 数据：NeteaseApi（免登录实测可用），每天拉一次 + 本地缓存（NeteaseStore）
+     * 搜索页签的「今日榜单」区（QQ 音乐巅峰榜 · 发现层）。
+     * - 数据：QQChartApi（免登录实测可用，8 个精选榜），每天拉一次 + 本地缓存（QQChartStore）
      * - 交互：点卡片 = 用「歌名 歌手」自动填进搜索框并搜索 → 下方结果列表照旧可播放/下载
-     * - ⚠️ 榜单只给元信息（网易云播放地址要 VIP/版权），实际播放仍走本 app 现有音乐源
+     * - ⚠️ 榜单只给元信息（歌名 + 歌手），实际播放仍走本 app 现有音乐源
      * - 懒加载：第一次切到搜索页签时才拉数据，不占首页启动流量
      */
     private fun setupChartSection() {
@@ -1563,7 +1563,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         chartList.adapter = chartAdapter
 
         chartTabs.removeAllViews()
-        NeteaseApi.CHARTS.forEach { c ->
+        QQChartApi.CHARTS.forEach { c ->
             val tv = TextView(this)
             tv.text = c.label
             tv.textSize = 13f
@@ -1583,16 +1583,16 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         styleChartChips(0)
 
         chartRefresh.setOnClickListener {
-            val c = NeteaseApi.CHARTS.firstOrNull { it.id == chartId } ?: return@setOnClickListener
+            val c = QQChartApi.CHARTS.firstOrNull { it.id == chartId } ?: return@setOnClickListener
             loadChart(c)
         }
     }
 
     /** 切榜单：先吃当天缓存，没有再联网 */
-    private fun selectChart(c: NeteaseApi.Chart) {
+    private fun selectChart(c: QQChartApi.Chart) {
         chartId = c.id
-        styleChartChips(NeteaseApi.CHARTS.indexOfFirst { it.id == c.id })
-        val cached = NeteaseStore.load(this, c.id)
+        styleChartChips(QQChartApi.CHARTS.indexOfFirst { it.id == c.id })
+        val cached = QQChartStore.load(this, c.id)
         if (cached.isNotEmpty()) {
             chartAdapter.submit(cached)
             chartRefresh.text = "刷新"
@@ -1613,14 +1613,14 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         }
     }
 
-    private fun loadChart(c: NeteaseApi.Chart) {
+    private fun loadChart(c: QQChartApi.Chart) {
         chartRefresh.text = "加载中…"
         scope.launch {
             val songs = withContext(Dispatchers.IO) {
-                runCatching { NeteaseApi.fetchChart(c.id) }.getOrDefault(emptyList())
+                runCatching { QQChartApi.fetchChart(c.id) }.getOrDefault(emptyList())
             }
             if (songs.isNotEmpty()) {
-                NeteaseStore.save(this@MainActivity, c.id, songs)
+                QQChartStore.save(this@MainActivity, c.id, songs)
                 if (chartId == c.id) {
                     chartAdapter.submit(songs)
                     chartRefresh.text = "刷新"
@@ -2071,23 +2071,23 @@ class QueueAdapter(
 }
 
 /**
- * 今日榜单横滑卡片适配器（网易云官方榜 · 发现层）。
- * 只展示元信息；点击交给外部去触发「自动搜索」，播放/下载仍走本 app 现有音乐源。
+ * 今日榜单横滑卡片适配器（QQ 音乐巅峰榜 · 发现层）。
+ * 纯文字双行：歌名 + 歌手；点击交给外部去触发「自动搜索」，播放/下载仍走本 app 现有音乐源。
  */
 class ChartAdapter(
-    private val onClick: (NeteaseApi.ChartSong) -> Unit
+    private val onClick: (QQChartApi.ChartSong) -> Unit
 ): RecyclerView.Adapter<ChartAdapter.VH>() {
 
-    private val items = ArrayList<NeteaseApi.ChartSong>()
+    private val items = ArrayList<QQChartApi.ChartSong>()
 
-    fun submit(list: List<NeteaseApi.ChartSong>) {
+    fun submit(list: List<QQChartApi.ChartSong>) {
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
     }
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
-        val cover: ImageView = v.findViewById(R.id.chartCover)
+        val rank: TextView = v.findViewById(R.id.chartRank)
         val title: TextView = v.findViewById(R.id.chartTitle)
         val artist: TextView = v.findViewById(R.id.chartArtist)
     }
@@ -2099,9 +2099,9 @@ class ChartAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val s = items[position]
+        holder.rank.text = (position + 1).toString().padStart(2, '0')
         holder.title.text = s.name
-        holder.artist.text = s.artist
-        ImageLoader.load(holder.cover, s.cover)
+        holder.artist.text = s.artist.ifBlank { "QQ音乐" }
         holder.itemView.setOnClickListener { onClick(s) }
     }
 }
