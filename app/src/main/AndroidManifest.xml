@@ -78,6 +78,8 @@
         <activity android:name=".QueueActivity" android:label="正在播放列表" android:exported="false"/>
         <!-- 播放历史（影视仓）：断点续播，竖屏列表页 -->
         <activity android:name=".VideoHistoryActivity" android:label="播放历史" android:exported="false"/>
+        <!-- 小说：书源聚合搜索 + 书架/进度/收藏，逻辑在 assets/novel.html -->
+        <activity android:name=".NovelActivity" android:label="小说" android:exported="false"/>
         <activity android:name=".SettingsActivity" android:exported="false"/>
         <!-- 端侧 AI 验证页（一期开发用）：跑 LiteRT-LM 本地模型，实测中文质量与速度 -->
         <activity android:name=".AiTestActivity" android:label="端侧AI验证" android:exported="false"/>

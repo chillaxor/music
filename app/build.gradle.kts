@@ -17,8 +17,8 @@ android {
         targetSdk = 34
         // 每次交付递增：真机可在「设置 → 应用」里一眼确认装的是哪一版，
         // 避免 versionCode 长期停在 2 时分不清「改了没生效」还是「没装新包」
-        versionCode = 17
-        versionName = "2.0.1"
+        versionCode = 18
+        versionName = "2.0.2"
         // 构建时间戳：崩溃日志会带上它，用来确认手机上装的是哪一版（排查"改了没生效"）
         val buildTime = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
         buildConfigField("String", "BUILD_TIME", "\"$buildTime\"")
@@ -85,6 +85,9 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // 小说书源规则解析：Legado / so-novel 的书源本质是 CSS 选择器 + 少量文本变换，
+    // jsoup 足够覆盖静态规则子集（动态 @js: 多行脚本走 WebView，不引 QuickJS）。
+    implementation("org.jsoup:jsoup:1.17.2")
     // MP3/FLAC 等音频文件的 ID3 标签读写（歌名/歌手/专辑/歌词写进文件），移植自 mf_audit
     implementation("net.jthink:jaudiotagger:3.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

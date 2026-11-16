@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>小说</title>
+<style>
+:root{--bg:#12161c;--fg:#eef2f6;--muted:#9aa6b2;--accent:#7fd9c6;--card:rgba(255,255,255,.06);--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+body.light{--bg:#faf6f2;--fg:#241a14;--muted:#7a6a60;--accent:#1f8f7a;--card:rgba(0,0,0,.045);--line:rgba(0,0,0,.12)}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;font-weight:600;margin:0;flex:1}
+button{color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer}
+button.primary{background:var(--accent);color:#0d1a17;border-color:transparent;font-weight:600}
+button:disabled{opacity:.4}
+input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px;outline:none}
+.view{display:none;padding:14px 16px 90px}.view.on{display:block}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{flex:1}.tabs button.on{border-color:var(--accent);color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer}
+.card .t{font-size:15px;font-weight:600;line-height:1.4}
+.card .m{font-size:12px;color:var(--muted);margin-top:5px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{background:rgba(127,217,198,.15);color:var(--accent);padding:1px 7px;border-radius:6px;font-size:11px}
+.hint{color:var(--muted);font-size:12px;margin:10px 0}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:12px}.row input{flex:1}
+#reader{padding:0}
+#readHead{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+#readHead .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+#content{padding:18px 20px 90px;font-size:19px;line-height:1.75;letter-spacing:.2px;white-space:pre-wrap;word-break:break-word}
+#chapters{display:none;position:fixed;inset:56px 0 0;overflow:auto;background:var(--bg);z-index:8;padding:12px 16px}
+#chapters.on{display:block}
+#chapters .card{padding:9px 12px;margin-bottom:6px}
+#chapters .card.cur{border-color:var(--accent);color:var(--accent)}
+#readFoot{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 16px;background:var(--bg);border-top:1px solid var(--line);z-index:6}
+#readFoot button{flex:1}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;align-items:center;justify-content:center;padding:24px}
+.modal.on{display:flex}
+.modal .box{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:20px;width:100%;max-width:380px}
+.modal h3{margin:0 0 14px;font-size:16px}
+.modal label{display:block;margin:12px 0 4px;font-size:13px;color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:50px 0}
+.spin{color:var(--muted);font-size:13px;padding:14px 0}
+</style></head><body>
+<header id="top"><h1>小说</h1><button onclick="show('shelf')">书架</button><button onclick="show('search')">搜索</button><button onclick="openSources()">书源</button></header>
+
+<section class="view on" id="shelf">
+  <div class="tabs"><button id="tabRecent" class="on" onclick="shelfTab('recent')">最近阅读</button><button id="tabFav" onclick="shelfTab('fav')">收藏</button></div>
+  <div id="shelfList"></div>
+</section>
+
+<section class="view" id="search">
+  <div class="row"><input id="kw" placeholder="输入书名，全网搜书" onkeydown="if(event.key==='Enter')doSearch()"><button class="primary" onclick="doSearch()">搜索</button></div>
+  <div class="hint" id="searchInfo"></div>
+  <div id="resultList"></div>
+</section>
+
+<section class="view" id="reader">
+  <div id="readHead"><button onclick="show('shelf')">‹ 书架</button><div class="title" id="readTitle"></div><button id="starBtn" onclick="toggleFav()">☆</button><button onclick="toggleChapters()">目录</button><button onclick="toggleSettings()">Aa</button></div>
+  <div id="content"></div>
+  <div id="chapters"></div>
+  <div id="readFoot"><button onclick="jump(-1)">上一章</button><button onclick="jump(1)">下一章</button></div>
+</section>
+
+<div class="modal" id="settingsModal"><div class="box">
+  <h3>阅读设置</h3>
+  <label>字号 <span id="fontVal"></span></label><input type="range" id="fontRange" min="14" max="30" oninput="setFont(this.value)">
+  <label>行距 <span id="lineVal"></span></label><input type="range" id="lineRange" min="140" max="220" step="5" oninput="setLine(this.value)">
+  <label><input type="checkbox" id="nightBox" onchange="setNight(this.checked)"> 夜间模式</label>
+  <div style="margin-top:18px;text-align:right"><button onclick="toggleSettings()">完成</button></div>
+</div></div>
+
+<div class="modal" id="sourceModal"><div class="box">
+  <h3>书源管理</h3>
+  <div class="hint" id="sourceInfo">读取中…</div>
+  <div class="row"><input id="subUrl" placeholder="粘贴 Legado 订阅 URL"><button class="primary" onclick="importSources()">导入</button></div>
+  <div class="hint">内置的是已校验静态规则源；含动态 JS 的源会被自动跳过。导入后仍可清除。</div>
+  <div style="margin-top:12px;display:flex;gap:8px"><button onclick="clearSources()">清除已导入</button><button onclick="closeModal('sourceModal')">关闭</button></div>
+</div></div>
+
+<script>
+var cbSeq=0, cbs={}, books=[], shelf=[], chapters=[], cur=null, settings={font:19,line:175,night:false}, shelfMode='recent', scrollTimer=null;
+function call(name){var a=[].slice.call(arguments,1);return new Promise(function(resolve){var id=++cbSeq;cbs[id]=resolve;a.push(id);NovelAndroid[name].apply(NovelAndroid,a);});}
+window.__novelCb=function(id,json){var f=cbs[id];delete cbs[id];if(f){try{f(JSON.parse(json));}catch(e){f({ok:false,error:json});}}};
+function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function show(v){document.querySelectorAll('.view').forEach(function(x){x.classList.remove('on');});document.getElementById(v).classList.add('on');document.getElementById('top').style.display=v==='reader'?'none':'flex';if(v==='shelf')renderShelf();}
+function openModal(id){document.getElementById(id).classList.add('on');}
+function closeModal(id){document.getElementById(id).classList.remove('on');}
+function toast(msg){var d=document.createElement('div');d.className='spin';d.textContent=msg;document.querySelector('.view.on').appendChild(d);setTimeout(function(){d.remove();},2200);}
+
+NovelAndroid.theme&&(function(){var t=JSON.parse(NovelAndroid.theme());var r=document.documentElement.style;r.setProperty('--bg',t.dark?'#12161c':'#faf6f2');r.setProperty('--fg',t.fg);r.setProperty('--muted',t.muted);r.setProperty('--accent',t.accent);document.body.classList.toggle('light',!t.dark);})();
+
+function renderShelf(){
+  var list=shelf.filter(function(x){return shelfMode==='fav'?x.favorite:true;});
+  var el=document.getElementById('shelfList');
+  if(!list.length){el.innerHTML='<div class="empty">'+(shelfMode==='fav'?'还没有收藏的书':'书架空空的，去搜索一本书')+'</div>';return;}
+  el.innerHTML=list.map(function(x){var p=x.totalChapters?(' · '+(x.chapterIndex+1)+'/'+x.totalChapters+'章'):'';
+    return '<div class="card" onclick="openBook(\''+x.id+'\')"><div class="t">'+esc(x.name)+(x.favorite?' ★':'')+'</div><div class="m"><span class="badge">'+esc(x.sourceName)+'</span><span>'+esc(x.author)+'</span><span>读到第'+(x.chapterIndex+1)+'章'+p+'</span></div></div>';}).join('');
+}
+function shelfTab(m){shelfMode=m;document.getElementById('tabRecent').classList.toggle('on',m==='recent');document.getElementById('tabFav').classList.toggle('on',m==='fav');renderShelf();}
+function refreshShelf(){shelf=JSON.parse(NovelAndroid.shelf());renderShelf();}
+
+function doSearch(){
+  var kw=document.getElementById('kw').value.trim();if(!kw)return;
+  document.getElementById('searchInfo').textContent='正在并发搜索 '+kw+' …';
+  document.getElementById('resultList').innerHTML='';
+  call('search',kw).then(function(r){
+    if(!r.ok){document.getElementById('searchInfo').textContent=r.error||'搜索失败';return;}
+    books=r.books;
+    document.getElementById('searchInfo').textContent='找到 '+books.length+' 本 · 成功 '+(r.total-r.failed)+'/'+r.total+' 源 · 跳过 '+r.skipped+' 源（动态规则）';
+    document.getElementById('resultList').innerHTML=books.length?books.map(function(b,i){
+      return '<div class="card" onclick="openResult('+i+')"><div class="t">'+esc(b.name)+'</div><div class="m"><span class="badge">'+esc(b.sourceName)+'</span><span>'+esc(b.author)+'</span><span>'+esc(b.latest)+'</span></div></div>';
+    }).join(''):'<div class="empty">没有搜到，换个书名试试</div>';
+  });
+}
+function openResult(i){var b=books[i];document.getElementById('searchInfo').textContent='正在读取目录…';
+  call('openBook',JSON.stringify(b)).then(function(r){
+    if(!r.ok){toast(r.error||'目录读取失败');return;}
+    cur=r.item;chapters=r.chapters;show('reader');
+    document.getElementById('readTitle').textContent=cur.name;
+    document.getElementById('starBtn').textContent=cur.favorite?'★':'☆';
+    renderChapters();loadChapter(cur.chapterIndex);refreshShelf();
+  });
+}
+function openBook(id){
+  var b=shelf.filter(function(x){return x.id===id;})[0];if(!b)return;
+  var book={sourceId:b.sourceId||'',sourceName:b.sourceName,name:b.name,author:b.author,url:b.bookUrl||'',cover:b.cover||''};
+  call('openBook',JSON.stringify(book)).then(function(r){
+    if(!r.ok){toast(r.error||'打开失败');return;}
+    cur=r.item;chapters=r.chapters;
+    show('reader');document.getElementById('readTitle').textContent=cur.name;
+    document.getElementById('starBtn').textContent=cur.favorite?'★':'☆';
+    renderChapters();loadChapter(cur.chapterIndex);
+  });
+}
+function renderChapters(){
+  document.getElementById('chapters').innerHTML=chapters.map(function(c){
+    return '<div class="card'+(c.index===cur.chapterIndex?' cur':'')+'" onclick="loadChapter('+c.index+')">'+esc(c.name)+'</div>';}).join('');
+}
+function toggleChapters(){document.getElementById('chapters').classList.toggle('on');}
+function loadChapter(i){
+  if(!cur||!chapters.length)return;
+  i=Math.max(0,Math.min(chapters.length-1,i));
+  saveProgress();
+  cur.chapterIndex=i;
+  document.getElementById('content').textContent='正在读取第'+(i+1)+'章…';
+  document.getElementById('chapters').classList.remove('on');
+  call('chapter',cur.id,i).then(function(r){
+    document.getElementById('content').textContent=r.ok&&r.text?r.text:'（这一章没抓到正文，试试下一章）';
+    document.getElementById('content').scrollTop=0;window.scrollTo(0,0);
+    document.getElementById('readTitle').textContent=chapters[i].name+' · '+cur.name;
+    renderChapters();
+  });
+}
+function jump(d){loadChapter(cur.chapterIndex+d);}
+function saveProgress(){
+  if(!cur)return;
+  var y=window.scrollY||document.documentElement.scrollTop||0;
+  NovelAndroid.progress(cur.id,cur.chapterIndex,Math.floor(y/32),y);
+}
+window.addEventListener('scroll',function(){clearTimeout(scrollTimer);scrollTimer=setTimeout(saveProgress,400);});
+function toggleFav(){if(!cur)return;var on=NovelAndroid.favorite(cur.id);cur.favorite=on;document.getElementById('starBtn').textContent=on?'★':'☆';refreshShelf();}
+
+function applySettings(){
+  document.getElementById('content').style.fontSize=settings.font+'px';
+  document.getElementById('content').style.lineHeight=(settings.line/100)+'';
+  document.getElementById('nightBox').checked=settings.night;
+  document.body.classList.toggle('light',!settings.night);
+  document.getElementById('fontVal').textContent=settings.font;
+  document.getElementById('lineVal').textContent=settings.line;
+}
+function toggleSettings(){document.getElementById('settingsModal').classList.toggle('on');}
+function setFont(v){settings.font=+v;NovelAndroid.setSetting('font',v);applySettings();}
+function setLine(v){settings.line=+v;NovelAndroid.setSetting('line',v);applySettings();}
+function setNight(v){settings.night=v;NovelAndroid.setSetting('night',String(v));applySettings();}
+
+function openSources(){var r=JSON.parse(NovelAndroid.sourceStats());document.getElementById('sourceInfo').textContent='内置 '+r.total+' 条（Legado '+r.legado+' / so-novel '+r.sonovel+'）';openModal('sourceModal');}
+function importSources(){var u=document.getElementById('subUrl').value.trim();if(!u)return;document.getElementById('sourceInfo').textContent='正在导入…';call('importSources',u).then(function(r){document.getElementById('sourceInfo').textContent=r.ok?('成功导入 '+r.count+' 条静态规则源'):(r.error||'导入失败');});}
+function clearSources(){NovelAndroid.clearImported();document.getElementById('sourceInfo').textContent='已清除，重启小说页后恢复内置源';}
+
+window.__novelBack=function(){
+  if(document.getElementById('settingsModal').classList.contains('on')){toggleSettings();return true;}
+  if(document.getElementById('sourceModal').classList.contains('on')){closeModal('sourceModal');return true;}
+  if(document.getElementById('chapters').classList.contains('on')){toggleChapters();return true;}
+  if(document.getElementById('reader').classList.contains('on')){saveProgress();show('shelf');return true;}
+  if(document.getElementById('search').classList.contains('on')){show('shelf');return true;}
+  return false;
+};
+settings=JSON.parse(NovelAndroid.settings());applySettings();refreshShelf();
+</script></body></html>
