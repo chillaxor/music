@@ -1844,11 +1844,27 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
      * 优先级：队列播放 > 单首本地 > 单首在线。
      */
     private fun handlePlayIntent(){
-        // 1) 队列播放（下载页/收藏页的「播放全部」和「点单首」都走这支，idx 区分起点）
+        // ⚠️ 播放参数是一次性命令：先一次性读出，再立刻从 intent 抹掉。
+        // 否则切主题走 recreate() → 重新 onCreate() → 再次调用本函数时，
+        // 会读到残留的 play_queue_json + play_index=0，把用户正在播的歌打断、从第 0 首重播
+        // （表现为「切主题就暂停并跳回第一首」）。同理 onNewIntent/旋屏重建也不会重复起播。
         val queueJson=intent.getStringExtra("play_queue_json")
+        val playIndex=intent.getIntExtra("play_index",0)
+        val uriStr=intent.getStringExtra("play_local_uri")
+        val localJson=intent.getStringExtra("play_local_json")
+        val songJson=intent.getStringExtra("play_song_json")
+        if(queueJson==null && uriStr==null && songJson==null) return
+        Log.i("PlayIntent", "consume: queue=${queueJson!=null} idx=$playIndex uri=${uriStr!=null} song=${songJson!=null}")
+        intent.removeExtra("play_queue_json")
+        intent.removeExtra("play_index")
+        intent.removeExtra("play_local_uri")
+        intent.removeExtra("play_local_json")
+        intent.removeExtra("play_song_json")
+
+        // 1) 队列播放（下载页/收藏页的「播放全部」和「点单首」都走这支，idx 区分起点）
         if(queueJson!=null){
             val list=songsFromJsonArray(queueJson)
-            val idx=intent.getIntExtra("play_index",0).coerceIn(0, maxOf(0, list.size-1))
+            val idx=playIndex.coerceIn(0, maxOf(0, list.size-1))
             if(list.isNotEmpty()){
                 PlayerManager.playInternal(list[idx], list, idx, Scene.MUSIC)
                 // 显式刷新一次入口卡计数：不依赖 onSongStart 回调（起播失败时回调可能不来）
@@ -1857,11 +1873,9 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             return
         }
         // 2) 单首本地播放（uri 直传）
-        val uriStr=intent.getStringExtra("play_local_uri")
         if(uriStr!=null){
-            val json=intent.getStringExtra("play_local_json")
-            val song=if(json!=null) runCatching{
-                val o=JSONObject(json)
+            val song=if(localJson!=null) runCatching{
+                val o=JSONObject(localJson)
                 Song(o.optString("id"),o.optString("name"),o.optString("artist"),
                     o.optString("album"),o.optString("source"),o.optString("picId"),
                     o.optString("lyricId",o.optString("id")),o.optString("localUri").ifBlank{uriStr})
@@ -1870,9 +1884,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             return
         }
         // 3) 单首在线播放（临时播放：不动播放列表）
-        val json=intent.getStringExtra("play_song_json") ?: return
         runCatching{
-            val o=JSONObject(json)
+            val o=JSONObject(songJson!!)
             val s=Song(o.optString("id"),o.optString("name"),o.optString("artist"),
                 o.optString("album"),o.optString("source"),o.optString("picId"),
                 o.optString("lyricId",o.optString("id")))
