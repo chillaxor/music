@@ -98,6 +98,20 @@ object NovelStore {
         bookDir(ctx, id).deleteRecursively()
     }
 
+    /**
+     * 清除阅读记录：默认只清非收藏的书（收藏是用户主动标的，不该被一次清空带走），
+     * 连同正文/目录缓存一起删，返回清掉的本数。
+     */
+    fun clearRecent(ctx: Context, keepFavorite: Boolean = true): Int {
+        val all = list(ctx)
+        val drop = if (keepFavorite) all.filter { !it.favorite } else all
+        if (drop.isEmpty()) return 0
+        val dropIds = drop.map { it.id }.toHashSet()
+        save(ctx, all.filter { it.id !in dropIds })
+        drop.forEach { bookDir(ctx, it.id).deleteRecursively() }
+        return drop.size
+    }
+
     private fun save(ctx: Context, items: List<NovelShelfItem>) {
         val arr = JSONArray()
         items.sortedByDescending { it.lastRead }.forEach {

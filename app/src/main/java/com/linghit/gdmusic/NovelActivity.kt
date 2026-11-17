@@ -182,6 +182,10 @@ class NovelActivity : AppCompatActivity() {
             NovelStore.remove(this@NovelActivity, id)
         }
 
+        /** 清除阅读记录（保留收藏），返回清掉的本数 */
+        @JavascriptInterface fun clearRecent(): Int =
+            NovelStore.clearRecent(this@NovelActivity, keepFavorite = true)
+
         @JavascriptInterface fun importSources(url: String, cbId: String) = async(cbId) {
             val raw = runCatching {
                 val req = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()

@@ -828,14 +828,23 @@ var DB_CHARTS=[
   {id:'movie_showing',name:'正在热映'},
   {id:'movie_top250',name:'电影Top250'}
 ];
-var DB_KEY='gd_douban_chart_v2'; // v2：条目带海报 pic，旧 v1 缓存没有图，升级后自动重拉
+var DB_KEY='gd_douban_chart_v3'; // v3：{day,items,total}，支持滚动加载后累积落盘（v2 无 total，翻页判不了到底）
+var DB_PAGE=21;                  // 每页条数（豆瓣 count 实测 21 稳定；total 上限不封顶）
+// ---- 豆瓣榜滚动加载状态（与 cms 的 noMoreHome/loadMore 完全隔离，互不干扰）----
+var dbItems=[];        // 当前榜已加载的全部条目（顺序即排名）
+var dbTotal=0;         // 该榜总条数（接口 total；未知则 0）
+var dbMoreLoading=false; // 翻页防并发
+var dbNoMore=false;      // 已到底
+var dbReqId=0;           // 请求令牌：切榜后旧回包直接丢弃
+try{localStorage.removeItem('gd_douban_chart_v2');}catch(e){} // 清理旧版无 total 的缓存
 function dbToday(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
 function dbCacheGet(id){
-  try{var c=JSON.parse(localStorage.getItem(DB_KEY)||'{}')[id];if(c&&c.day===dbToday()&&c.items&&c.items.length)return c.items;}catch(e){}
+  try{var c=JSON.parse(localStorage.getItem(DB_KEY)||'{}')[id];
+    if(c&&c.day===dbToday()&&c.items&&c.items.length)return c;}catch(e){}
   return null;
 }
-function dbCachePut(id,items){
-  try{var all=JSON.parse(localStorage.getItem(DB_KEY)||'{}');all[id]={day:dbToday(),items:items};
+function dbCachePut(id){
+  try{var all=JSON.parse(localStorage.getItem(DB_KEY)||'{}');all[id]={day:dbToday(),items:dbItems,total:dbTotal};
     localStorage.setItem(DB_KEY,JSON.stringify(all));}catch(e){}
 }
 function renderDoubanChips(){
@@ -878,35 +887,40 @@ function setupDoubanSwipe(){
   g.addEventListener('touchcancel',function(){tracking=false;},{passive:true});
 }
 function dbName(id){var f=DB_CHARTS.filter(function(c){return c.id===id;})[0];return f?f.name:id;}
+/** 造一行榜单项；i 从 0 起算排名，前三名高亮 */
+function dbRow(x,i){
+  var row=document.createElement('div'); row.className='dbrow'+(i<3?' top':'');
+  var score=(x.rating>0)?('<div class="score">'+x.rating.toFixed(1)+'</div>'):'<div class="score none">暂无评分</div>';
+  // 海报：豆瓣图床 Referer 由原生 WebViewClient 拦截补齐（见 VideoActivity shouldInterceptRequest）
+  var pic=x.pic?('<img class="poster" src="'+esc(x.pic)+'" alt="" onerror="this.style.visibility=\'hidden\'">'):'<div class="poster ph"></div>';
+  row.innerHTML='<div class="no">'+(i+1)+'</div>'+pic+'<div class="info"><div class="nm">'+esc(x.title)+'</div>'+
+    '<div class="meta">'+esc(x.sub||'')+'</div></div>'+score+'<div class="arrow">›</div>';
+  row.onclick=function(){
+    // 点条目 = 用剧名填入搜索框并搜索（全网），播放/下载仍走影视仓
+    $('kw').value=x.title; STATE.doubanSearchFrom=x.title; doSearch();
+  };
+  return row;
+}
 function renderDoubanItems(items){
   var box=$('grid'); box.className='dchart'; box.innerHTML='';
   if(!items.length){box.innerHTML='<div class="dbempty">该榜暂时没有数据<br>点上面的榜单切换试试</div>';return;}
-  items.forEach(function(x,i){
-    var row=document.createElement('div'); row.className='dbrow'+(i<3?' top':'');
-    var score=(x.rating>0)?('<div class="score">'+x.rating.toFixed(1)+'</div>'):'<div class="score none">暂无评分</div>';
-    // 海报：豆瓣图床 Referer 由原生 WebViewClient 拦截补齐（见 VideoActivity shouldInterceptRequest）
-    var pic=x.pic?('<img class="poster" src="'+esc(x.pic)+'" alt="" onerror="this.style.visibility=\'hidden\'">'):'<div class="poster ph"></div>';
-    row.innerHTML='<div class="no">'+(i+1)+'</div>'+pic+'<div class="info"><div class="nm">'+esc(x.title)+'</div>'+
-      '<div class="meta">'+esc(x.sub||'')+'</div></div>'+score+'<div class="arrow">›</div>';
-    row.onclick=function(){
-      // 点条目 = 用剧名填入搜索框并搜索（全网），播放/下载仍走影视仓
-      $('kw').value=x.title; STATE.doubanSearchFrom=x.title; doSearch();
-    };
-    box.appendChild(row);
-  });
+  items.forEach(function(x,i){box.appendChild(dbRow(x,i));});
 }
-async function loadDouban(id){
-  STATE.noMoreHome=true; // 豆瓣榜一次性拉全，禁止首页无限翻页（翻页是影视仓列表逻辑）
-  var name=dbName(id);
-  var cache=dbCacheGet(id);
-  if(cache){renderDoubanItems(cache);setState('豆瓣 · '+name+' · '+cache.length+' 部 · 左右滑切榜 / 点剧名搜索');return;}
-  setState('正在加载豆瓣「'+name+'」…');
-  var u='https://m.douban.com/rexxar/api/v2/subject_collection/'+id+'/items?start=0&count=21';
+/** 翻页追加：只 append 新行，已渲染的海报不重载；offset = 已加载条数，保证序号连续 */
+function appendDoubanItems(items,offset){
+  var box=$('grid');
+  items.forEach(function(x,i){box.appendChild(dbRow(x,offset+i));});
+}
+/** 拉豆瓣某一榜的一页；start=偏移，count=DB_PAGE。返回 {ok,code,items,total} */
+async function dbFetch(id,start){
+  var u='https://m.douban.com/rexxar/api/v2/subject_collection/'+id+'/items?start='+start+'&count='+DB_PAGE;
   var r=await getEx(u,{'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
     'Referer':'https://m.douban.com/'});
-  var items=[];
-  if(r.ok&&r.text){try{
+  var out={ok:false,code:r.code,items:[],total:0};
+  if(!(r.ok&&r.text))return out;
+  try{
     var j=JSON.parse(r.text);
+    out.total=parseInt(j.total,10)||0;
     (j.subject_collection_items||[]).forEach(function(v){
       if(!v.title)return;
       var rating=(v.rating&&v.rating.value)||0;
@@ -914,19 +928,86 @@ async function loadDouban(id){
       if(sub.length>52)sub=sub.slice(0,52)+'…';
       // pic.normal = s_ratio_poster 小图（约 22KB），21 条约 450KB；图床 Referer 由原生层补
       var pic=(v.pic&&(v.pic.normal||v.pic.large))||'';
-      items.push({title:v.title,rating:rating,sub:sub,pic:pic});
+      out.items.push({title:v.title,rating:rating,sub:sub,pic:pic});
     });
-  }catch(e){console.log('douban parse fail',e);}}
-  if(!items.length){
-    renderDoubanItems([]);
-    setState('豆瓣「'+name+'」加载失败（网络或限流），点其他榜重试');
-    console.log('douban FAIL '+id+' code='+r.code);
+    out.ok=true;
+  }catch(e){console.log('douban parse fail',e);}
+  return out;
+}
+/** 状态栏文案：已加载 N/总 M + 是否到底 */
+function dbSetState(name){
+  var cnt=dbItems.length+(dbTotal>0?('/'+dbTotal):'');
+  var tail=dbNoMore?' · 到底了':' · 继续下滑看更多';
+  setState('豆瓣 · '+name+' · '+cnt+' 部'+tail+' · 左右滑切榜 / 点剧名搜索');
+}
+/** 首屏没填满（如榜单只有 10 条）时补拉一页，否则滚不动就永远触发不了 scroll */
+function dbFillIfNeeded(){
+  if(STATE.homeMode!=='douban'||dbNoMore||dbMoreLoading)return;
+  var doc=document.documentElement;
+  var dh=doc.scrollHeight||0, wh=window.innerHeight||0;
+  if(dh<wh+80) loadMoreDouban();
+}
+/** 豆瓣榜翻页：滑到接近底部时追加下一页（首页豆瓣模式专用，走独立的 db* 状态）*/
+async function loadMoreDouban(){
+  if(STATE.homeMode!=='douban'||dbMoreLoading||dbNoMore)return;
+  if(!STATE.doubanChart||!dbItems.length)return;
+  if($('grid').className!=='dchart')return; // 已切到搜索结果/影视仓列表，别往里面塞豆瓣行
+  if($('searchPage').classList.contains('show'))return;
+  if($('sheet').classList.contains('show'))return;
+  dbMoreLoading=true;
+  var id=STATE.doubanChart, myReq=dbReqId, name=dbName(id), start=dbItems.length;
+  setState('豆瓣 · '+name+' · 正在加载更多…（已有 '+start+' 部）');
+  var res=await dbFetch(id,start);
+  if(myReq!==dbReqId){dbMoreLoading=false;return;} // 已切榜，丢弃过期回包
+  if(!res.ok||!res.items.length){
+    dbMoreLoading=false; dbNoMore=true;
+    dbSetState(name);
+    console.log('douban more FAIL '+id+' code='+res.code+' start='+start);
     return;
   }
-  dbCachePut(id,items);
-  renderDoubanItems(items);
-  setState('豆瓣 · '+name+' · '+items.length+' 部 · 左右滑切榜 / 点剧名搜索');
-  console.log('douban OK '+id+' '+items.length+' 首='+items[0].title);
+  if(res.total>0)dbTotal=res.total;
+  // 去重：榜单实时变动时相邻页可能重叠，按片名过滤
+  var seen={}; dbItems.forEach(function(x){seen[x.title]=1;});
+  var fresh=res.items.filter(function(x){return !seen[x.title];});
+  if(fresh.length){appendDoubanItems(fresh,dbItems.length); dbItems=dbItems.concat(fresh);}
+  if(res.items.length<DB_PAGE||(dbTotal>0&&dbItems.length>=dbTotal))dbNoMore=true;
+  dbCachePut(id);
+  dbMoreLoading=false;
+  dbSetState(name);
+  console.log('douban more OK '+id+' +'+fresh.length+' → '+dbItems.length+'/'+dbTotal);
+  setTimeout(dbFillIfNeeded,60);
+}
+async function loadDouban(id){
+  // 豆瓣模式禁止走 cms 的 loadMore（那条按影视仓接口 pg 拼 URL），翻页交给 loadMoreDouban
+  STATE.noMoreHome=true;
+  var name=dbName(id);
+  dbItems=[]; dbTotal=0; dbNoMore=false; dbMoreLoading=false;
+  var myReq=++dbReqId;
+  var cache=dbCacheGet(id);
+  if(cache){
+    dbItems=cache.items.slice(); dbTotal=cache.total||0;
+    dbNoMore=(dbTotal>0&&dbItems.length>=dbTotal);
+    renderDoubanItems(dbItems);
+    dbSetState(name);
+    setTimeout(dbFillIfNeeded,60);
+    return;
+  }
+  setState('正在加载豆瓣「'+name+'」…');
+  var res=await dbFetch(id,0);
+  if(myReq!==dbReqId)return;
+  if(!res.items.length){
+    renderDoubanItems([]);
+    setState('豆瓣「'+name+'」加载失败（网络或限流），点其他榜重试');
+    console.log('douban FAIL '+id+' code='+res.code);
+    return;
+  }
+  dbItems=res.items; dbTotal=res.total;
+  if(res.items.length<DB_PAGE||(dbTotal>0&&dbItems.length>=dbTotal))dbNoMore=true;
+  dbCachePut(id);
+  renderDoubanItems(dbItems);
+  dbSetState(name);
+  console.log('douban OK '+id+' '+dbItems.length+'/'+dbTotal+' 首='+dbItems[0].title);
+  setTimeout(dbFillIfNeeded,60);
 }
 function renderClassChips(){
   if(STATE.homeMode==='douban'){ renderDoubanChips(); return; }
@@ -1031,6 +1112,17 @@ window.addEventListener('scroll', function(){
   var doc=document.documentElement, sc=window.scrollY||doc.scrollTop||0;
   var dh=doc.scrollHeight||0, wh=window.innerHeight||0;
   if(dh-sc-wh < 220) loadMore();
+}, {passive:true});
+// 豆瓣榜模式的下滑翻页：独立监听，不碰上面 cms 那条（豆瓣模式 noMoreHome 恒 true，上面会自动 return）
+window.addEventListener('scroll', function(){
+  if(STATE.homeMode!=='douban'||dbMoreLoading||dbNoMore)return;
+  if($('grid').className!=='dchart')return;
+  if($('searchPage').classList.contains('show'))return;
+  if($('sheet').classList.contains('show'))return;
+  if($('srcDrawer').classList.contains('show'))return;
+  var doc=document.documentElement, sc=window.scrollY||doc.scrollTop||0;
+  var dh=doc.scrollHeight||0, wh=window.innerHeight||0;
+  if(dh-sc-wh < 260) loadMoreDouban();
 }, {passive:true});
 function card(v,si){
   var d=document.createElement('div'); d.className='vcard2';

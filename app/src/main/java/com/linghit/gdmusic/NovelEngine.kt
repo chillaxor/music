@@ -1,6 +1,7 @@
 package com.linghit.gdmusic
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -44,6 +45,7 @@ object NovelEngine {
 
     suspend fun search(ctx: Context, keyword: String, maxSources: Int = 80): NovelSearchResult = withContext(Dispatchers.IO) {
         val all = sources(ctx)
+        val srcWeight = all.associate { it.id to it.weight }
         val candidates = all.filter { healthy(ctx, it.id) }
             .sortedWith(compareByDescending<NovelSource> { it.weight }.thenBy { it.respondMs })
             .take(maxSources)
@@ -84,11 +86,23 @@ object NovelEngine {
 
         val seen = HashSet<String>()
         val merged = mutableListOf<NovelBook>()
-        for (book in lists.flatten()) {
+        // 精准排序：按书名与关键词的匹配度排序，不再看谁先返回。
+        // 书站的搜索是模糊的，搜「三体」会连带返回一堆同人/书名沾边的，这里把完全不沾的剔掉。
+        val scored = lists.flatten().map { SearchHit(it, relevance(it.name, it.author, keyword)) }
+        val hit = scored.filter { it.score > 0 }
+        val pool = (if (hit.isNotEmpty()) hit else scored).sortedWith(
+            compareByDescending<SearchHit> { it.score }
+                .thenByDescending { srcWeight[it.book.sourceId] ?: 0 }
+                .thenBy { it.book.name.length }
+        )
+        for (s in pool) {
+            val book = s.book
             val k = dedupeKey(book.name, book.author)
             if (k.isBlank() || !seen.add(k)) continue
             merged.add(book)
         }
+        Log.d("NovelSearch", "$keyword: 原始 ${scored.size} 条 / 书名或作者命中 ${hit.size} 条 / 去重后 ${merged.size} 条" +
+            if (hit.isEmpty() && scored.isNotEmpty()) "（无命中，按源权重保底返回）" else "")
         NovelSearchResult(
             books = merged.take(80),
             failedSources = lists.count { it.isEmpty() },
@@ -96,6 +110,33 @@ object NovelEngine {
             skippedSources = all.size - candidates.size
         )
     }
+
+    private class SearchHit(val book: NovelBook, val score: Int)
+
+    /**
+     * 搜索相关性打分。越高越贴近用户想找的那本：
+     * 1000 书名完全相同 · 900 书名开头是关键词 · 800 书名结尾 · 700 书名包含 · 300 仅作者命中 · 0 无关
+     */
+    private fun relevance(name: String, author: String, keyword: String): Int {
+        val k = normForMatch(keyword)
+        if (k.isEmpty()) return 1
+        val n = normForMatch(name)
+        if (n.isEmpty()) return 0
+        val a = normForMatch(author)
+        return when {
+            n == k -> 1000
+            n.startsWith(k) -> 900
+            n.endsWith(k) -> 800
+            n.contains(k) -> 700
+            a.contains(k) -> 300
+            else -> 0
+        }
+    }
+
+    /** 匹配用归一化：去括号注释（「三体（全集）」→「三体」）、去标点空格、小写 */
+    private fun normForMatch(s: String): String = s.lowercase()
+        .replace(Regex("""[（(【\[][^）)】\]]*[）)】\]]"""), "")
+        .replace(Regex("""[^\p{L}\p{N}]"""), "")
 
     suspend fun loadToc(ctx: Context, book: NovelBook): List<NovelChapter> = withContext(Dispatchers.IO) {
         val src = sources(ctx).firstOrNull { it.id == book.sourceId } ?: return@withContext emptyList()
