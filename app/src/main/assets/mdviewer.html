@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MD 文档</title>
+<style>
+:root{--bg:#12161c;--fg:#eef2f6;--muted:#9aa6b2;--accent:#7fd9c6;--card:rgba(255,255,255,.06);--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+body.light{--card:rgba(0,0,0,.045);--line:rgba(0,0,0,.12)}
+button{color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 11px;font-size:13px;cursor:pointer}
+button.primary{background:var(--accent);color:#0d1a17;border-color:transparent;font-weight:600}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--bg);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;font-weight:600;margin:0;flex:1}
+.view{display:none;padding:12px 14px 70px}.view.on{display:block}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:14px;outline:none}
+.hint{color:var(--muted);font-size:12px;line-height:1.7;margin:8px 0 12px}
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
+.card .t{font-size:14px;font-weight:600;line-height:1.45;word-break:break-all}
+.card .m{font-size:11px;color:var(--muted);margin-top:4px;word-break:break-all}
+.empty{text-align:center;color:var(--muted);padding:48px 10px;line-height:2}
+#readView{padding:0}
+#readHead{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--line)}
+#readHead .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:14px}
+#mdBody{padding:16px 18px 60px;line-height:1.8;word-break:break-word;overflow-x:hidden}
+#mdBody h1,#mdBody h2,#mdBody h3,#mdBody h4{line-height:1.35;margin:1.4em 0 .6em}
+#mdBody h1{font-size:1.55em;border-bottom:1px solid var(--line);padding-bottom:.3em}
+#mdBody h2{font-size:1.3em;border-bottom:1px solid var(--line);padding-bottom:.25em}
+#mdBody h3{font-size:1.12em}
+#mdBody p{margin:.7em 0}
+#mdBody a{color:var(--accent);text-decoration:none;word-break:break-all}
+#mdBody img{max-width:100%;height:auto;display:block;margin:12px auto;border-radius:8px;cursor:zoom-in;background:var(--card)}
+#mdBody pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;font-size:13px;line-height:1.55}
+#mdBody code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em}
+#mdBody :not(pre)>code{background:var(--card);padding:2px 5px;border-radius:5px}
+#mdBody blockquote{margin:12px 0;padding:4px 14px;border-left:3px solid var(--accent);color:var(--muted);background:var(--card)}
+#mdBody ul,#mdBody ol{padding-left:1.5em;margin:.6em 0}
+#mdBody li{margin:.25em 0}
+#mdBody table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;margin:12px 0}
+#mdBody th,#mdBody td{border:1px solid var(--line);padding:6px 10px;font-size:13px}
+#mdBody hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+#mdBody .task-list-item{list-style:none}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:20;align-items:center;justify-content:center;padding:20px}
+.modal.on{display:flex}
+.modal .box{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:18px;width:100%;max-width:340px}
+#imgModal{flex-direction:column}
+#bigImg{max-width:100%;max-height:86vh;border-radius:8px}
+#imgTip{color:#fff;font-size:12px;margin-top:12px;opacity:.8}
+</style></head><body>
+<header id="top"><h1>MD 文档</h1><button onclick="pickFolder()">选文件夹</button><button onclick="refresh()">刷新</button><button onclick="clearFolder()">清除</button></header>
+
+<section class="view on" id="listView">
+  <div class="hint" id="folderInfo">读取中…</div>
+  <div class="row"><input id="kw" placeholder="筛选文件名 / 路径" oninput="renderList()"></div>
+  <div id="fileList"></div>
+</section>
+
+<section class="view" id="readView">
+  <div id="readHead"><button onclick="backToList()">‹ 文件列表</button><div class="title" id="readTitle"></div><button onclick="toggleFont()">Aa</button></div>
+  <div id="mdBody"></div>
+</section>
+
+<div class="modal" id="fontModal"><div class="box">
+  <div class="row" style="justify-content:space-between"><b>正文字号</b><span id="fontVal" style="color:var(--muted)"></span></div>
+  <input type="range" id="fontRange" min="12" max="26" oninput="setFont(this.value)" style="padding:0">
+  <div style="margin-top:16px;text-align:right"><button class="primary" onclick="toggleFont()">完成</button></div>
+</div></div>
+
+<div class="modal" id="imgModal" onclick="closeImg()"><img id="bigImg" alt="预览"><div id="imgTip">点空白处关闭</div></div>
+
+<script src="mdviewer/marked.min.js"></script>
+<script>
+var cbSeq=0,cbs={},files=[],cur=null,font=16;
+function call(name){var a=[].slice.call(arguments,1);return new Promise(function(resolve){var id=++cbSeq;cbs[id]=resolve;a.push(id);MdAndroid[name].apply(MdAndroid,a);});}
+window.__mdCb=function(id,json){var f=cbs[id];delete cbs[id];if(f){try{f(JSON.parse(json));}catch(e){f({ok:false,error:json});}}};
+function esc(s){return String(s||'').replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function fmtSize(n){return !n?'':n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';}
+function toast(msg){var d=document.createElement('div');d.className='hint';d.textContent=msg;var v=document.querySelector('.view.on');if(v){v.insertBefore(d,v.firstChild);setTimeout(function(){d.remove();},2600);}}
+
+(function(){var t=JSON.parse(MdAndroid.theme());var r=document.documentElement.style;
+  r.setProperty('--bg',t.dark?'#12161c':'#faf6f2');r.setProperty('--fg',t.fg);
+  r.setProperty('--muted',t.muted);r.setProperty('--accent',t.accent);
+  document.body.classList.toggle('light',!t.dark);})();
+if(window.marked)marked.setOptions({gfm:true,breaks:false});
+
+function applyFont(){document.getElementById('mdBody').style.fontSize=font+'px';document.getElementById('fontRange').value=font;document.getElementById('fontVal').textContent=font+'px';}
+function setFont(v){font=+v;MdAndroid.setSetting(font);applyFont();}
+function toggleFont(){document.getElementById('fontModal').classList.toggle('on');}
+function show(v){document.querySelectorAll('.view').forEach(function(x){x.classList.remove('on');});document.getElementById(v).classList.add('on');document.getElementById('top').style.display=(v==='readView')?'none':'flex';}
+function pickFolder(){MdAndroid.pickFolder();}
+function clearFolder(){MdAndroid.clearFolder();files=[];refresh();toast('已清除目录设置');}
+function refresh(){document.getElementById('folderInfo').textContent='正在扫描文件夹…';call('list').then(function(r){
+  if(!r.ok){document.getElementById('folderInfo').textContent=r.error||'扫描失败';return;}
+  files=r.files;
+  document.getElementById('folderInfo').innerHTML=(r.folder?('文件夹「'+esc(r.folder)+'」 · 共 '+files.length+' 个 MD 文件<br>'):'还没选文件夹。点右上角「选文件夹」挑一个存放 md 的目录，之后会自动记住。<br>')+'支持标题、列表、表格、代码块、本地相对路径图片、Obsidian ![[图片]] 写法，以及 http(s) 远端图片。';
+  renderList();});}
+window.__mdFolderPicked=function(){refresh();};
+
+function renderList(){
+  var kw=document.getElementById('kw').value.trim().toLowerCase();
+  var list=files.filter(function(f){return !kw||f.name.toLowerCase().indexOf(kw)>=0||f.relPath.toLowerCase().indexOf(kw)>=0;});
+  var el=document.getElementById('fileList');
+  if(!list.length){el.innerHTML='<div class="empty">'+(files.length?'没有匹配的文件':'这个文件夹里还没有 .md 文件<br>把笔记放进去后点「刷新」')+'</div>';return;}
+  el.innerHTML=list.map(function(f){var i=files.indexOf(f);
+    return '<div class="card" onclick="openFile('+i+')"><div class="t">'+esc(f.name)+'</div><div class="m">'+esc(f.relPath)+' · '+fmtSize(f.size)+'</div></div>';}).join('');
+}
+function openFile(i){
+  var f=files[i];if(!f)return;
+  document.getElementById('readTitle').textContent=f.name;
+  document.getElementById('mdBody').innerHTML='<div class="hint">正在读取…</div>';
+  show('readView');
+  call('read',f.uri).then(function(r){
+    if(!r.ok){document.getElementById('mdBody').innerHTML='<div class="empty">'+(r.error||'读取失败')+'</div>';return;}
+    document.getElementById('mdBody').innerHTML=window.marked?marked.parse(r.text):'<pre>'+esc(r.text)+'</pre>';
+    var b=document.getElementById('mdBody');b.scrollTop=0;requestAnimationFrame(function(){b.scrollTop=0;});
+  });
+}
+function backToList(){show('listView');}
+function closeImg(){document.getElementById('imgModal').classList.remove('on');document.getElementById('bigImg').removeAttribute('src');}
+document.getElementById('mdBody').addEventListener('click',function(e){
+  if(e.target.tagName==='IMG'){document.getElementById('bigImg').src=e.target.src;document.getElementById('imgModal').classList.add('on');e.preventDefault();}
+});
+window.__mdBack=function(){
+  if(document.getElementById('imgModal').classList.contains('on')){closeImg();return true;}
+  if(document.getElementById('fontModal').classList.contains('on')){toggleFont();return true;}
+  if(document.getElementById('readView').classList.contains('on')){backToList();return true;}
+  return false;
+};
+font=JSON.parse(MdAndroid.settings()).font;applyFont();refresh();
+</script></body></html>

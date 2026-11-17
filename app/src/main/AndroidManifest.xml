@@ -80,6 +80,8 @@
         <activity android:name=".VideoHistoryActivity" android:label="播放历史" android:exported="false"/>
         <!-- 小说：书源聚合搜索 + 书架/进度/收藏，逻辑在 assets/novel.html -->
         <activity android:name=".NovelActivity" android:label="小说" android:exported="false"/>
+        <!-- 本地 MD 查看器：SAF 选目录 → 列 .md → WebView 渲染正文/图片（含远端 http 图） -->
+        <activity android:name=".MdViewerActivity" android:label="MD 文档" android:exported="false"/>
         <activity android:name=".SettingsActivity" android:exported="false"/>
         <!-- 端侧 AI 验证页（一期开发用）：跑 LiteRT-LM 本地模型，实测中文质量与速度 -->
         <activity android:name=".AiTestActivity" android:label="端侧AI验证" android:exported="false"/>

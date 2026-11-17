@@ -553,6 +553,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         HomeShortcutStore.Item("page", "netasset", "记账", "📒"),
         HomeShortcutStore.Item("page", "video", "看片", "🎬"),
         HomeShortcutStore.Item("page", "novel", "小说", "📖"),
+        HomeShortcutStore.Item("page", "mdviewer", "看MD", "📄"),
         HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),
         HomeShortcutStore.Item("page", "podcast", "播客", "🎙"),
         HomeShortcutStore.Item("page", "downloads", "下载", "⬇"),

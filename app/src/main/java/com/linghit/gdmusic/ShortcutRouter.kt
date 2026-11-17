@@ -55,6 +55,7 @@ object ShortcutRouter {
             else -> when (item.target) {
                 "video" -> go(Intent(ctx, VideoActivity::class.java))
                 "novel" -> go(Intent(ctx, NovelActivity::class.java))
+                "mdviewer" -> go(Intent(ctx, MdViewerActivity::class.java))
                 "voice" -> go(Intent(ctx, VoiceActivity::class.java))
                 // 首页：CLEAR_TOP 复用已有实例，不叠新页面（从 Service/悬浮球启动时尤其重要）
                 "home" -> go(
