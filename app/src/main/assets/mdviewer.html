@@ -14,7 +14,14 @@ header h1{font-size:16px;font-weight:600;margin:0;flex:1}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
 input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:14px;outline:none}
 .hint{color:var(--muted);font-size:12px;line-height:1.7;margin:8px 0 12px}
+.crumb{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:13px;margin:6px 0 12px;min-height:20px}
+.crumb span{cursor:pointer;color:var(--accent);padding:2px 4px;border-radius:6px}
+.crumb span:active{background:var(--card)}
+.crumb span.cur{color:var(--fg);font-weight:600;cursor:default}
+.crumb span.sep{color:var(--muted);cursor:default;opacity:.6;padding:0}
 .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
+.card:active{border-color:var(--accent)}
+.card.folder{background:rgba(127,217,198,.07)}
 .card .t{font-size:14px;font-weight:600;line-height:1.45;word-break:break-all}
 .card .m{font-size:11px;color:var(--muted);margin-top:4px;word-break:break-all}
 .empty{text-align:center;color:var(--muted);padding:48px 10px;line-height:2}
@@ -38,7 +45,6 @@ input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid v
 #mdBody table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;margin:12px 0}
 #mdBody th,#mdBody td{border:1px solid var(--line);padding:6px 10px;font-size:13px}
 #mdBody hr{border:0;border-top:1px solid var(--line);margin:20px 0}
-#mdBody .task-list-item{list-style:none}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:20;align-items:center;justify-content:center;padding:20px}
 .modal.on{display:flex}
 .modal .box{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:18px;width:100%;max-width:340px}
@@ -50,7 +56,8 @@ input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid v
 
 <section class="view on" id="listView">
   <div class="hint" id="folderInfo">读取中…</div>
-  <div class="row"><input id="kw" placeholder="筛选文件名 / 路径" oninput="renderList()"></div>
+  <div class="crumb" id="crumb"></div>
+  <div class="row"><input id="kw" placeholder="搜所有文件夹里的 md" oninput="renderList()"></div>
   <div id="fileList"></div>
 </section>
 
@@ -69,10 +76,11 @@ input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid v
 
 <script src="mdviewer/marked.min.js"></script>
 <script>
-var cbSeq=0,cbs={},files=[],cur=null,font=16;
+var cbSeq=0,cbs={},files=[],cur=null,font=16,tree=null,curPath=[],rootName='根目录';
 function call(name){var a=[].slice.call(arguments,1);return new Promise(function(resolve){var id=++cbSeq;cbs[id]=resolve;a.push(id);MdAndroid[name].apply(MdAndroid,a);});}
 window.__mdCb=function(id,json){var f=cbs[id];delete cbs[id];if(f){try{f(JSON.parse(json));}catch(e){f({ok:false,error:json});}}};
 function esc(s){return String(s||'').replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function cmp(a,b){return String(a).localeCompare(String(b),'zh-CN');}
 function fmtSize(n){return !n?'':n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';}
 function toast(msg){var d=document.createElement('div');d.className='hint';d.textContent=msg;var v=document.querySelector('.view.on');if(v){v.insertBefore(d,v.firstChild);setTimeout(function(){d.remove();},2600);}}
 
@@ -87,21 +95,79 @@ function setFont(v){font=+v;MdAndroid.setSetting(font);applyFont();}
 function toggleFont(){document.getElementById('fontModal').classList.toggle('on');}
 function show(v){document.querySelectorAll('.view').forEach(function(x){x.classList.remove('on');});document.getElementById(v).classList.add('on');document.getElementById('top').style.display=(v==='readView')?'none':'flex';}
 function pickFolder(){MdAndroid.pickFolder();}
-function clearFolder(){MdAndroid.clearFolder();files=[];refresh();toast('已清除目录设置');}
+function clearFolder(){MdAndroid.clearFolder();files=[];tree=null;curPath=[];refresh();toast('已清除目录设置');}
 function refresh(){document.getElementById('folderInfo').textContent='正在扫描文件夹…';call('list').then(function(r){
   if(!r.ok){document.getElementById('folderInfo').textContent=r.error||'扫描失败';return;}
-  files=r.files;
-  document.getElementById('folderInfo').innerHTML=(r.folder?('文件夹「'+esc(r.folder)+'」 · 共 '+files.length+' 个 MD 文件<br>'):'还没选文件夹。点右上角「选文件夹」挑一个存放 md 的目录，之后会自动记住。<br>')+'支持标题、列表、表格、代码块、本地相对路径图片、Obsidian ![[图片]] 写法，以及 http(s) 远端图片。';
+  files=r.files;rootName=r.folder||'根目录';tree=buildTree();
+  if(!nodeAt(curPath))curPath=[];
+  document.getElementById('folderInfo').innerHTML=(r.folder?('文件夹「'+esc(r.folder)+'」 · 共 '+files.length+' 个 MD 文件<br>'):'还没选文件夹。点右上角「选文件夹」挑一个大目录，里面不管套多少层小文件夹都会按层级列出来。<br>')+'支持标题/列表/表格/代码块、本地相对路径图片、Obsidian ![[图片]] 写法，以及 http(s) 远端图片。';
   renderList();});}
 window.__mdFolderPicked=function(){refresh();};
 
+/* 由 relPath 还原目录树：a/b/c.md → 根/a/b/文件，空文件夹不显示（没有 md 可看） */
+function buildTree(){
+  var root={dirs:{},files:[]};
+  files.forEach(function(f){
+    var parts=f.relPath.split('/');
+    var node=root;
+    for(var i=0;i<parts.length-1;i++){
+      var d=parts[i];
+      if(!node.dirs[d])node.dirs[d]={dirs:{},files:[]};
+      node=node.dirs[d];
+    }
+    node.files.push(f);
+  });
+  return root;
+}
+function nodeAt(path){
+  var n=tree;
+  for(var i=0;i<path.length;i++){
+    if(!n||!n.dirs[path[i]])return null;
+    n=n.dirs[path[i]];
+  }
+  return n;
+}
+function countMd(n){if(!n)return 0;var c=n.files.length;for(var k in n.dirs)c+=countMd(n.dirs[k]);return c;}
+function dirKeys(n){return Object.keys(n?n.dirs:{}).sort(cmp);}
+function renderCrumb(){
+  var el=document.getElementById('crumb');
+  if(!tree){el.innerHTML='';return;}
+  var h='<span onclick="gotoPath(0)" class="'+(curPath.length?'':'cur')+'">'+esc(rootName)+'</span>';
+  curPath.forEach(function(d,i){
+    var last=(i===curPath.length-1);
+    h+='<span class="sep">/</span><span onclick="gotoPath('+(i+1)+')" class="'+(last?'cur':'')+'">'+esc(d)+'</span>';
+  });
+  el.innerHTML=h;
+}
+function gotoPath(i){curPath=curPath.slice(0,i);renderList();}
+function enterDir(i){var n=nodeAt(curPath);var d=dirKeys(n)[i];if(d){curPath.push(d);renderList();}}
+function backDir(){if(curPath.length){curPath.pop();renderList();return true;}return false;}
+
 function renderList(){
-  var kw=document.getElementById('kw').value.trim().toLowerCase();
-  var list=files.filter(function(f){return !kw||f.name.toLowerCase().indexOf(kw)>=0||f.relPath.toLowerCase().indexOf(kw)>=0;});
+  var crumb=document.getElementById('crumb');
   var el=document.getElementById('fileList');
-  if(!list.length){el.innerHTML='<div class="empty">'+(files.length?'没有匹配的文件':'这个文件夹里还没有 .md 文件<br>把笔记放进去后点「刷新」')+'</div>';return;}
-  el.innerHTML=list.map(function(f){var i=files.indexOf(f);
-    return '<div class="card" onclick="openFile('+i+')"><div class="t">'+esc(f.name)+'</div><div class="m">'+esc(f.relPath)+' · '+fmtSize(f.size)+'</div></div>';}).join('');
+  var kw=document.getElementById('kw').value.trim().toLowerCase();
+  if(kw){
+    crumb.style.display='none';
+    var hit=files.filter(function(f){return f.name.toLowerCase().indexOf(kw)>=0||f.relPath.toLowerCase().indexOf(kw)>=0;});
+    el.innerHTML=hit.length?hit.map(function(f){var i=files.indexOf(f);
+      return '<div class="card" onclick="openFile('+i+')"><div class="t">📄 '+esc(f.name)+'</div><div class="m">'+esc(f.relPath)+' · '+fmtSize(f.size)+'</div></div>';}).join(''):'<div class="empty">没有匹配的文件</div>';
+    return;
+  }
+  crumb.style.display='flex';renderCrumb();
+  var node=nodeAt(curPath);
+  if(!node){curPath=[];node=tree;}
+  if(!node){el.innerHTML='<div class="empty">'+(files.length?'扫描中…':'这个文件夹里还没有 .md 文件<br>把笔记放进去后点「刷新」')+'</div>';return;}
+  var dirs=dirKeys(node);
+  var fs=(node.files||[]).slice().sort(function(a,b){return cmp(a.name,b.name);});
+  if(!dirs.length&&!fs.length){el.innerHTML='<div class="empty">这个文件夹里没有 md 文件</div>';return;}
+  var h='';
+  dirs.forEach(function(d,i){
+    h+='<div class="card folder" onclick="enterDir('+i+')"><div class="t">📁 '+esc(d)+'</div><div class="m">'+countMd(node.dirs[d])+' 个 MD 文件（含子文件夹）</div></div>';
+  });
+  fs.forEach(function(f){var i=files.indexOf(f);
+    h+='<div class="card" onclick="openFile('+i+')"><div class="t">📄 '+esc(f.name)+'</div><div class="m">'+fmtSize(f.size)+'</div></div>';});
+  el.innerHTML=h;
 }
 function openFile(i){
   var f=files[i];if(!f)return;
@@ -123,7 +189,9 @@ window.__mdBack=function(){
   if(document.getElementById('imgModal').classList.contains('on')){closeImg();return true;}
   if(document.getElementById('fontModal').classList.contains('on')){toggleFont();return true;}
   if(document.getElementById('readView').classList.contains('on')){backToList();return true;}
-  return false;
+  var kw=document.getElementById('kw');
+  if(kw.value){kw.value='';renderList();return true;}
+  return backDir();
 };
 font=JSON.parse(MdAndroid.settings()).font;applyFont();refresh();
 </script></body></html>
