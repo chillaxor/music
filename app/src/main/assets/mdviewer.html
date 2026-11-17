@@ -51,6 +51,13 @@ input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid v
 #imgModal{flex-direction:column}
 #bigImg{max-width:100%;max-height:86vh;border-radius:8px}
 #imgTip{color:#fff;font-size:12px;margin-top:12px;opacity:.8}
+.meta-card{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.meta-title{font-weight:600;font-size:13px;color:var(--accent);margin-bottom:6px}
+.meta-row{display:flex;gap:10px;font-size:12px;line-height:1.7;border-top:1px solid var(--line);padding:5px 0}
+.meta-row:first-of-type{border-top:0}
+.meta-k{flex:0 0 70px;color:var(--muted)}
+.meta-v{flex:1;word-break:break-all}
+.meta-v a{color:var(--accent);cursor:pointer;text-decoration:none}
 </style></head><body>
 <header id="top"><h1>MD 文档</h1><button onclick="pickFolder()">选文件夹</button><button onclick="refresh()">刷新</button><button onclick="clearFolder()">清除</button></header>
 
@@ -169,6 +176,21 @@ function renderList(){
     h+='<div class="card" onclick="openFile('+i+')"><div class="t">📄 '+esc(f.name)+'</div><div class="m">'+fmtSize(f.size)+'</div></div>';});
   el.innerHTML=h;
 }
+/* 文首 YAML 属性（source_url/title/account…）渲染成卡片，不当正文 */
+function renderMeta(m){
+  if(!m)return '';
+  var keys=Object.keys(m);
+  if(!keys.length)return '';
+  var labels={title:'标题',source_url:'原文链接',account:'公众号',published_at:'发布时间',saved_at:'收藏时间',sync_id:'同步 ID',parse_status:'解析状态'};
+  var order=['title','account','source_url','published_at','saved_at','parse_status','sync_id'];
+  var sorted=order.filter(function(k){return keys.indexOf(k)>=0;}).concat(keys.filter(function(k){return order.indexOf(k)<0;}));
+  var rows=sorted.map(function(k){
+    var v=String(m[k]||'');
+    var val=(k==='source_url'&&/^https?:\/\//i.test(v))?'<a data-ext="'+esc(v)+'">打开原文 ↗</a>':esc(v);
+    return '<div class="meta-row"><span class="meta-k">'+esc(labels[k]||k)+'</span><span class="meta-v">'+val+'</span></div>';
+  }).join('');
+  return '<div class="meta-card"><div class="meta-title">文章属性</div>'+rows+'</div>';
+}
 function openFile(i){
   var f=files[i];if(!f)return;
   document.getElementById('readTitle').textContent=f.name;
@@ -176,14 +198,16 @@ function openFile(i){
   show('readView');
   call('read',f.uri).then(function(r){
     if(!r.ok){document.getElementById('mdBody').innerHTML='<div class="empty">'+(r.error||'读取失败')+'</div>';return;}
-    document.getElementById('mdBody').innerHTML=window.marked?marked.parse(r.text):'<pre>'+esc(r.text)+'</pre>';
+    document.getElementById('mdBody').innerHTML=renderMeta(r.meta)+(window.marked?marked.parse(r.text):'<pre>'+esc(r.text)+'</pre>');
     var b=document.getElementById('mdBody');b.scrollTop=0;requestAnimationFrame(function(){b.scrollTop=0;});
   });
 }
 function backToList(){show('listView');}
 function closeImg(){document.getElementById('imgModal').classList.remove('on');document.getElementById('bigImg').removeAttribute('src');}
 document.getElementById('mdBody').addEventListener('click',function(e){
-  if(e.target.tagName==='IMG'){document.getElementById('bigImg').src=e.target.src;document.getElementById('imgModal').classList.add('on');e.preventDefault();}
+  if(e.target.tagName==='IMG'){document.getElementById('bigImg').src=e.target.src;document.getElementById('imgModal').classList.add('on');e.preventDefault();return;}
+  var ext=e.target.getAttribute&&e.target.getAttribute('data-ext');
+  if(ext){MdAndroid.openExternal(ext);e.preventDefault();}
 });
 window.__mdBack=function(){
   if(document.getElementById('imgModal').classList.contains('on')){closeImg();return true;}

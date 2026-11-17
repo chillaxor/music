@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -170,11 +171,26 @@ class MdViewerActivity : AppCompatActivity() {
             val f = lastScan.firstOrNull { it.uri == uri }
             val raw = MdViewerStore.read(ctx, uri)
                 ?: return@async err("读不到这个文件，可能已被移动或授权失效，试试「刷新」")
+            // 文首 YAML frontmatter 单独拆出来做属性卡，不让 marked 把 --- 渲染成分割线
+            val parsed = MdViewerStore.parseFrontmatter(raw)
+            val meta = JSONObject()
+            parsed.meta.forEach { (k, v) -> meta.put(k, v) }
             ok {
                 put("name", f?.name ?: uri.substringAfterLast('/'))
                 put("relPath", f?.relPath.orEmpty())
+                put("meta", meta)
                 // 远端 http(s) 图片保持原样由 WebView 直连；本地相对路径改写成 SAF 代理 URL
-                put("text", MdViewerStore.rewriteImages(ctx, f?.dirDoc, raw))
+                put("text", MdViewerStore.rewriteImages(ctx, f?.dirDoc, parsed.body))
+            }
+        }
+
+        /** 属性卡里的「打开原文」：交给系统浏览器，不在 WebView 里跳走 */
+        @JavascriptInterface
+        fun openExternal(url: String) {
+            runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.onFailure {
+                Toast.makeText(this@MdViewerActivity, "没有能打开这个链接的应用", Toast.LENGTH_SHORT).show()
             }
         }
 

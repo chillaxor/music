@@ -93,6 +93,38 @@ object MdViewerStore {
         return decode(bytes)
     }
 
+    data class FrontMatter(val meta: Map<String, String>, val body: String)
+
+    /**
+     * 拆出文首 YAML frontmatter（--- 包裹的 key: value）。
+     * 微信文章收藏等工具把来源/标题/时间写在头部，直接交给 marked 会把开头的
+     * --- 当成分割线、属性当正文，必须拆成结构化数据单独展示。
+     */
+    fun parseFrontmatter(raw: String): FrontMatter {
+        val text = raw.removePrefix("\uFEFF")
+        val lines = text.lines()
+        if (lines.firstOrNull()?.trim() != "---") return FrontMatter(emptyMap(), raw)
+        var end = -1
+        for (i in 1 until lines.size) {
+            if (lines[i].trim() == "---") { end = i; break }
+        }
+        if (end < 0) return FrontMatter(emptyMap(), raw)
+        val meta = linkedMapOf<String, String>()
+        for (i in 1 until end) {
+            val line = lines[i]
+            val pos = line.indexOf(':')
+            if (pos <= 0) continue
+            val key = line.substring(0, pos).trim()
+            var value = line.substring(pos + 1).trim()
+            if (value.length >= 2 &&
+                ((value.first() == '"' && value.last() == '"') ||
+                 (value.first() == '\'' && value.last() == '\''))
+            ) value = value.substring(1, value.length - 1)
+            if (key.isNotEmpty()) meta[key] = value
+        }
+        return FrontMatter(meta, lines.subList(end + 1, lines.size).joinToString("\n"))
+    }
+
     private fun decode(bytes: ByteArray): String {
         val bad = '\uFFFD'
         val utf8 = bytes.decodeToString()
