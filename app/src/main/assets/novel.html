@@ -21,15 +21,16 @@ input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--lin
 .badge{background:rgba(127,217,198,.15);color:var(--accent);padding:1px 7px;border-radius:6px;font-size:11px}
 .hint{color:var(--muted);font-size:12px;margin:10px 0}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:12px}.row input{flex:1}
-#reader{padding:0}
-#readHead{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+#reader{padding:0;position:fixed;inset:0;z-index:4}
+#reader.on{display:flex;flex-direction:column}
+#readHead{position:relative;z-index:5;flex:none;display:flex;gap:8px;align-items:center;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
 #readHead .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-#content{padding:18px 20px 90px;font-size:19px;line-height:1.75;letter-spacing:.2px;white-space:pre-wrap;word-break:break-word}
+#content{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 20px 24px;font-size:19px;line-height:1.75;letter-spacing:.2px;white-space:pre-wrap;word-break:break-word}
 #chapters{display:none;position:fixed;inset:56px 0 0;overflow:auto;background:var(--bg);z-index:8;padding:12px 16px}
 #chapters.on{display:block}
 #chapters .card{padding:9px 12px;margin-bottom:6px}
 #chapters .card.cur{border-color:var(--accent);color:var(--accent)}
-#readFoot{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 16px;background:var(--bg);border-top:1px solid var(--line);z-index:6}
+#readFoot{position:relative;flex:none;display:flex;gap:8px;padding:10px 16px;background:var(--bg);border-top:1px solid var(--line);z-index:6}
 #readFoot button{flex:1}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;align-items:center;justify-content:center;padding:24px}
 .modal.on{display:flex}
@@ -77,10 +78,14 @@ input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--lin
 
 <script>
 var cbSeq=0, cbs={}, books=[], shelf=[], chapters=[], cur=null, settings={font:19,line:175,night:false}, shelfMode='recent', scrollTimer=null;
+function scrollTop0(){
+  var c=document.getElementById('content');
+  if(c){c.scrollTop=0;requestAnimationFrame(function(){c.scrollTop=0;});}
+}
 function call(name){var a=[].slice.call(arguments,1);return new Promise(function(resolve){var id=++cbSeq;cbs[id]=resolve;a.push(id);NovelAndroid[name].apply(NovelAndroid,a);});}
 window.__novelCb=function(id,json){var f=cbs[id];delete cbs[id];if(f){try{f(JSON.parse(json));}catch(e){f({ok:false,error:json});}}};
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-function show(v){document.querySelectorAll('.view').forEach(function(x){x.classList.remove('on');});document.getElementById(v).classList.add('on');document.getElementById('top').style.display=v==='reader'?'none':'flex';if(v==='shelf')renderShelf();}
+function show(v){document.querySelectorAll('.view').forEach(function(x){x.classList.remove('on');});document.getElementById(v).classList.add('on');document.getElementById('top').style.display=v==='reader'?'none':'flex';if(v==='reader')scrollTop0();if(v==='shelf')renderShelf();}
 function openModal(id){document.getElementById(id).classList.add('on');}
 function closeModal(id){document.getElementById(id).classList.remove('on');}
 function toast(msg){var d=document.createElement('div');d.className='spin';d.textContent=msg;document.querySelector('.view.on').appendChild(d);setTimeout(function(){d.remove();},2200);}
@@ -144,7 +149,7 @@ function loadChapter(i){
   document.getElementById('chapters').classList.remove('on');
   call('chapter',cur.id,i).then(function(r){
     document.getElementById('content').textContent=r.ok&&r.text?r.text:'（这一章没抓到正文，试试下一章）';
-    document.getElementById('content').scrollTop=0;window.scrollTo(0,0);
+    scrollTop0();
     document.getElementById('readTitle').textContent=chapters[i].name+' · '+cur.name;
     renderChapters();
   });
@@ -152,10 +157,25 @@ function loadChapter(i){
 function jump(d){loadChapter(cur.chapterIndex+d);}
 function saveProgress(){
   if(!cur)return;
-  var y=window.scrollY||document.documentElement.scrollTop||0;
+  var c=document.getElementById('content');
+  var y=c?c.scrollTop:0;
   NovelAndroid.progress(cur.id,cur.chapterIndex,Math.floor(y/32),y);
 }
-window.addEventListener('scroll',function(){clearTimeout(scrollTimer);scrollTimer=setTimeout(saveProgress,400);});
+document.getElementById('content').addEventListener('scroll',function(){clearTimeout(scrollTimer);scrollTimer=setTimeout(saveProgress,400);});
+var _tx=0,_ty=0,_tt=0;
+(function(){
+  var rd=document.getElementById('content');
+  rd.addEventListener('touchstart',function(e){var t=e.changedTouches[0];if(t){_tx=t.clientX;_ty=t.clientY;_tt=Date.now();}},{passive:true});
+  rd.addEventListener('touchend',function(e){
+    var t=e.changedTouches[0];if(!t||!cur||!chapters.length)return;
+    if(document.getElementById('chapters').classList.contains('on'))return;
+    if(document.getElementById('settingsModal').classList.contains('on'))return;
+    var dx=t.clientX-_tx,dy=t.clientY-_ty,dt=Date.now()-_tt;
+    if(dt>900||Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.4)return;
+    if(dx<0){if(cur.chapterIndex<chapters.length-1)jump(1);}
+    else{if(cur.chapterIndex>0)jump(-1);}
+  },{passive:true});
+})();
 function toggleFav(){if(!cur)return;var on=NovelAndroid.favorite(cur.id);cur.favorite=on;document.getElementById('starBtn').textContent=on?'★':'☆';refreshShelf();}
 
 function applySettings(){
