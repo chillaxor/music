@@ -136,6 +136,8 @@ class NovelActivity : AppCompatActivity() {
             )
             var chapters = NovelStore.readToc(this@NovelActivity, NovelStore.bookId(book))
             if (chapters.isEmpty()) chapters = NovelEngine.loadToc(this@NovelActivity, book)
+            // 统一去重 + 纠正倒序，并回写缓存（旧缓存可能是倒序且有重复项）
+            chapters = NovelEngine.normalizeTocOrder(chapters)
             NovelStore.saveToc(this@NovelActivity, NovelStore.bookId(book), chapters)
             val item = NovelStore.touch(this@NovelActivity, book, chapters.size)
             val arr = JSONArray()
@@ -155,17 +157,18 @@ class NovelActivity : AppCompatActivity() {
         @JavascriptInterface fun chapter(id: String, index: Int, cbId: String) = async(cbId) {
             val item = NovelStore.get(this@NovelActivity, id)
                 ?: return@async err("书架里没有这本书")
-            var text = NovelStore.readChapter(this@NovelActivity, id, index)
             val chapters = NovelStore.readToc(this@NovelActivity, id)
             val url = chapters.getOrNull(index)?.url.orEmpty()
+            var text = if (url.isNotBlank()) NovelStore.readChapterByUrl(this@NovelActivity, id, url, index)
+                else NovelStore.readChapter(this@NovelActivity, id, index)
             if (text.isBlank() && url.isNotBlank()) {
                 text = NovelEngine.loadChapter(this@NovelActivity, item.sourceId, url)
-                if (text.isNotBlank()) NovelStore.saveChapter(this@NovelActivity, id, index, text)
+                if (text.isNotBlank()) NovelStore.saveChapterByUrl(this@NovelActivity, id, url, index, text)
             }
             ok {
                 put("name", chapters.getOrNull(index)?.name.orEmpty())
                 put("text", text)
-                put("cached", NovelStore.readChapter(this@NovelActivity, id, index).isNotBlank())
+                put("cached", text.isNotBlank())
             }
         }
 

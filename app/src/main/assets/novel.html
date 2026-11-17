@@ -30,6 +30,9 @@ input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--lin
 #chapters.on{display:block}
 #chapters .card{padding:9px 12px;margin-bottom:6px}
 #chapters .card.cur{border-color:var(--accent);color:var(--accent)}
+#chBar{position:sticky;top:0;z-index:9;display:flex;gap:8px;align-items:center;padding:8px 0 10px;background:var(--bg)}
+#chBar .tip{flex:1;font-size:12px;color:var(--muted)}
+#chBar button{font-size:12px;padding:6px 10px}
 #readFoot{position:relative;flex:none;display:flex;gap:8px;padding:10px 16px;background:var(--bg);border-top:1px solid var(--line);z-index:6}
 #readFoot button{flex:1}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;align-items:center;justify-content:center;padding:24px}
@@ -77,7 +80,7 @@ input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--lin
 </div></div>
 
 <script>
-var cbSeq=0, cbs={}, books=[], shelf=[], chapters=[], cur=null, settings={font:19,line:175,night:false}, shelfMode='recent', scrollTimer=null;
+var cbSeq=0, cbs={}, books=[], shelf=[], chapters=[], cur=null, settings={font:19,line:175,night:false}, shelfMode='recent', scrollTimer=null, chOrder='asc';
 function scrollTop0(){
   var c=document.getElementById('content');
   if(c){c.scrollTop=0;requestAnimationFrame(function(){c.scrollTop=0;});}
@@ -136,9 +139,15 @@ function openBook(id){
   });
 }
 function renderChapters(){
-  document.getElementById('chapters').innerHTML=chapters.map(function(c){
+  var list=chapters.slice();
+  var desc=(typeof chOrder!=='undefined'&&chOrder==='desc');
+  if(desc)list.reverse();
+  var h='<div id="chBar"><span class="tip">共 '+chapters.length+' 章'+(desc?'（倒序显示）':'（正序）')+'</span><button onclick="toggleChOrder()">'+(desc?'↑ 改为正序':'↓ 改为倒序')+'</button><button onclick="toggleChapters()">关闭</button></div>';
+  h+=list.map(function(c){
     return '<div class="card'+(c.index===cur.chapterIndex?' cur':'')+'" onclick="loadChapter('+c.index+')">'+esc(c.name)+'</div>';}).join('');
+  document.getElementById('chapters').innerHTML=h;
 }
+function toggleChOrder(){chOrder=(chOrder==='desc')?'asc':'desc';renderChapters();}
 function toggleChapters(){document.getElementById('chapters').classList.toggle('on');}
 function loadChapter(i){
   if(!cur||!chapters.length)return;

@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit
 object NovelEngine {
 
     private const val HEALTH_PREFS = "novel_source_health"
+    /** 连续失败 3 次后临时停用该源，30 分钟后自动恢复 */
+    private const val COOLDOWN_MS = 30L * 60 * 1000
     private val client = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -54,6 +56,7 @@ object NovelEngine {
                     val html = fetch(ctx, src, src.searchUrl.replace("{{key}}", key).replace("{{page}}", "1"), src.searchBody.replace("{{key}}", key).replace("{{page}}", "1"))
                     if (html.isBlank()) { fail(ctx, src.id); emptyList() }
                     else {
+                        succeed(ctx, src.id)
                         val doc = Jsoup.parse(html)
                         val nodes = NovelRule.evalList(doc, src.bookList)
                         nodes.mapNotNull { el ->
@@ -99,15 +102,75 @@ object NovelEngine {
         try {
             val doc = Jsoup.parse(fetch(ctx, src, book.url, ""))
             val nodes = NovelRule.evalList(doc, src.tocList)
-            nodes.mapIndexedNotNull { i, el ->
+            if (nodes.isNotEmpty()) succeed(ctx, src.id)
+            val list = nodes.mapIndexedNotNull { i, el ->
                 val name = NovelRule.eval(el, src.tocName).trim().ifBlank { "第${i + 1}章" }
                 val url = NovelRule.resolve(NovelRule.eval(el, src.tocLink).trim(), book.url)
                 if (url.isBlank()) null else NovelChapter(i, name, url)
             }
+            normalizeTocOrder(list)
         } catch (e: Exception) {
             fail(ctx, src.id)
             emptyList()
         }
+    }
+
+    /**
+     * 有些站点的目录是倒序的（最新章节排最前）。这里统一纠正成「第一章在最前」，
+     * 否则 App 的「下一章」会变成往回翻。判定方式：比较首尾章节名里的序号。
+     * 同时去掉重复章节（部分站点目录里同一章会重复出现）。
+     */
+    fun normalizeTocOrder(list: List<NovelChapter>): List<NovelChapter> {
+        val deduped = LinkedHashMap<String, NovelChapter>()
+        for (c in list) {
+            val k = c.name.trim() + "@" + c.url
+            if (!deduped.containsKey(k)) deduped[k] = c
+        }
+        var out = deduped.values.toList()
+        if (out.size < 2) return out.mapIndexed { i, c -> c.copy(index = i) }
+        val firstNo = chapterNo(out.first().name)
+        val lastNo = chapterNo(out.last().name)
+        if (firstNo != null && lastNo != null && firstNo > lastNo) {
+            out = out.reversed()
+        }
+        return out.mapIndexed { i, c -> c.copy(index = i) }
+    }
+
+    /** 从章节名里提取数字序号，如「第1357章 光阴之外（终）」→ 1357 */
+    private fun chapterNo(name: String): Int? {
+        val m = Regex("第\\s*([0-9零一二三四五六七八九十百千万两]+)\\s*[章回节話话]").find(name) ?: return null
+        return cnToInt(m.groupValues[1])
+    }
+
+    /** 中文数字转阿拉伯数字（支持到万位） */
+    private fun cnToInt(s: String): Int? {
+        if (s.isEmpty()) return null
+        if (s.all { it.isDigit() }) return s.toIntOrNull()
+        val digits = mapOf('零' to 0, '一' to 1, '二' to 2, '两' to 2, '三' to 3, '四' to 4,
+            '五' to 5, '六' to 6, '七' to 7, '八' to 8, '九' to 9)
+        val units = mapOf('十' to 10, '百' to 100, '千' to 1000, '万' to 10000)
+        var total = 0
+        var section = 0
+        var number = 0
+        for (ch in s) {
+            when {
+                ch in digits -> number = digits.getValue(ch)
+                ch in units -> {
+                    val u = units.getValue(ch)
+                    if (u == 10000) {
+                        total += (section + number) * u
+                        section = 0
+                        number = 0
+                    } else {
+                        if (number == 0) number = 1
+                        section += number * u
+                        number = 0
+                    }
+                }
+                else -> return null
+            }
+        }
+        return total + section + number
     }
 
     suspend fun loadChapter(ctx: Context, sourceId: String, url: String): String = withContext(Dispatchers.IO) {
@@ -115,10 +178,10 @@ object NovelEngine {
         try {
             val html = fetch(ctx, src, url, "")
             if (html.isBlank()) return@withContext ""
-            val doc = Jsoup.parse(html)
-            var raw = NovelRule.eval(doc, src.contentRule)
-            // @html 规则拿到的是 HTML 片段，转成带段落换行的纯文本
-            if (raw.contains("<") && raw.contains(">")) raw = NovelRule.htmlToText(raw)
+            var raw = extractText(ctx, src, html)
+            if (raw.isNotBlank()) succeed(ctx, src.id)
+            // 部分站点章节分页（正文尾部带「第(1/3)页」标记，续页 URL 为 xxx.html → xxx_2.html）
+            raw = appendPagedChapters(ctx, src, url, raw)
             // so-novel 的 filterTxt 是竖线分隔的正则
             if (src.filterText.isNotBlank() && src.dialect == "sonovel") {
                 src.filterText.split('|').filter { it.isNotBlank() }.forEach { p ->
@@ -137,6 +200,45 @@ object NovelEngine {
         } catch (e: Exception) {
             fail(ctx, src.id)
             ""
+        }
+    }
+
+    /** 按规则从章节 HTML 抽正文 */
+    private fun extractText(ctx: Context, src: NovelSource, html: String): String {
+        val doc = Jsoup.parse(html)
+        var raw = NovelRule.eval(doc, src.contentRule)
+        // @html 规则拿到的是 HTML 片段，转成带段落换行的纯文本
+        if (raw.contains("<") && raw.contains(">")) raw = NovelRule.htmlToText(raw)
+        return raw
+    }
+
+    /** 章节分页补全：正文里出现「第(1/3)页」这类标记时，把后续分页抓下来接在后面 */
+    private fun appendPagedChapters(ctx: Context, src: NovelSource, url: String, raw: String): String {
+        val pageMark = Regex("第\\s*\\(?\\s*(\\d+)\\s*/\\s*(\\d+)\\s*\\)?\\s*页")
+        val m = pageMark.find(raw) ?: return raw
+        val cur = m.groupValues[1].toIntOrNull() ?: return raw
+        val total = m.groupValues[2].toIntOrNull() ?: return raw
+        if (total <= 1 || cur >= total || total > 20) return raw
+        // 去掉分页标记本身（注意：Kotlin 的 StringBuilder.replace 返回新对象，必须用返回值）
+        val sb = StringBuilder(pageMark.replace(raw, ""))
+        for (p in (cur + 1)..total) {
+            val nextUrl = nextPageUrl(url, p)
+            if (nextUrl.isBlank()) break
+            val html = runCatching { fetch(ctx, src, nextUrl, "") }.getOrDefault("")
+            if (html.isBlank()) break
+            val txt = extractText(ctx, src, html)
+            if (txt.isBlank()) break
+            sb.append('\n').append(pageMark.replace(txt, ""))
+        }
+        return sb.toString()
+    }
+
+    /** 由 xxx.html 推导 xxx_2.html / xxx_3.html；不认识的形态返回空 */
+    private fun nextPageUrl(url: String, page: Int): String {
+        if (page < 2) return ""
+        return when {
+            url.endsWith(".html") -> url.removeSuffix(".html") + "_$page.html"
+            else -> ""
         }
     }
 
@@ -177,15 +279,33 @@ object NovelEngine {
     private fun healthy(ctx: Context, id: String): Boolean {
         val prefs = ctx.getSharedPreferences(HEALTH_PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(id, null) ?: return true
-        return runCatching { JSONObject(raw).optInt("fails", 0) < 3 }.getOrDefault(true)
+        val o = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+        val fails = o.optInt("fails", 0)
+        if (fails < 3) return true
+        // 连续失败超过 3 次才临时停用，且 30 分钟后自动恢复（源随时可能修好，不做永久封杀）
+        val lastFail = o.optLong("lastFail", 0L)
+        val cooled = System.currentTimeMillis() - lastFail > COOLDOWN_MS
+        if (cooled) {
+            // 冷却期已过，清零并放行，给它一次翻身机会
+            prefs.edit().remove(id).apply()
+            return true
+        }
+        return false
     }
 
     private fun fail(ctx: Context, id: String) {
         val prefs = ctx.getSharedPreferences(HEALTH_PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(id, "{}") ?: "{}"
         val o = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
-        o.put("fails", o.optInt("fails", 0) + 1)
+        val fails = o.optInt("fails", 0) + 1
+        o.put("fails", fails)
         o.put("lastFail", System.currentTimeMillis())
         prefs.edit().putString(id, o.toString()).apply()
+    }
+
+    /** 源成功后清零失败计数，让偶发失败的源能自动恢复 */
+    private fun succeed(ctx: Context, id: String) {
+        val prefs = ctx.getSharedPreferences(HEALTH_PREFS, Context.MODE_PRIVATE)
+        if (prefs.getString(id, null) != null) prefs.edit().remove(id).apply()
     }
 }

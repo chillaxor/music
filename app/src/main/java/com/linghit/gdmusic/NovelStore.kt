@@ -145,4 +145,23 @@ object NovelStore {
         val f = bookDir(ctx, id).resolve("%04d.txt".format(index))
         return if (f.exists()) f.readText(Charsets.UTF_8) else ""
     }
+
+    /** 按章节 URL 缓存正文：目录顺序变化（纠正倒序）也不会串章 */
+    fun chapterFile(ctx: Context, id: String, url: String, index: Int): File {
+        val key = java.security.MessageDigest.getInstance("MD5").digest(url.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return bookDir(ctx, id).resolve("c_$key.txt")
+    }
+
+    fun saveChapterByUrl(ctx: Context, id: String, url: String, index: Int, text: String) {
+        chapterFile(ctx, id, url, index).writeText(text, Charsets.UTF_8)
+    }
+
+    fun readChapterByUrl(ctx: Context, id: String, url: String, index: Int): String {
+        val f = chapterFile(ctx, id, url, index)
+        if (f.exists()) return f.readText(Charsets.UTF_8)
+        // 兼容旧版按 index 存的缓存
+        val old = bookDir(ctx, id).resolve("%04d.txt".format(index))
+        return if (old.exists()) old.readText(Charsets.UTF_8) else ""
+    }
 }
