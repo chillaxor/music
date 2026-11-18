@@ -12,7 +12,7 @@
 - 定案「去黑底 + 进度条贴配置行上边 + 显示总时长」：`exo_bottom_bar` 透明；dimen 进度条 42dp / `exo_bottom_bar` marginBottom 90dp / `exo_minimal_controls` 92dp / `skipCfgRow` 4dp 贴底。内嵌起播触发 minimal → `exo_progress` bottomMargin 被置 0，修法 `VideoActivity.onCreate` 用 `addOnPreDrawListener` 纠正。`exo_time` 提到 `<merge>` 顶层（marginBottom 92dp）。全屏键 `videoFull` 右下 marginEnd 8dp / marginBottom 4dp（XML + `positionSideBtns()` 一致）。
 - 倍数：`skipCfgRow` 第 4 chip `speedBtn`，点它 `PopupMenu(this, speedBtn, Gravity.END)` 就地弹菜单（不要 AlertDialog，被否过）。档位 `[0.5,0.75,1,1.25,1.5,2,3]`；`ensurePlayer()` 与 `playMediaUrl()` 都重设 `playbackSpeed`。长按临时 3×，松手回档；ACTION_UP 先置 `longPressActive=false`。
 - 切集必须先判直链：`isPlayableUrl()` → `safeEval(__resolveDirectAt(i,b64))` → JS `sniff` → `Android.onEpResolved()` → `finishSwitch()`；`pendingResolveIdx` 丢过期回传。爬虫源走 `__playSpiderAt`。
-- 下载按钮 `videoDownload` **当前仓库没有**（曾引入被 reset）；重做法＝ACTION_VIEW + URL + extra_filename 甩系统下载器，Manifest `<queries>` 声明。
+- 下载：**11-18 核实已实现**——`VideoActivity.downloadM3u8()`（约 2533 行）拉索引→检测加密→按索引并发下 ts 到临时目录→`ffmpegConcatRemux()` 用 `com.arthenica.ffmpegkit.FFmpegKit` concat demuxer 无损重封装成 MP4，log tag `VidDl`；AES-128 加密流仍不支持（会 throw 提示用 IDM/ADM）。依赖 `ffmpeg-kit-min:6.0`（+15MB，arm64 单 ABI）。旧记忆「甩系统下载器」方案已被此实现取代。
 - 小窗：`isCompactInline = inlineMode && !inlineExpanded`；`applyPlayerLayout()` 末尾 `updatePipButton()`；进小窗前 `clearInlineDock()`。耳机断开停播已做；⚠️ **AudioFocus 全项目 0 命中**。
 - ⚠️ 默认 2 条订阅线路（`VideoActivity.DEFAULT_SOURCES`，v3 起）：`盒子迷多仓=https://盒子迷.top/禁止贩卖`（91 站）、`盒子迷动漫仓=https://盒子迷.top/摸鱼`（301→带尾斜杠，108 站）。UA 必须 `okhttp/3.15.0`；`SOURCES_VER=3` 仅用户没动过时替换。影视仓 `moyu` 那条填 /禁止贩卖、`dd` 才是摸鱼。
 - ⚠️ 11-09 两项大修：① `assets/tvbox/` 内置 42 文件 / 9.95MiB（订阅、11 dex jar〔名=`md5(jarUrl)`〕、25 js lib、2 js + 3 py、manifest）；接线＝`SpiderEngine.ensureJar()` 内置优先跳过 md5、`httpGet` 支持 `asset://`、`video.html` 在线失败回退 + `builtinSubFor()`、`collectSpiderSites()` 用站点自带 `s.jar`（47 站）豁免 `SPIDER_DENY`。APK +8.8MB（现约 60MB）。② 播放链路三断点：根因 `playerContent` 返 `parse:1`（iframe 页）后影视仓走 parses + WebView 嗅探 + 整包 header，我方原只有静态 GET + 4 正则且只透传 Referer；修法＝`STATE.srcCfg[i]` 保留 parses/flags/rules、`ensureBuiltInLoaders()` 冷启动 11 jar 建类表、`resolveViaParses()` 遍历 parses 失败回退 `sniff()`、`playResolvedEx + curHeaders → playMediaUrl` 全量注入（过滤 HOP_BY_HOP，403 去 Referer）。验收 `[67,68]` / parses `[15,13]`、E2E → `STATE_READY`。
@@ -20,8 +20,8 @@
 - **未闭环**：`flags`(33)/`ijk`/`hosts`/`doh`/`playerType` 只读取未消费；`.js`/`.py` 源未接 QuickJS/Chaquopy，相对路径脚本订阅 404 未打包；金牌 `hkybqufgh.com` TLS 失败 / 骚火 `shdy2.com` 522；全网 99 源搜索未在 UI 跑通；悬浮球 Android 10+ 边缘返回手势发 ACTION_CANCEL（推测），根治＝主球撑成覆盖扇形大窗 + `FLAG_NOT_TOUCH_MODAL`。
 
 ## 3. UI 版式 / 主题
-- 首页 `activity_main.xml`：暗色玻璃拟态 + 每日一图 + 白字；顶栏 → 玻璃页签 → NestedScrollView{问候行 → 2 排双列信息卡 92dp → shortcutRow FlowLayout perRow=6} → playerBar 钉底。固定入口 7 个。`dimOverlay` 常驻但 Kotlin 零引用。
-- 玻璃卡 `bg_liquid_glass` 三层：亮边 `#A8→#33→#08FFFFFF` / **本体 `#301C1A18`**（调透只动这层；`#30` 近裸白字可读下限）/ 高光；**8 处卡共用**。药丸 `bg_pill_glass` `#26→#1A`、`bg_pill_purple`、`bg_pill_white`。`bg_glass_card.xml` 0 引用。
+- 首页 `activity_main.xml`：暗色玻璃拟态 + 每日一图 + 白字；顶栏 → 玻璃页签 → NestedScrollView{问候行 → 2 排双列信息卡 92dp → shortcutRow FlowLayout perRow=6} → playerBar 钉底。**固定入口 9 个**（`MainActivity.fixedShortcuts`：记账/看片/小说/看MD/收藏/播客/下载/问一句/水印；路由全表见 `ShortcutRouter`，另有 voice/rail/reminder/ai/settings/记账子页）。⚠️ **`dimOverlay` 是活代码**：每日一图渐变压暗蒙层，`MainActivity.loadDailyImage()` 取它传给 `StyleEngine.applyWallpaper(…, dim, …)`，别当孤儿删。
+- 玻璃卡 `bg_liquid_glass` 三层：亮边 `#A8→#33→#08FFFFFF` / **本体 `#301C1A18`**（调透只动这层；`#30` 近裸白字可读下限）/ 高光；**8 处卡共用**。药丸 `bg_pill_glass` `#26→#1A`、`bg_pill_purple`、`bg_pill_white`。`bg_glass_card.xml` 零引用，**11-18 已删除**。
 - 主题 12 套纯色+渐变，`ThemePrefs.PACKS` + `theme_idx`；`applyTheme(this)` 必须早于 setContentView；渐变在 `MainActivity.applyThemeColors()` 画。用户不要暗色/形状/质感维度。
 - 快捷位拖动：拖动中只 translation + highlightSlot 预览，松口才改序；`HomeShortcutStore.Item` 比 `id()`；超 touchSlop 才算 dragging。launcher 图标＝用户圆形书法徽章（`tools/make_launcher_icon.py`）。
 
@@ -29,7 +29,8 @@
 - 加水印**保留**、去水印**彻底删除**；`ImagePrep` 仍在用不可删。读书板块已回滚（要「看内容」不是管元数据）。链接页只允许手动配置的链接唤起外部 App（清单 `链接页受信唤起改造清单.md` 未执行）。搜索 tab「今日榜单」只做发现层，播放下载仍走 music-api.gdstudio.xyz；**11-16 起数据源＝QQ 音乐榜**（`QQChartApi`/`QQChartStore`，8 榜：热歌26/飙升62/新歌27/抖音60/内地5/国风65/说唱58/网络28，纯文字双行无封面，完整榜 `fcg_v8_toplist_cp.fcg` 取 `songlist[].data.songname`+`singer[].name`；旧网易云 `NeteaseApi`/`NeteaseStore` 已删）。11-16 起榜单卡片＝`GridLayoutManager(this,2)` 两列网格、一屏 10 首，`chartList` 固定 300dp 内部纵向滚（原 HORIZONTAL 横滑被否）；卡片文字色必须走 `?attr/gdTextPrimary`/`gdTextSecondary`，浅色主题下硬编码白字会白底白字看不清；歌名与歌手同为 `gdTextPrimary`（同色、12/14sp）；搜索后 `chartList` 自动收起（`chartToggle` 展开或切榜签展开，榜签行始终保留）。
 - 每日一诗折叠 52dp / 展开整首+译文+分享图+收藏，`PoemStore` 按天缓存。记账：**还款一律「转账」**（不计收支）、禁止「收入记到负债账户」、三处收支查询统一「日/月/年范围 ∩ 筛选条件」、顶部 4 卡 2×2；已有净资产快照 / 年度总结 / JSON 备份 / 桌面歌词浮层。
 - 免 key 接口（11-04 实测）✅ 今日诗词 `v2.jinrishici.com`｜open-meteo + geocoding｜必应 HPImageArchive｜网易云榜单 `music.163.com/api/playlist/detail?id=`（UA+Referer；热歌 3778678/飙升 19723756/新歌 3779629/原创 2884035/ACG 71385702；11-16 起首页榜单已换 QQ 榜，此接口仅歌词仍在用）+ `api/song/lyric`｜hitokoto｜MyMemory｜radio-browser｜豆瓣 rexxar 图书系。❌ 网易云个性化推荐 404｜gushi.ci｜apiopen.top 变 SPA｜Open Library 超时｜Google Books 配额 0｜豆瓣 movie_hot 400。纪律：内容型需求先 curl 实测再写进推荐。
-- 瘦身盘点（11-04 只读未执行）：`tensorflow-lite:2.14.0` 孤儿依赖可删省 3.8MB；入口缺口 LyricActivity / VideoHistoryActivity / NewsActivity；快捷位 target 散在 4 处；MainActivity.kt 2081 行过载。
+- 瘦身盘点：**11-18 已执行**——删 `tensorflow-lite:2.14.0` + `LaMaInpaint.kt`/`InpaintEngine.kt`/`BrushView.kt`（去水印功能删除后漏下的残骸，全项目零调用）+ `bg_glass_card.xml`，省约 3.8MB。⚠️ 背景：去水印残骸由 commit `8460a0d` 引入，`build.gradle.kts` 里「端侧图像修复」注释是删功能时忘改的残留，别被它误导。
+- **11-18 现状核对**：LyricActivity / VideoHistoryActivity / NewsActivity **都已存在并注册**（旧盘点说的「入口缺口」已过期）；`versionCode=20` / `versionName=2.0.4`；已新增小说 / 播客 / MD 查看器 / 高铁 Rail / 提醒(农历节气) / 端侧 AI 问答 / Vosk 离线语音 / DLNA 投屏 / 金价持仓。搜索榜早已换 QQ 榜（见上）。ffmpeg-kit-min 6.0 已引入（+15MB，m3u8→MP4 重封装）。快捷位 target 现集中在 `ShortcutRouter`。
 
 ## 5. 每次新功能 / 修复后的固定收尾流程（强制，用户 2026-11-04 原话）
 **改完代码不算完，必须走完 ①~⑦ 才能回报。**
