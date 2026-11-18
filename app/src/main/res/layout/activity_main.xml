@@ -475,28 +475,37 @@
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
 
-                            <TextView
-                                android:id="@+id/goldDomVal"
+                            <!-- 国内/国际并到一行：国内是主数值（16sp 粗），国际做副标（11sp）贴右，
+                                 半宽卡只有 92dp，四行会把浮亏行挤没，合并后腾出一行给持仓浮亏 -->
+                            <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="国内 --"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/gdTextPrimary"
-                                android:paddingTop="3dp"
-                                android:maxLines="1"
-                                android:includeFontPadding="false"/>
+                                android:orientation="horizontal"
+                                android:baselineAligned="true"
+                                android:paddingTop="3dp">
 
-                            <TextView
-                                android:id="@+id/goldIntlVal"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="国际 --"
-                                android:textSize="11sp"
-                                android:textColor="?attr/gdTextSecondary"
-                                android:paddingTop="2dp"
-                                android:maxLines="1"
-                                android:includeFontPadding="false"/>
+                                <TextView
+                                    android:id="@+id/goldDomVal"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="国内 --"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/gdTextPrimary"
+                                    android:maxLines="1"
+                                    android:includeFontPadding="false"/>
+
+                                <TextView
+                                    android:id="@+id/goldIntlVal"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="国际 --"
+                                    android:textSize="11sp"
+                                    android:textColor="?attr/gdTextSecondary"
+                                    android:maxLines="1"
+                                    android:includeFontPadding="false"/>
+                            </LinearLayout>
 
                             <!-- 持仓浮亏行：克数 + 浮亏金额，颜色按 A 股习惯（盈红亏绿）在代码里设 -->
                             <TextView
@@ -504,10 +513,10 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="69g · 浮亏 --"
-                                android:textSize="11sp"
+                                android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/gdTextSecondary"
-                                android:paddingTop="2dp"
+                                android:paddingTop="6dp"
                                 android:maxLines="1"
                                 android:ellipsize="end"
                                 android:includeFontPadding="false"/>

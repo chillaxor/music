@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  首页金价卡 · 我的黄金持仓面板。
+  深浅主题自适应：字色走 ?attr/gdTextPrimary/Secondary；卡片底色、数据块、输入框、
+  按钮背景由 MainActivity 用当前主题色代码生成（?attr 取色 + 透明度），
+  不写死深浅，12 套主题下都能看清。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/goldPanelRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="💰 我的黄金持仓"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:textColor="?attr/gdTextPrimary"
+        android:includeFontPadding="false"/>
+
+    <TextView
+        android:id="@+id/goldDlgPrice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="现在国内金价 ¥--/克"
+        android:textSize="12sp"
+        android:textColor="?attr/gdTextSecondary"
+        android:paddingTop="5dp"
+        android:includeFontPadding="false"/>
+
+    <!-- 投入 / 现值 两格数据卡 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp">
+
+        <LinearLayout
+            android:id="@+id/goldDlgInvestBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="投入"
+                android:textSize="12sp"
+                android:textColor="?attr/gdTextSecondary"
+                android:includeFontPadding="false"/>
+
+            <TextView
+                android:id="@+id/goldDlgInvest"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="¥--"
+                android:textSize="19sp"
+                android:textStyle="bold"
+                android:textColor="?attr/gdTextPrimary"
+                android:paddingTop="4dp"
+                android:maxLines="1"
+                android:includeFontPadding="false"/>
+        </LinearLayout>
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="1dp"/>
+
+        <LinearLayout
+            android:id="@+id/goldDlgValueBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="现值（剩多少）"
+                android:textSize="12sp"
+                android:textColor="?attr/gdTextSecondary"
+                android:includeFontPadding="false"/>
+
+            <TextView
+                android:id="@+id/goldDlgValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="¥--"
+                android:textSize="19sp"
+                android:textStyle="bold"
+                android:textColor="?attr/gdTextPrimary"
+                android:paddingTop="4dp"
+                android:maxLines="1"
+                android:includeFontPadding="false"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 浮亏大卡 -->
+    <LinearLayout
+        android:id="@+id/goldDlgPnlBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:layout_marginTop="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="浮动盈亏"
+            android:textSize="12sp"
+            android:textColor="?attr/gdTextSecondary"
+            android:includeFontPadding="false"/>
+
+        <TextView
+            android:id="@+id/goldDlgPnl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="--"
+            android:textSize="23sp"
+            android:textStyle="bold"
+            android:paddingTop="2dp"
+            android:maxLines="1"
+            android:includeFontPadding="false"/>
+
+        <TextView
+            android:id="@+id/goldDlgPnlSub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="11sp"
+            android:textColor="?attr/gdTextSecondary"
+            android:paddingTop="3dp"
+            android:maxLines="1"
+            android:includeFontPadding="false"/>
+    </LinearLayout>
+
+    <!-- 克数 / 均价输入 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="买入克数"
+        android:textSize="12sp"
+        android:textColor="?attr/gdTextSecondary"
+        android:layout_marginTop="16dp"
+        android:includeFontPadding="false"/>
+
+    <EditText
+        android:id="@+id/goldDlgGrams"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:textSize="15sp"
+        android:textColor="?attr/gdTextPrimary"
+        android:hint="如 69"
+        android:textColorHint="?attr/gdTextHint"
+        android:inputType="numberDecimal"
+        android:singleLine="true"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="买入均价（元/克）"
+        android:textSize="12sp"
+        android:textColor="?attr/gdTextSecondary"
+        android:layout_marginTop="10dp"
+        android:includeFontPadding="false"/>
+
+    <EditText
+        android:id="@+id/goldDlgAvg"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:textSize="15sp"
+        android:textColor="?attr/gdTextPrimary"
+        android:hint="如 1028"
+        android:textColorHint="?attr/gdTextHint"
+        android:inputType="numberDecimal"
+        android:singleLine="true"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="按现货折算价对比，非金店零售价（含工费）"
+        android:textSize="11sp"
+        android:textColor="?attr/gdTextSecondary"
+        android:paddingTop="8dp"
+        android:includeFontPadding="false"/>
+
+    <!-- 底部按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="18dp">
+
+        <TextView
+            android:id="@+id/goldDlgRefresh"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="刷新金价"
+            android:textSize="13sp"
+            android:textColor="?attr/gdTextPrimary"/>
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="1dp"/>
+
+        <TextView
+            android:id="@+id/goldDlgSave"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="保存持仓"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"/>
+    </LinearLayout>
+</LinearLayout>

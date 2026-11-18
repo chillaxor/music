@@ -8,6 +8,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.app.Dialog
+import android.view.Window
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -1029,97 +1031,128 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private fun fmtNum(f: Float): String =
         if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
 
-    /** 点金价卡：持仓详情面板（投入/现值/浮亏 + 克数/均价设置 + 刷新金价） */
-    private fun showGoldHoldingDialog() {
-        val p = calcGoldPnl(currentGoldDom)
-        val gEdit = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(fmtNum(GoldHoldingStore.grams(this@MainActivity)))
-            setSelection(text.length)
-            hint = "买入克数，如 69"
-        }
-        val aEdit = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(fmtNum(GoldHoldingStore.avgPrice(this@MainActivity)))
-            setSelection(text.length)
-            hint = "买入均价，如 1028"
-        }
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-        }
+    /** 收益率格式化成一位小数百分比，带正负号：-20.6% / +12.3% */
+    private fun fmtPct(f: Float): String =
+        java.lang.String.format(java.util.Locale.US, "%+.1f%%", f)
 
-        // 结果区：三行，随输入实时预览（不落盘，保存才写 Store）
-        val investRow = TextView(this).apply { textSize = 14f; setTextColor(attrTextPrimary()) }
-        val valueRow = TextView(this).apply { textSize = 14f; setTextColor(attrTextPrimary()) }
-        val pnlRow = TextView(this).apply { textSize = 16f; setTextColor(attrTextSecondary()); setTypeface(null, Typeface.BOLD) }
-        val priceRow = TextView(this).apply {
-            textSize = 12f
-            setTextColor(attrTextSecondary())
-            text = if (currentGoldDom > 0) "现在国内金价 ¥$currentGoldDom/克" else "现价未取到，请点「刷新金价」"
+    /** 持仓面板实底：按主题字色亮度配深/浅不透明底，杜绝透明玻璃透出壁纸 */
+    private fun goldPanelOpaqueBg(): GradientDrawable {
+        val tc = attrTextPrimary()
+        val lum = Color.red(tc) * 0.299 + Color.green(tc) * 0.587 + Color.blue(tc) * 0.114
+        val bg = if (lum > 140) Color.parseColor("#232830") else Color.parseColor("#FFFFFF")
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = (20 * resources.displayMetrics.density)
+            setColor(bg)
         }
+    }
+
+    /** 给持仓面板里的数据块/输入框/按钮生成随主题走的圆角背景 */
+    private fun goldBlockBg(alpha: Int, stroke: Boolean = false): GradientDrawable {
+        val primary = attrTextPrimary()
+        val d = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = (12 * resources.displayMetrics.density)
+            setColor((primary and 0x00FFFFFF) or (alpha shl 24))
+            if (stroke) setStroke((1 * resources.displayMetrics.density).toInt(), (primary and 0x00FFFFFF) or (0x33 shl 24))
+        }
+        return d
+    }
+
+    /** 点金价卡：持仓详情面板（自定义玻璃卡布局，投入/现值/浮亏 + 克数/均价 + 刷新/保存） */
+    private fun showGoldHoldingDialog() {
+        val needFetch = currentGoldDom <= 0
+        val dlg = Dialog(this)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val v = layoutInflater.inflate(R.layout.dialog_gold_holding, null)
+        // 面板整体用不透明实底（白字主题配深底 / 暗字主题配白底），不透壁纸
+        v.findViewById<View>(R.id.goldPanelRoot).background = goldPanelOpaqueBg()
+        listOf(R.id.goldDlgInvestBox, R.id.goldDlgValueBox, R.id.goldDlgPnlBox).forEach { id ->
+            v.findViewById<View>(id).background = goldBlockBg(0x12)
+        }
+        v.findViewById<View>(R.id.goldDlgGrams).background = goldBlockBg(0x14, stroke = true)
+        v.findViewById<View>(R.id.goldDlgAvg).background = goldBlockBg(0x14, stroke = true)
+        v.findViewById<View>(R.id.goldDlgRefresh).background = goldBlockBg(0x14, stroke = true)
+
+        val gEdit = v.findViewById<EditText>(R.id.goldDlgGrams)
+        val aEdit = v.findViewById<EditText>(R.id.goldDlgAvg)
+        val investV = v.findViewById<TextView>(R.id.goldDlgInvest)
+        val valueV = v.findViewById<TextView>(R.id.goldDlgValue)
+        val pnlV = v.findViewById<TextView>(R.id.goldDlgPnl)
+        val pnlSubV = v.findViewById<TextView>(R.id.goldDlgPnlSub)
+        val priceV = v.findViewById<TextView>(R.id.goldDlgPrice)
+        gEdit.setText(fmtNum(GoldHoldingStore.grams(this)))
+        aEdit.setText(fmtNum(GoldHoldingStore.avgPrice(this)))
+        gEdit.setSelection(gEdit.text.length)
+        priceV.text = if (currentGoldDom > 0) "现在国内金价 ¥$currentGoldDom/克 · gold-api 实时"
+                      else "现价未取到，点「刷新金价」重试"
+
         fun preview() {
             val grams = gEdit.text.toString().toFloatOrNull() ?: 0f
             val avg = aEdit.text.toString().toFloatOrNull() ?: 0f
             if (currentGoldDom <= 0) {
-                investRow.text = "投入  --"
-                valueRow.text = "现值（剩）  --"
-                pnlRow.text = "浮亏  --"
-                pnlRow.setTextColor(attrTextSecondary())
-                return
+                investV.text = "¥--"; valueV.text = "¥--"
+                pnlV.text = "--"; pnlV.setTextColor(attrTextSecondary())
+                pnlSubV.text = ""; return
             }
             val inv = Math.round(grams * avg).toLong()
             val cur = Math.round(grams * currentGoldDom).toLong()
             val dif = inv - cur
-            investRow.text = "投入  ${fmtNum(grams)}g × ¥${fmtNum(avg)} = ¥$inv"
-            valueRow.text = "现值（剩）  ${fmtNum(grams)}g × ¥$currentGoldDom = ¥$cur"
-            pnlRow.text = when {
-                dif > 0 -> "浮亏  ¥$dif  （每克亏 ¥${fmtNum(avg - currentGoldDom)}）"
-                dif < 0 -> "浮盈  ¥${-dif}  （每克赚 ¥${fmtNum(currentGoldDom - avg)}）"
-                else -> "持平  不亏不赚"
+            investV.text = "¥$inv"
+            valueV.text = "¥$cur"
+            when {
+                dif > 0 -> {
+                    pnlV.text = "−¥$dif"; pnlV.setTextColor(pnlColor(dif))
+                    pnlSubV.text = "浮亏 · 每克亏 ¥${fmtNum(avg - currentGoldDom)} · ${fmtPct(-dif * 100f / inv)}"
+                }
+                dif < 0 -> {
+                    pnlV.text = "+¥${-dif}"; pnlV.setTextColor(pnlColor(dif))
+                    pnlSubV.text = "浮盈 · 每克赚 ¥${fmtNum(currentGoldDom - avg)} · ${fmtPct(-dif * 100f / inv)}"
+                }
+                else -> {
+                    pnlV.text = "持平"; pnlV.setTextColor(attrTextSecondary())
+                    pnlSubV.text = "不亏不赚"
+                }
             }
-            pnlRow.setTextColor(pnlColor(dif))
         }
         preview()
-        gEdit.addTextChangedListener(object : android.text.TextWatcher {
+        val watcher = object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) { preview() }
-        })
-        aEdit.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) { preview() }
-        })
+        }
+        gEdit.addTextChangedListener(watcher)
+        aEdit.addTextChangedListener(watcher)
 
-        box.addView(priceRow)
-        box.addView(investRow)
-        box.addView(valueRow)
-        box.addView(pnlRow)
-        val gLabel = TextView(this).apply { text = "买入克数"; textSize = 12f; setTextColor(attrTextSecondary()); setPadding(0, pad / 2, 0, 0) }
-        val aLabel = TextView(this).apply { text = "买入均价（元/克）"; textSize = 12f; setTextColor(attrTextSecondary()); setPadding(0, pad / 3, 0, 0) }
-        box.addView(gLabel); box.addView(gEdit); box.addView(aLabel); box.addView(aEdit)
-
-        AlertDialog.Builder(this)
-            .setTitle("我的黄金持仓")
-            .setView(box)
-            .setPositiveButton("保存") { _, _ ->
-                val grams = gEdit.text.toString().toFloatOrNull() ?: 0f
-                val avg = aEdit.text.toString().toFloatOrNull() ?: 0f
-                if (grams <= 0 || avg <= 0) {
-                    Toast.makeText(this, "克数和均价都要大于 0", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                GoldHoldingStore.save(this, grams, avg)
-                renderGoldPnlLine()
-                Toast.makeText(this, "已保存 ${grams}g · 均价 ¥$avg", Toast.LENGTH_SHORT).show()
+        // 保存按钮：主题主色实心 + 白字（沿用首页 primary）
+        val saveV = v.findViewById<TextView>(R.id.goldDlgSave)
+        saveV.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = (12 * resources.displayMetrics.density)
+            setColor(ThemePrefs.currentPack(this@MainActivity).primary)
+        }
+        saveV.setOnClickListener {
+            val grams = gEdit.text.toString().toFloatOrNull() ?: 0f
+            val avg = aEdit.text.toString().toFloatOrNull() ?: 0f
+            if (grams <= 0 || avg <= 0) {
+                Toast.makeText(this, "克数和均价都要大于 0", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
-            .setNeutralButton("刷新金价") { _, _ -> loadGoldPrice() }
-            .setNegativeButton("返回", null)
-            .show()
+            GoldHoldingStore.save(this, grams, avg)
+            renderGoldPnlLine()
+            Toast.makeText(this, "已保存 ${fmtNum(grams)}g · 均价 ¥${fmtNum(avg)}", Toast.LENGTH_SHORT).show()
+            dlg.dismiss()
+        }
+        v.findViewById<View>(R.id.goldDlgRefresh).setOnClickListener { loadGoldPrice() }
+
+        dlg.setContentView(v)
+        // Dialog 默认白色 window 底会从面板圆角四周漏出白角，设透明只留实底面板
+        dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+        dlg.setCanceledOnTouchOutside(true)
+        dlg.show()
         // 若现价还没取到（首屏接口慢/失败），打开面板时顺手拉一次
-        if (currentGoldDom <= 0 && p == null) loadGoldPrice()
+        if (needFetch) loadGoldPrice()
     }
 
     /**
