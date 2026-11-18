@@ -497,6 +497,20 @@
                                 android:paddingTop="2dp"
                                 android:maxLines="1"
                                 android:includeFontPadding="false"/>
+
+                            <!-- 持仓浮亏行：克数 + 浮亏金额，颜色按 A 股习惯（盈红亏绿）在代码里设 -->
+                            <TextView
+                                android:id="@+id/goldPnlVal"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="69g · 浮亏 --"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/gdTextSecondary"
+                                android:paddingTop="2dp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"/>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 

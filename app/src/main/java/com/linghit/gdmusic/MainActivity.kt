@@ -120,6 +120,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private lateinit var goldCard: View
     private lateinit var goldDomVal: TextView
     private lateinit var goldIntlVal: TextView
+    private lateinit var goldPnlVal: TextView
+    /** 最近一次取到的国内金价（元/克整数），0=没取到；详情面板与卡片浮亏行共用 */
+    private var currentGoldDom = 0
+    private data class GoldPnl(val grams: Float, val avg: Float, val invest: Long, val value: Long, val loss: Long)
     private lateinit var railCard: View
     private lateinit var railCardVal: TextView
     private lateinit var railCardSub: TextView
@@ -363,6 +367,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         goldCard = findViewById(R.id.goldCardRow)
         goldDomVal = findViewById(R.id.goldDomVal)
         goldIntlVal = findViewById(R.id.goldIntlVal)
+        goldPnlVal = findViewById(R.id.goldPnlVal)
         railCard = findViewById(R.id.railCardRow)
         railCardVal = findViewById(R.id.railCardVal)
         railCardSub = findViewById(R.id.railCardSub)
@@ -374,10 +379,10 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
         newsSub = findViewById(R.id.newsSub)
         // 每日一诗卡片：折叠/展开 + 每日缓存（见 setupPoemCard）
         setupPoemCard()
-        // 信息卡点击：黄金=手动刷新金价；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
+        // 信息卡点击：黄金=打开持仓详情（内含刷新金价）；高铁=进高铁往返页；消费=进记账页；新闻=进热榜页
         // ⚠️ 必须挂内部行（xxCardRow）而非外层 MaterialCardView：内部 LinearLayout 是
         // clickable 且铺满卡片，点击被它消费，挂外层监听永远收不到（同 queueEntryRow 教训）
-        goldCard.setOnClickListener { loadGoldPrice() }
+        goldCard.setOnClickListener { showGoldHoldingDialog() }
         railCard.setOnClickListener { startActivity(Intent(this, RailActivity::class.java)) }
         spendCard.setOnClickListener { startActivity(Intent(this, NetAssetActivity::class.java)) }
         newsCard.setOnClickListener { startActivity(Intent(this, NewsActivity::class.java)) }
@@ -955,14 +960,166 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
                 }
                 val intl = Math.round(intlPrice).toInt()
                 val dom = Math.round(intlPrice * cnyRate / 31.1035).toInt()
+                currentGoldDom = dom
                 goldIntlVal.text = "国际 $intl"
                 goldDomVal.text = "国内 ¥$dom"
+                renderGoldPnlLine()
             } catch (e: Exception) {
-                // API 挂了：卡片保留，数值显示「--」
+                // API 挂了：卡片保留，数值显示「--」；浮亏行也跟着置空，不拿旧价算账
+                currentGoldDom = 0
                 goldIntlVal.text = "国际 --"
                 goldDomVal.text = "国内 --"
+                goldPnlVal.text = "持仓 --"
+                goldPnlVal.setTextColor(attrTextSecondary())
             }
         }
+    }
+
+    /** 主题次要字色（代码里给 TextView 上色用，跟随 12 套主题） */
+    private fun attrTextSecondary(): Int {
+        val ta = theme.obtainStyledAttributes(intArrayOf(R.attr.gdTextSecondary))
+        val c = ta.getColor(0, Color.parseColor("#B8FFFFFF"))
+        ta.recycle()
+        return c
+    }
+
+    /** 主题主字色 */
+    private fun attrTextPrimary(): Int {
+        val ta = theme.obtainStyledAttributes(intArrayOf(R.attr.gdTextPrimary))
+        val c = ta.getColor(0, Color.WHITE)
+        ta.recycle()
+        return c
+    }
+
+    /** 按当前持仓 + 现价算账：投入=克数×均价，现值=克数×现价，浮亏=投入−现值（正=亏，负=盈） */
+    private fun calcGoldPnl(dom: Int): GoldPnl? {
+        if (dom <= 0) return null
+        val grams = GoldHoldingStore.grams(this)
+        val avg = GoldHoldingStore.avgPrice(this)
+        val invest = Math.round(grams * avg).toLong()
+        val value = Math.round(grams * dom).toLong()
+        return GoldPnl(grams, avg, invest, value, invest - value)
+    }
+
+    /** 卡片第三行「69g · 浮亏 ¥xxxx」；A 股习惯：亏绿盈红，与主题无关（固定语义色） */
+    private fun renderGoldPnlLine() {
+        if (!::goldPnlVal.isInitialized) return
+        val p = calcGoldPnl(currentGoldDom)
+        if (p == null) {
+            goldPnlVal.text = "持仓 --"
+            goldPnlVal.setTextColor(attrTextSecondary())
+            return
+        }
+        val g = if (p.grams == p.grams.toLong().toFloat()) "${p.grams.toLong()}g" else "${p.grams}g"
+        val loss = p.loss
+        goldPnlVal.text = if (loss > 0) "$g · 浮亏 ¥$loss"
+                          else if (loss < 0) "$g · 浮盈 ¥${-loss}"
+                          else "$g · 持平"
+        goldPnlVal.setTextColor(pnlColor(loss))
+    }
+
+    /** A 股语义色：盈利红、亏损绿、持平用主题次色。深浅主题都能看清的饱和度 */
+    private fun pnlColor(loss: Long): Int = when {
+        loss > 0 -> Color.parseColor("#5BD99B")   // 亏=绿
+        loss < 0 -> Color.parseColor("#FF6B6B")   // 盈=红
+        else -> attrTextSecondary()
+    }
+
+    /** 整数浮点去掉 .0，避免详情面板出现「69.0g / ¥1028.0 / 每克亏 ¥213.0」 */
+    private fun fmtNum(f: Float): String =
+        if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
+
+    /** 点金价卡：持仓详情面板（投入/现值/浮亏 + 克数/均价设置 + 刷新金价） */
+    private fun showGoldHoldingDialog() {
+        val p = calcGoldPnl(currentGoldDom)
+        val gEdit = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(fmtNum(GoldHoldingStore.grams(this@MainActivity)))
+            setSelection(text.length)
+            hint = "买入克数，如 69"
+        }
+        val aEdit = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(fmtNum(GoldHoldingStore.avgPrice(this@MainActivity)))
+            setSelection(text.length)
+            hint = "买入均价，如 1028"
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+
+        // 结果区：三行，随输入实时预览（不落盘，保存才写 Store）
+        val investRow = TextView(this).apply { textSize = 14f; setTextColor(attrTextPrimary()) }
+        val valueRow = TextView(this).apply { textSize = 14f; setTextColor(attrTextPrimary()) }
+        val pnlRow = TextView(this).apply { textSize = 16f; setTextColor(attrTextSecondary()); setTypeface(null, Typeface.BOLD) }
+        val priceRow = TextView(this).apply {
+            textSize = 12f
+            setTextColor(attrTextSecondary())
+            text = if (currentGoldDom > 0) "现在国内金价 ¥$currentGoldDom/克" else "现价未取到，请点「刷新金价」"
+        }
+        fun preview() {
+            val grams = gEdit.text.toString().toFloatOrNull() ?: 0f
+            val avg = aEdit.text.toString().toFloatOrNull() ?: 0f
+            if (currentGoldDom <= 0) {
+                investRow.text = "投入  --"
+                valueRow.text = "现值（剩）  --"
+                pnlRow.text = "浮亏  --"
+                pnlRow.setTextColor(attrTextSecondary())
+                return
+            }
+            val inv = Math.round(grams * avg).toLong()
+            val cur = Math.round(grams * currentGoldDom).toLong()
+            val dif = inv - cur
+            investRow.text = "投入  ${fmtNum(grams)}g × ¥${fmtNum(avg)} = ¥$inv"
+            valueRow.text = "现值（剩）  ${fmtNum(grams)}g × ¥$currentGoldDom = ¥$cur"
+            pnlRow.text = when {
+                dif > 0 -> "浮亏  ¥$dif  （每克亏 ¥${fmtNum(avg - currentGoldDom)}）"
+                dif < 0 -> "浮盈  ¥${-dif}  （每克赚 ¥${fmtNum(currentGoldDom - avg)}）"
+                else -> "持平  不亏不赚"
+            }
+            pnlRow.setTextColor(pnlColor(dif))
+        }
+        preview()
+        gEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { preview() }
+        })
+        aEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { preview() }
+        })
+
+        box.addView(priceRow)
+        box.addView(investRow)
+        box.addView(valueRow)
+        box.addView(pnlRow)
+        val gLabel = TextView(this).apply { text = "买入克数"; textSize = 12f; setTextColor(attrTextSecondary()); setPadding(0, pad / 2, 0, 0) }
+        val aLabel = TextView(this).apply { text = "买入均价（元/克）"; textSize = 12f; setTextColor(attrTextSecondary()); setPadding(0, pad / 3, 0, 0) }
+        box.addView(gLabel); box.addView(gEdit); box.addView(aLabel); box.addView(aEdit)
+
+        AlertDialog.Builder(this)
+            .setTitle("我的黄金持仓")
+            .setView(box)
+            .setPositiveButton("保存") { _, _ ->
+                val grams = gEdit.text.toString().toFloatOrNull() ?: 0f
+                val avg = aEdit.text.toString().toFloatOrNull() ?: 0f
+                if (grams <= 0 || avg <= 0) {
+                    Toast.makeText(this, "克数和均价都要大于 0", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                GoldHoldingStore.save(this, grams, avg)
+                renderGoldPnlLine()
+                Toast.makeText(this, "已保存 ${grams}g · 均价 ¥$avg", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("刷新金价") { _, _ -> loadGoldPrice() }
+            .setNegativeButton("返回", null)
+            .show()
+        // 若现价还没取到（首屏接口慢/失败），打开面板时顺手拉一次
+        if (currentGoldDom <= 0 && p == null) loadGoldPrice()
     }
 
     /**
