@@ -70,8 +70,11 @@ class SpiderEngine private constructor(private val appCtx: Context) {
 
     /** 爬虫执行池：网络 IO 密集，4 线程足够（全网搜索并发 6 时会排队） */
     private val pool = Executors.newFixedThreadPool(4)
-    /** 看门狗：单独线程等 Future，超时就取消，避免占满执行池导致超时永远不触发 */
-    private val watchdog: ScheduledExecutorService = Executors.newScheduledThreadPool(2)
+    /** 看门狗：单独线程等 Future，超时就取消，避免占满执行池导致超时永远不触发。
+     *  每个 searchAsync/detailAsync/playAsync 都会占一个 watchdog 线程做 future.get(超时)，
+     *  全网搜索 132 源时 2 线程会被搜索回调排队占满，导致搜索期间点详情/播放卡几十秒才回调。
+     *  提到 8 线程，保证搜索进行中仍有空闲线程服务详情/播放请求。 */
+    private val watchdog: ScheduledExecutorService = Executors.newScheduledThreadPool(8)
 
     /** jar URL key → DexClassLoader */
     private val loaders = ConcurrentHashMap<String, DexClassLoader>()

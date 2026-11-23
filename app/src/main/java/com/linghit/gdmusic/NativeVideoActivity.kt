@@ -95,6 +95,11 @@ class NativeVideoActivity : AppCompatActivity() {
     private val pool = Executors.newFixedThreadPool(12) { r ->
         Thread(r, "native-search").apply { isDaemon = true }
     }
+    // 详情/播放解析用独立池：搜索 132 源会把 pool 12 线程占满（每源 CountDownLatch 同步等 18s），
+    // 详情若复用同一池会排队卡死在「正在加载详情」。独立池保证搜索期间点详情仍能立即解析。
+    private val detailPool = Executors.newFixedThreadPool(4) { r ->
+        Thread(r, "native-detail").apply { isDaemon = true }
+    }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
     // 视图
@@ -237,6 +242,11 @@ class NativeVideoActivity : AppCompatActivity() {
             toast(if (scopeAll) "全网搜索：并发所有直连站" else "本站搜索：当前接口源")
         }
         val spiderBtn = findViewById<TextView>(R.id.nvSpider)
+        // adb 直启可带 --es spider true，方便 A/B 计时：am start ... --es kw 庆余年 --es spider true
+        if (intent.getBooleanExtra("spider", false) && !spiderOn) {
+            spiderOn = true
+            spiderBtn.textColor("#F55E1A")
+        }
         spiderBtn.setOnClickListener {
             spiderOn = !spiderOn
             spiderBtn.textColor(if (spiderOn) "#F55E1A" else "#8b8f99")
@@ -569,7 +579,7 @@ class NativeVideoActivity : AppCompatActivity() {
 
     private fun openDetail(v: Vod) {
         setStat("正在加载详情：${v.name}")
-        pool.execute {
+        detailPool.execute {
             val d = try {
                 if (v.spider) {
                     // 爬虫源详情：detailContent 返回 JSON 数组，取第一条
@@ -707,7 +717,7 @@ class NativeVideoActivity : AppCompatActivity() {
     private fun play(v: Vod, g: EpGroup, idx: Int, ep: Pair<String, String>) {
         val rawUrl = ep.second
         setStat("正在解析播放地址：${ep.first}")
-        pool.execute {
+        detailPool.execute {
             // 爬虫源：playerContent(flag, id) 解析出真直链 + header；
             // 直连源：直链直接用，播放页用正则嗅探（对齐 VideoActivity.extractStream）。
             var finalUrl = rawUrl
