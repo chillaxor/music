@@ -1,41 +1,52 @@
 package com.linghit.gdmusic
 
 import android.content.Intent
-import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
+import android.util.LruCache
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.EditText
-import android.widget.GridLayout
+import android.widget.FrameLayout
+import android.widget.GridView
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * 原生影视搜索页（与 WebView 版 VideoActivity 并存的速度对照版）。
+ * 原生影视对照版 —— 1:1 复刻 assets/video.html 整套 UI，底层改原生实现，
+ * 用于与 WebView 版做同界面速度对比。
  *
- * 差别只在「搜索链路」：不经过 WebView / JS 桥 / Base64 注入，OkHttp 拿到 CMS JSON
- * 直接用 org.json 解析，12 路并发，**每个站点一回来就往列表里插**（不等最慢的源），
- * 海报走 VideoImg 的内存 LruCache。详情、选集、起播仍复用现有原生播放器，
- * 通过 VideoActivity.EXTRA_NATIVE_PLAY 借壳，避免复制 3000 行播放逻辑。
+ * 页面：豆瓣榜首页（11 榜 / 按天缓存 / 左右滑切榜 / 滚动翻页）→ 全网搜索结果页
+ * （左侧站点 tab + 右侧海报网格，边到边渲染）→ 详情选集 → 播放（借壳 VideoActivity）。
+ * 顶栏：音乐 / 全网-本站 / 爬虫开关 / 历史 / 源管理 / 下载管理 / 切回 WebView 版。
+ * 历史与源列表与老版共用 video_sources 这个 SharedPreferences，两个版本数据互通。
  */
 class NativeVideoActivity : AppCompatActivity() {
 
@@ -46,24 +57,82 @@ class NativeVideoActivity : AppCompatActivity() {
         val siteName: String, val api: String
     )
     private data class EpGroup(val from: String, val eps: List<Pair<String, String>>)
+    private data class DbItem(val title: String, val rating: Double, val sub: String, val pic: String)
+    private data class SearchGroup(val name: String, val api: String, val items: MutableList<Vod>)
 
-    private lateinit var kw: EditText
-    private lateinit var stat: TextView
-    private lateinit var empty: TextView
-    private lateinit var adapter: VodAdapter
+    companion object {
+        private const val TAG = "VidNative"
+        private const val PREF = "video_sources"
+        private const val KEY_SOURCES = "sources"
+        private const val KEY_HIST = "search_history"
+        private const val KEY_DB = "native_douban_cache"
+        private const val DB_PAGE = 21
+        private const val DEFAULT_SOURCES =
+            "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
+                "{\"name\":\"盒子迷动漫仓\",\"url\":\"https://盒子迷.top/摸鱼\"}]"
+        private val DB_CHARTS = arrayOf(
+            "tv_hot" to "热播剧集", "tv_global_best_weekly" to "全球口碑",
+            "tv_chinese_best_weekly" to "华语口碑", "tv_domestic" to "国产剧",
+            "tv_korean" to "韩剧", "tv_american" to "美剧", "tv_japanese" to "日剧",
+            "tv_variety_show" to "综艺", "tv_animation" to "动画",
+            "movie_showing" to "正在热映", "movie_top250" to "电影Top250"
+        )
+    }
 
+    private val prefs by lazy { getSharedPreferences(PREF, MODE_PRIVATE) }
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
         .build()
-
     private val pool = Executors.newFixedThreadPool(12) { r ->
         Thread(r, "native-search").apply { isDaemon = true }
     }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
-    @Volatile
+    // 视图
+    private lateinit var kw: EditText
+    private lateinit var stat: TextView
+    private lateinit var load: TextView
+    private lateinit var chips: LinearLayout
+    private lateinit var chipsScroll: HorizontalScrollView
+    private lateinit var mainList: RecyclerView
+    private lateinit var empty: TextView
+    private lateinit var histPanel: LinearLayout
+    private lateinit var searchPage: View
+    private lateinit var spKw: TextView
+    private lateinit var spStat: TextView
+    private lateinit var srcTabs: RecyclerView
+    private lateinit var srcResults: RecyclerView
+    private lateinit var sheet: View
+    private lateinit var dPic: ImageView
+    private lateinit var dTit: TextView
+    private lateinit var dInfo: TextView
+    private lateinit var dDesc: TextView
+    private lateinit var detailTabs: LinearLayout
+    private lateinit var epsGrid: android.widget.GridLayout
+    private lateinit var epsHint: TextView
+    private lateinit var dlPage: View
+    private lateinit var dlList: RecyclerView
+    private lateinit var dlEmpty: TextView
+    private lateinit var srcDrawer: View
+
+    // adapter
+    private lateinit var dbAdapter: DbAdapter
+    private lateinit var tabAdapter: TabAdapter
+    private lateinit var vodAdapter: VodAdapter
+    private lateinit var simpleAdapter: SimpleAdapter
+
+    // 状态
+    private var chartIdx = 0
+    private var dbItems = ArrayList<DbItem>()
+    private var dbTotal = 0
+    private var dbReq = 0
+    private var dbLoadingMore = false
+    private var dbNoMore = false
+    private var scopeAll = true
+    private var spiderOn = false
+
     private var searchSeq = 0
     private var startedAt = 0L
     private var firstAt = 0L
@@ -71,87 +140,317 @@ class NativeVideoActivity : AppCompatActivity() {
     private var totalCnt = 0
     private var hitCnt = 0
     private var resultCnt = 0
+    private val groups = ArrayList<SearchGroup>()
+    private var tabSel = 0
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         ThemePrefs.applyTheme(this)
         setContentView(R.layout.activity_native_video)
+        bindViews()
+        setupHome()
+        setupSearchPage()
+        setupDetail()
+        setupDownloads()
+        setupSources()
+        setupTopbar()
 
-        kw = findViewById(R.id.nvKw)
-        stat = findViewById(R.id.nvStat)
-        empty = findViewById(R.id.nvEmpty)
-        adapter = VodAdapter { openDetail(it) }
-        findViewById<RecyclerView>(R.id.nvList).apply {
-            layoutManager = GridLayoutManager(this@NativeVideoActivity, 2)
-            adapter = this@NativeVideoActivity.adapter
-        }
-        findViewById<View>(R.id.nvBack).setOnClickListener { finish() }
-        findViewById<View>(R.id.nvSearch).setOnClickListener { doSearch() }
-        kw.setOnEditorActionListener { _, _, _ -> doSearch(); true }
-        findViewById<View>(R.id.nvSwitch).setOnClickListener {
-            startActivity(Intent(this, VideoActivity::class.java))
-            finish()
-        }
-        // adb 直启可带 kw，方便 A/B 计时：am start -n .../.NativeVideoActivity --es kw 庆余年
-        // 只在首次创建时自动搜：Activity 重建（配置变化等）时 b != null，重复搜会白跑一轮
         if (b == null) {
             intent.getStringExtra("kw")?.takeIf { it.isNotBlank() }?.let {
                 kw.setText(it)
-                doSearch()
-            }
+                doSearch(it)
+            } ?: loadDouban(chartIdx)
+        } else restoreState(b)
+    }
+
+    private fun bindViews() {
+        kw = findViewById(R.id.nvKw)
+        stat = findViewById(R.id.nvStat)
+        load = findViewById(R.id.nvLoad)
+        chips = findViewById(R.id.nvChips)
+        chipsScroll = findViewById(R.id.nvChipsScroll)
+        mainList = findViewById(R.id.nvMainList)
+        empty = findViewById(R.id.nvEmpty)
+        histPanel = findViewById(R.id.nvHistPanel)
+        searchPage = findViewById(R.id.nvSearchPage)
+        spKw = findViewById(R.id.nvSpKw)
+        spStat = findViewById(R.id.nvSpStat)
+        srcTabs = findViewById(R.id.nvSrcTabs)
+        srcResults = findViewById(R.id.nvSrcResults)
+        sheet = findViewById(R.id.nvSheet)
+        dPic = findViewById(R.id.nvDPic)
+        dTit = findViewById(R.id.nvDTit)
+        dInfo = findViewById(R.id.nvDInfo)
+        dDesc = findViewById(R.id.nvDDesc)
+        detailTabs = findViewById(R.id.nvDetailTabs)
+        epsGrid = findViewById(R.id.nvEpsGrid)
+        epsHint = findViewById(R.id.nvEpsHint)
+        dlPage = findViewById(R.id.nvDlPage)
+        dlList = findViewById(R.id.nvDlList)
+        dlEmpty = findViewById(R.id.nvDlEmpty)
+        srcDrawer = findViewById(R.id.nvSrcDrawer)
+    }
+
+    private fun restoreState(b: Bundle) {
+        chartIdx = b.getInt("chartIdx", 0)
+        if (b.getBoolean("searching", false)) {
+            spKw.text = b.getString("kw", "")
+            searchPage.visibility = View.VISIBLE
+            groups.clear()
+            tabSel = 0
+            tabAdapter.notifyDataSetChanged(); vodAdapter.notifyDataSetChanged()
         }
     }
 
-    /** 订阅配置沿用老版那两个默认仓：从 video_sources 读用户源，映射到内置快照 JSON */
-    private fun loadSites(): List<SiteInfo> {
-        val prefs = getSharedPreferences("video_sources", MODE_PRIVATE)
-        val raw = prefs.getString("sources", null) ?: DEFAULT_SOURCES
-        val out = ArrayList<SiteInfo>()
-        val seen = HashSet<String>()
-        try {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val url = o.optString("url")
-                val asset = if (url.contains("摸鱼") || url.contains("moyu", true))
-                    "tvbox/subs/moyu.json" else "tvbox/subs/box.json"
-                val cfg = JSONObject(assets.open(asset).bufferedReader(Charsets.UTF_8).use { it.readText() })
-                val sites = cfg.optJSONArray("sites") ?: continue
-                for (j in 0 until sites.length()) {
-                    val s = sites.optJSONObject(j) ?: continue
-                    val type = s.optInt("type", -1)
-                    val api = s.optString("api")
-                    if (type !in 0..1 || !api.startsWith("http", true)) continue
-                    if (!seen.add(api)) continue
-                    val name = s.optString("name").ifBlank { s.optString("key") }
-                    out.add(SiteInfo(name, api, s.optString("key")))
+    override fun onSaveInstanceState(out: Bundle) {
+        super.onSaveInstanceState(out)
+        out.putInt("chartIdx", chartIdx)
+        out.putBoolean("searching", searchPage.visibility == View.VISIBLE)
+        out.putString("kw", spKw.text.toString())
+    }
+
+    // ==================== 顶栏 ====================
+    private fun setupTopbar() {
+        findViewById<View>(R.id.nvGo).setOnClickListener { doSearch(kw.text.toString().trim()) }
+        kw.setOnEditorActionListener { _, _, _ -> doSearch(kw.text.toString().trim()); true }
+        kw.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) = renderHist()
+        })
+        kw.setOnFocusChangeListener { v, has -> if (has) renderHist() else histPanel.visibility = View.GONE }
+
+        findViewById<View>(R.id.nvMusic).setOnClickListener {
+            startActivity(Intent(this, MainActivity::class.java))
+        }
+        val scopeBtn = findViewById<TextView>(R.id.nvScope)
+        scopeBtn.setOnClickListener {
+            scopeAll = !scopeAll
+            scopeBtn.text = if (scopeAll) "全网" else "本站"
+            toast(if (scopeAll) "全网搜索：并发所有直连站" else "本站搜索：当前接口源")
+        }
+        val spiderBtn = findViewById<TextView>(R.id.nvSpider)
+        spiderBtn.setOnClickListener {
+            spiderOn = !spiderOn
+            spiderBtn.textColor(if (spiderOn) "#F55E1A" else "#8b8f99")
+            toast(if (spiderOn) "爬虫源已开（原生版仅对比直连站，爬虫请用 WebView 版）" else "爬虫源已关")
+        }
+        findViewById<View>(R.id.nvHistory).setOnClickListener { renderHist(true) }
+        findViewById<View>(R.id.nvSources).setOnClickListener { srcDrawer.visibility = View.VISIBLE }
+        findViewById<View>(R.id.nvDownloads).setOnClickListener { openDownloads() }
+        findViewById<View>(R.id.nvSwitch).setOnClickListener {
+            val i = Intent(this, VideoActivity::class.java)
+            if (kw.text.toString().isNotBlank()) i.putExtra("native_kw", kw.text.toString().trim())
+            startActivity(i)
+            finish()
+        }
+    }
+
+    // ==================== 首页 豆瓣榜 ====================
+    private fun setupHome() {
+        dbAdapter = DbAdapter { item ->
+            kw.setText(item.title)
+            doSearch(item.title)
+        }
+        mainList.layoutManager = LinearLayoutManager(this)
+        mainList.adapter = dbAdapter
+        renderChips()
+
+        // 滚动翻页 + 左右滑切榜
+        mainList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0 || searchPage.visibility == View.VISIBLE) return
+                val lm = rv.layoutManager as LinearLayoutManager
+                if (lm.findLastVisibleItemPosition() >= dbAdapter.itemCount - 4) loadMoreDouban()
+            }
+        })
+        var sx = 0f; var sy = 0f; var st = 0L; var track = false
+        mainList.setOnTouchListener { v, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> { sx = e.x; sy = e.y; st = SystemClock.elapsedRealtime(); track = true }
+                MotionEvent.ACTION_UP -> {
+                    if (track && searchPage.visibility != View.VISIBLE) {
+                        val dx = e.x - sx; val dy = e.y - sy; val dt = SystemClock.elapsedRealtime() - st
+                        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5f && dt < 900) {
+                            val next = chartIdx + if (dx < 0) 1 else -1
+                            if (next in DB_CHARTS.indices) { chartIdx = next; renderChips(); loadDouban(next) }
+                        }
+                    }
+                    track = false
+                }
+                MotionEvent.ACTION_CANCEL -> track = false
+            }
+            false
+        }
+    }
+
+    private fun renderChips() {
+        chips.removeAllViews()
+        DB_CHARTS.forEachIndexed { i, (_, name) ->
+            val t = TextView(this).apply {
+                text = name
+                textSize = 13f
+                setTextColor(Color.parseColor(if (i == chartIdx) "#FFFFFF" else "#8b8f99"))
+                setPadding(14, 6, 14, 6)
+                background = chipBg(i == chartIdx)
+                setOnClickListener {
+                    if (i == chartIdx) return@setOnClickListener
+                    chartIdx = i; renderChips(); loadDouban(i)
+                    chipsScroll.post { chips.getChildAt(i)?.let { c -> chipsScroll.smoothScrollTo(c.left - chipsScroll.width / 2 + c.width / 2, 0) } }
                 }
             }
-        } catch (e: Exception) {
-            Log.w("VidNative", "loadSites 失败: ${e.message}")
+            chips.addView(t)
         }
-        return out
     }
 
-    private fun doSearch() {
-        val w = kw.text.toString().trim()
-        if (w.isBlank()) {
-            Toast.makeText(this, "先输入片名", Toast.LENGTH_SHORT).show()
-            return
+    private fun chipBg(on: Boolean) = android.graphics.drawable.GradientDrawable().apply {
+        cornerRadius = 999f
+        setColor(Color.parseColor(if (on) "#F55E1A" else "#1a1c22"))
+        setStroke(1, Color.parseColor(if (on) "#F55E1A" else "#2c2f38"))
+    }
+
+    private fun loadDouban(idx: Int) {
+        val id = DB_CHARTS[idx].first
+        val name = DB_CHARTS[idx].second
+        val my = ++dbReq
+        dbItems.clear(); dbAdapter.notifyDataSetChanged()
+        dbNoMore = false; dbLoadingMore = false; dbTotal = 0
+        val cache = dbCacheGet(id)
+        if (cache != null) {
+            dbItems.addAll(cache.first); dbTotal = cache.second
+            dbNoMore = dbTotal > 0 && dbItems.size >= dbTotal
+            dbAdapter.notifyDataSetChanged(); dbState(name); return
         }
+        setStat("正在加载豆瓣「$name」…")
+        pool.execute {
+            val res = dbFetch(id, 0)
+            main.post {
+                if (my != dbReq) return@post
+                if (res == null) {
+                    empty.visibility = View.VISIBLE
+                    setStat("豆瓣「$name」加载失败（网络或限流），点其他榜重试")
+                    return@post
+                }
+                dbItems.addAll(res.second); dbTotal = res.first
+                dbNoMore = res.second.size < DB_PAGE || (dbTotal > 0 && dbItems.size >= dbTotal)
+                dbCachePut(id, dbItems, dbTotal)
+                empty.visibility = if (dbItems.isEmpty()) View.VISIBLE else View.GONE
+                dbAdapter.notifyDataSetChanged(); dbState(name)
+            }
+        }
+    }
+
+    private fun loadMoreDouban() {
+        if (dbLoadingMore || dbNoMore || dbItems.isEmpty()) return
+        val id = DB_CHARTS[chartIdx].first; val name = DB_CHARTS[chartIdx].second
+        val my = dbReq; val start = dbItems.size
+        dbLoadingMore = true
+        setStat("豆瓣 · $name · 正在加载更多…（已有 $start 部）")
+        pool.execute {
+            val res = dbFetch(id, start)
+            main.post {
+                dbLoadingMore = false
+                if (my != dbReq || res == null) { dbState(name); return@post }
+                if (res.second.isEmpty()) { dbNoMore = true; dbState(name); return@post }
+                val seen = HashSet(dbItems.map { it.title })
+                val fresh = res.second.filter { seen.add(it.title) }
+                if (fresh.isNotEmpty()) {
+                    dbItems.addAll(fresh); dbAdapter.notifyItemRangeInserted(start, fresh.size)
+                }
+                dbTotal = res.first
+                dbNoMore = res.second.size < DB_PAGE || (dbTotal > 0 && dbItems.size >= dbTotal)
+                dbCachePut(id, dbItems, dbTotal); dbState(name)
+            }
+        }
+    }
+
+    /** 返回 Pair(total, items)，失败返回 null。豆瓣图床需 iPhone UA + m.douban.com Referer */
+    private fun dbFetch(id: String, start: Int): Pair<Int, List<DbItem>>? {
+        val url = "https://m.douban.com/rexxar/api/v2/subject_collection/$id/items?start=$start&count=$DB_PAGE"
+        return try {
+            val req = Request.Builder().url(url)
+                .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15")
+                .header("Referer", "https://m.douban.com/").build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val j = JSONObject(resp.body?.string().orEmpty())
+                val total = j.optInt("total", 0)
+                val arr = j.optJSONArray("subject_collection_items") ?: return null
+                val out = ArrayList<DbItem>()
+                for (i in 0 until arr.length()) {
+                    val v = arr.optJSONObject(i) ?: continue
+                    val title = v.optString("title"); if (title.isBlank()) continue
+                    val rating = v.optJSONObject("rating")?.optDouble("value", 0.0) ?: 0.0
+                    var sub = v.optString("card_subtitle").replace(Regex("\\s*/\\s*"), " · ")
+                    if (sub.length > 52) sub = sub.substring(0, 52) + "…"
+                    val pic = v.optJSONObject("pic")?.let { it.optString("normal").ifBlank { it.optString("large") } } ?: ""
+                    out.add(DbItem(title, rating, sub, pic))
+                }
+                total to out
+            }
+        } catch (e: Exception) { Log.w(TAG, "dbFetch fail: ${e.message}"); null }
+    }
+
+    private fun dbState(name: String) {
+        setStat("豆瓣 · $name · ${dbItems.size}${if (dbTotal > 0) "/$dbTotal" else ""} 部 · ${if (dbNoMore) "到底了" else "继续下滑看更多"} · 左右滑切榜 / 点剧名搜索")
+    }
+
+    private fun dbCacheGet(id: String): Pair<List<DbItem>, Int>? = try {
+        val all = JSONObject(prefs.getString(KEY_DB, "{}") ?: "{}")
+        val c = all.optJSONObject(id) ?: return null
+        val day = SimpleDateFormat("yyyy-M-d", Locale.getDefault()).format(Date())
+        if (c.optString("day") != day) return null
+        val arr = c.optJSONArray("items") ?: return null
+        if (arr.length() == 0) return null
+        val out = ArrayList<DbItem>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(DbItem(o.optString("t"), o.optDouble("r"), o.optString("s"), o.optString("p")))
+        }
+        out to c.optInt("total")
+    } catch (e: Exception) { null }
+
+    private fun dbCachePut(id: String, items: List<DbItem>, total: Int) = try {
+        val all = JSONObject(prefs.getString(KEY_DB, "{}") ?: "{}")
+        val arr = JSONArray()
+        items.forEach { arr.put(JSONObject().put("t", it.title).put("r", it.rating).put("s", it.sub).put("p", it.pic)) }
+        all.put(id, JSONObject()
+            .put("day", SimpleDateFormat("yyyy-M-d", Locale.getDefault()).format(Date()))
+            .put("items", arr).put("total", total))
+        prefs.edit().putString(KEY_DB, all.toString()).apply()
+    } catch (e: Exception) { Log.w(TAG, "dbCachePut: ${e.message}") }
+
+    // ==================== 全网搜索 ====================
+    private fun setupSearchPage() {
+        tabAdapter = TabAdapter { selectGroup(it) }
+        srcTabs.layoutManager = LinearLayoutManager(this)
+        srcTabs.adapter = tabAdapter
+        vodAdapter = VodAdapter { openDetail(it) }
+        srcResults.layoutManager = GridLayoutManager(this, 2)
+        srcResults.adapter = vodAdapter
+        findViewById<View>(R.id.nvSpBack).setOnClickListener { closeSearchPage() }
+    }
+
+    private fun doSearch(word: String) {
+        if (word.isBlank()) { toast("先输入片名"); return }
+        histPanel.visibility = View.GONE
+        saveHist(word)
         val seq = ++searchSeq
-        adapter.clear()
-        empty.visibility = View.GONE
-        startedAt = SystemClock.elapsedRealtime()
-        firstAt = 0L; doneCnt = 0; hitCnt = 0; resultCnt = 0
+        groups.clear(); tabSel = 0
+        tabAdapter.notifyDataSetChanged(); vodAdapter.notifyDataSetChanged()
+        startedAt = SystemClock.elapsedRealtime(); firstAt = 0L
+        doneCnt = 0; hitCnt = 0; resultCnt = 0
         val sites = loadSites()
         totalCnt = sites.size
-        stat.text = "正在并发搜索 $totalCnt 个直连站…"
-        Log.i("VidNative", "search start w=$w sites=$totalCnt seq=$seq t=$startedAt")
+        spKw.text = word
+        spStat.text = "搜索 $totalCnt 个源…"
+        searchPage.visibility = View.VISIBLE
+        setStat("正在全网搜索 $totalCnt 个源…")
+        Log.i(TAG, "search start w=$word sites=$totalCnt seq=$seq")
         for (s in sites) {
             pool.execute {
                 if (seq != searchSeq) return@execute
-                val items = searchSite(s, w)
+                val items = searchSite(s, word)
                 main.post {
                     if (seq != searchSeq) return@post
                     doneCnt++
@@ -159,62 +458,73 @@ class NativeVideoActivity : AppCompatActivity() {
                         hitCnt++
                         if (firstAt == 0L) {
                             firstAt = SystemClock.elapsedRealtime() - startedAt
-                            Log.i("VidNative", "FIRST RESULT ${firstAt}ms from ${s.name}")
+                            Log.i(TAG, "FIRST RESULT ${firstAt}ms from ${s.name}")
                         }
                         resultCnt += items.size
-                        adapter.append(items)
+                        groups.add(SearchGroup(s.name, s.api, items.toMutableList()))
+                        // 边到边：一个源回来就刷 tab（不自动切用户已选中的 tab）
+                        tabAdapter.notifyDataSetChanged()
+                        if (tabSel == groups.size - 1 || tabSel >= groups.size) {
+                            tabSel = groups.size - 1
+                            vodAdapter.submit(groups[tabSel].items)
+                        }
                         empty.visibility = View.GONE
                     }
-                    val first = if (firstAt > 0) " · 首条 ${firstAt}ms" else ""
-                    stat.text = "已搜 $doneCnt/$totalCnt 源 · $hitCnt 源有结果 · $resultCnt 条$first"
-                    Log.d("VidNative", "site ${s.name} -> ${items.size} 条 ($doneCnt/$totalCnt)")
+                    spStat.text = "已搜 $doneCnt/$totalCnt · $hitCnt 源有结果"
+                    setStat("正在全网搜索… $doneCnt/$totalCnt（$hitCnt 个源有结果）")
                     if (doneCnt == totalCnt) {
                         val total = SystemClock.elapsedRealtime() - startedAt
-                        stat.text = "完成 · $totalCnt 源 / $resultCnt 条 · 首条 ${firstAt}ms · 全部 ${total}ms"
-                        Log.i("VidNative", "search DONE seq=$seq first=${firstAt}ms total=${total}ms hits=$hitCnt items=$resultCnt")
-                        if (resultCnt == 0) empty.visibility = View.VISIBLE
+                        val msg = "全网搜索：直连 $hitCnt/$totalCnt · 共 $resultCnt 条 · 首条 ${firstAt}ms · 全部 ${total}ms"
+                        spStat.text = "共 $resultCnt 条"; setStat(msg)
+                        Log.i(TAG, "search DONE seq=$seq first=${firstAt}ms total=${total}ms hits=$hitCnt items=$resultCnt")
+                        if (groups.isEmpty()) vodAdapter.submit(emptyList())
                     }
                 }
             }
         }
+    }
+
+    private fun selectGroup(i: Int) {
+        if (i !in groups.indices) return
+        tabSel = i; tabAdapter.notifyDataSetChanged()
+        vodAdapter.submit(groups[i].items)
+        spStat.text = "${groups[i].name} · ${groups[i].items.size} 条"
+    }
+
+    private fun closeSearchPage() {
+        searchPage.visibility = View.GONE
+        dbState(DB_CHARTS[chartIdx].second)
     }
 
     private fun searchSite(s: SiteInfo, w: String): List<Vod> {
         val sep = if (s.api.contains("?")) "&" else "?"
         val url = s.api + sep + "ac=videolist&wd=" + URLEncoder.encode(w, "UTF-8") + "&pg=1"
-        val req = Request.Builder().url(url)
-            .header("User-Agent", "okhttp/3.15.0")
-            .header("Accept", "*/*").build()
         return try {
+            val req = Request.Builder().url(url).header("User-Agent", "okhttp/3.15.0").header("Accept", "*/*").build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return emptyList()
-                val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("list")
-                    ?: return emptyList()
+                val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("list") ?: return emptyList()
                 val out = ArrayList<Vod>()
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    val id = o.optString("vod_id")
-                    val name = o.optString("vod_name")
+                    val id = o.optString("vod_id"); val name = o.optString("vod_name")
                     if (id.isBlank() || name.isBlank()) continue
-                    out.add(
-                        Vod(
-                            id, name, o.optString("vod_pic"), o.optString("vod_year"),
-                            o.optString("vod_area"),
-                            o.optString("vod_type_name").ifBlank { o.optString("vod_class") },
-                            o.optString("vod_remarks"), s.name, s.api
-                        )
-                    )
+                    out.add(Vod(id, name, o.optString("vod_pic"), o.optString("vod_year"),
+                        o.optString("vod_area"), o.optString("vod_type_name").ifBlank { o.optString("vod_class") },
+                        o.optString("vod_remarks"), s.name, s.api))
                 }
                 out
             }
-        } catch (e: Exception) {
-            Log.w("VidNative", "search fail ${s.name}: ${e.message}")
-            emptyList()
-        }
+        } catch (e: Exception) { Log.w(TAG, "search fail ${s.name}: ${e.message}"); emptyList() }
+    }
+
+    // ==================== 详情 / 选集 ====================
+    private fun setupDetail() {
+        findViewById<View>(R.id.nvDClose).setOnClickListener { sheet.visibility = View.GONE }
     }
 
     private fun openDetail(v: Vod) {
-        stat.text = "正在加载详情：${v.name}"
+        setStat("正在加载详情：${v.name}")
         pool.execute {
             val d = try {
                 val sep = if (v.api.contains("?")) "&" else "?"
@@ -226,97 +536,97 @@ class NativeVideoActivity : AppCompatActivity() {
                         if (arr != null && arr.length() > 0) arr.optJSONObject(0) else null
                     }
                 }
-            } catch (e: Exception) {
-                Log.w("VidNative", "detail fail: ${e.message}")
-                null
-            }
-            main.post {
-                if (d == null) {
-                    Toast.makeText(this, "详情加载失败", Toast.LENGTH_SHORT).show()
-                } else {
-                    showDetail(v, d)
-                }
-            }
+            } catch (e: Exception) { Log.w(TAG, "detail fail: ${e.message}"); null }
+            main.post { if (d == null) toast("详情加载失败") else showDetail(v, d) }
         }
     }
 
     private fun showDetail(v: Vod, d: JSONObject) {
-        val groups = parsePlay(d)
-        val dialog = BottomSheetDialog(this)
-        val scroll = ScrollView(this)
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val p = (18 * resources.displayMetrics.density).toInt()
-            setPadding(p, p, p, p)
-        }
-        scroll.addView(box)
-
-        box.addView(TextView(this).apply {
-            text = d.optString("vod_name").ifBlank { v.name }
-            textSize = 18f
-            setTextColor(attrColor(R.attr.gdTextPrimary))
-        })
+        dTit.text = d.optString("vod_name").ifBlank { v.name }
+        val info = listOf(d.optString("vod_year"), d.optString("vod_area"),
+            d.optString("vod_type_name").ifBlank { d.optString("vod_class") }, d.optString("vod_director"))
+            .filter { it.isNotBlank() }.joinToString(" · ")
+        dInfo.text = info
         val desc = d.optString("vod_content").replace(Regex("<[^>]+>"), " ").trim()
-        if (desc.isNotBlank()) box.addView(TextView(this).apply {
-            text = desc
-            textSize = 13f
-            setTextColor(attrColor(R.attr.gdTextSecondary))
-            setPadding(0, 8, 0, 8)
-            maxLines = 3
-        })
+        dDesc.text = desc
+        NativeImg.into(dPic, v.pic, R.drawable.bg_his_pic)
 
+        val groups = parsePlay(d)
+        detailTabs.removeAllViews(); epsGrid.removeAllViews()
         if (groups.isEmpty()) {
-            box.addView(TextView(this).apply {
-                text = "该资源没有可播放的集数"
-                textSize = 14f
-                setTextColor(attrColor(R.attr.gdTextSecondary))
-                setPadding(0, 24, 0, 24)
-            })
-        } else {
-            val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val tabScroll = HorizontalScrollView(this).apply { addView(tabs) }
-            val epsGrid = GridLayout(this).apply { columnCount = 5 }
-            box.addView(tabScroll)
-            box.addView(epsGrid)
-            fun select(gi: Int) {
-                for (i in 0 until tabs.childCount) {
-                    tabs.getChildAt(i).alpha = if (i == gi) 1f else 0.5f
-                }
-                epsGrid.removeAllViews()
-                val g = groups[gi]
-                g.eps.forEachIndexed { ei, ep ->
-                    val b = TextView(this).apply {
-                        text = ep.first.ifBlank { "第${ei + 1}集" }
-                        textSize = 12f
-                        gravity = Gravity.CENTER
-                        setTextColor(attrColor(R.attr.gdTextPrimary))
-                        setBackgroundResource(android.R.drawable.btn_default)
-                        setPadding(6, 14, 6, 14)
-                    }
-                    b.setOnClickListener { play(v, g, ei, ep); dialog.dismiss() }
-                    epsGrid.addView(b)
-                }
-            }
-            groups.forEachIndexed { i, g ->
-                val t = TextView(this).apply {
-                    text = "${g.from} (${g.eps.size})"
-                    textSize = 13f
-                    setTextColor(attrColor(R.attr.gdTextPrimary))
-                    setPadding(16, 10, 16, 10)
-                }
-                t.setOnClickListener { select(i) }
-                tabs.addView(t)
-            }
-            select(0)
+            epsHint.text = "选集"
+            addEpButton(epsGrid, "该资源没有可播放的集数", null)
+            sheet.visibility = View.VISIBLE
+            return
         }
-        dialog.setContentView(scroll)
-        dialog.show()
+        fun select(gi: Int) {
+            for (i in 0 until detailTabs.childCount)
+                detailTabs.getChildAt(i).alpha = if (i == gi) 1f else 0.5f
+            epsGrid.removeAllViews()
+            val g = groups[gi]
+            epsHint.text = "${g.from} · ${g.eps.size} 集"
+            g.eps.forEachIndexed { ei, ep -> addEpCell(epsGrid, g, ei, ep, v) }
+        }
+        groups.forEachIndexed { i, g ->
+            val t = TextView(this).apply {
+                text = "${g.from} (${g.eps.size})"; textSize = 13f
+                setTextColor(Color.parseColor(if (i == 0) "#FFFFFF" else "#8b8f99"))
+                setPadding(12, 8, 12, 8)
+                setOnClickListener { select(i) }
+            }
+            detailTabs.addView(t)
+        }
+        select(0)
+        sheet.visibility = View.VISIBLE
+    }
+
+    private fun addEpButton(grid: android.widget.GridLayout, text: String, click: (() -> Unit)?) {
+        val t = TextView(this).apply {
+            this.text = text; textSize = 12f; gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#e9eaee"))
+            background = epBg(false)
+            setPadding(4, 12, 4, 12)
+            if (click != null) setOnClickListener { click() }
+        }
+        grid.addView(t, android.widget.GridLayout.LayoutParams().apply {
+            width = 0; height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT
+            columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+            setMargins(4, 4, 4, 4)
+        })
+    }
+
+    private fun addEpCell(grid: android.widget.GridLayout, g: EpGroup, ei: Int, ep: Pair<String, String>, v: Vod) {
+        val cell = FrameLayout(this)
+        val btn = TextView(this).apply {
+            text = ep.first.ifBlank { "第${ei + 1}集" }; textSize = 12f; gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#e9eaee")); background = epBg(false)
+            setPadding(4, 12, 4, 22)
+            setOnClickListener { play(v, g, ei, ep); sheet.visibility = View.GONE }
+        }
+        cell.addView(btn, FrameLayout.LayoutParams(match, match))
+        val dl = TextView(this).apply {
+            text = "⬇"; textSize = 11f; gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#ff7a3c")); background = epBg(false)
+            setOnClickListener { downloadEp(v, g, ei, ep) }
+        }
+        cell.addView(dl, FrameLayout.LayoutParams(dp(22), dp(22)).apply { gravity = Gravity.TOP or Gravity.END; setMargins(0, 2, 2, 0) })
+        grid.addView(cell, android.widget.GridLayout.LayoutParams().apply {
+            width = 0; height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT
+            columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+            setMargins(4, 4, 4, 4)
+        })
+    }
+
+    private fun epBg(on: Boolean) = android.graphics.drawable.GradientDrawable().apply {
+        cornerRadius = 8f
+        setColor(Color.parseColor(if (on) "#F55E1A" else "#22252d"))
+        setStroke(1, Color.parseColor("#2c2f38"))
     }
 
     private fun parsePlay(v: JSONObject): List<EpGroup> {
         val rawFrom = v.optString("vod_play_from")
-        val froms = if (rawFrom.contains("$$$")) rawFrom.split("$$$") else rawFrom.split(",")
-        val segs = v.optString("vod_play_url").split("$$$")
+        val froms = if (rawFrom.contains("\$\$\$")) rawFrom.split("\$\$\$") else rawFrom.split(",")
+        val segs = v.optString("vod_play_url").split("\$\$\$")
         val out = ArrayList<EpGroup>()
         segs.forEachIndexed { i, seg ->
             val eps = ArrayList<Pair<String, String>>()
@@ -339,72 +649,352 @@ class NativeVideoActivity : AppCompatActivity() {
         val eps = JSONArray().apply {
             g.eps.forEach { (n, u) -> put(JSONObject().put("name", n).put("url", u).put("spider", false)) }
         }.toString()
-        val referer = try {
-            val u = Uri.parse(v.api)
-            "${u.scheme}://${u.host}"
-        } catch (e: Exception) { "" }
-        val meta = JSONObject()
-            .put("key", "d:${v.api}|${v.id}")
-            .put("pic", v.pic)
-            .put("epName", ep.first)
-            .put("vodId", v.id)
-            .put("siteApi", v.api)
-            .put("from", g.from)
-            .toString()
-        val json = JSONObject()
-            .put("url", ep.second)
-            .put("title", "${v.name} · ${g.from} · ${ep.first}")
-            .put("referer", referer)
-            .put("eps", eps)
-            .put("idx", idx)
-            .put("meta", meta)
-            .toString()
-        val i = Intent(this, VideoActivity::class.java)
-        i.putExtra(VideoActivity.EXTRA_NATIVE_PLAY, json)
-        i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val referer = try { val u = android.net.Uri.parse(v.api); "${u.scheme}://${u.host}" } catch (e: Exception) { "" }
+        val meta = JSONObject().put("key", "d:${v.api}|${v.id}").put("pic", v.pic)
+            .put("epName", ep.first).put("vodId", v.id).put("siteApi", v.api).put("from", g.from).toString()
+        val json = JSONObject().put("url", ep.second).put("title", "${v.name} · ${g.from} · ${ep.first}")
+            .put("referer", referer).put("eps", eps).put("idx", idx).put("meta", meta).toString()
+        val i = Intent(this, VideoActivity::class.java).apply {
+            putExtra(VideoActivity.EXTRA_NATIVE_PLAY, json)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
         startActivity(i)
     }
 
-    private fun attrColor(attr: Int): Int {
-        val ta = theme.obtainStyledAttributes(intArrayOf(attr))
-        val c = ta.getColor(0, android.graphics.Color.WHITE)
-        ta.recycle()
-        return c
+    /** 借壳 VideoActivity 的原生下载器：直链 mp4/m3u8 都在那边统一处理（含 ts 合并） */
+    private fun downloadEp(v: Vod, g: EpGroup, ei: Int, ep: Pair<String, String>) {
+        val referer = try { val u = android.net.Uri.parse(v.api); "${u.scheme}://${u.host}" } catch (e: Exception) { "" }
+        val headers = JSONObject().put("Referer", referer).put("User-Agent", "okhttp/3.15.0").toString()
+        val json = JSONObject().put("url", ep.second).put("headers", headers)
+            .put("title", "${v.name}-${g.from}-${ep.first.ifBlank { ei + 1 }}").toString()
+        val i = Intent(this, VideoActivity::class.java).apply { putExtra(VideoActivity.EXTRA_NATIVE_DOWNLOAD, json) }
+        startActivity(i)
+        toast("已交给下载器：${ep.first.ifBlank { "第${ei + 1}集" }}")
     }
 
-    private class VodAdapter(private val onClick: (Vod) -> Unit) :
-        RecyclerView.Adapter<VodAdapter.VH>() {
-        private val data = ArrayList<Vod>()
-        fun clear() { data.clear(); notifyDataSetChanged() }
-        fun append(l: List<Vod>) {
-            val s = data.size
-            data.addAll(l)
-            notifyItemRangeInserted(s, l.size)
+    // ==================== 搜索历史 ====================
+    private fun loadHist(): MutableList<String> = try {
+        val arr = JSONArray(prefs.getString(KEY_HIST, "[]") ?: "[]")
+        (0 until arr.length()).map { arr.optString(it) }.toMutableList()
+    } catch (e: Exception) { mutableListOf() }
+
+    private fun saveHist(w: String) {
+        val a = loadHist().apply { remove(w); add(0, w) }
+        prefs.edit().putString(KEY_HIST, JSONArray(a.take(10)).toString()).apply()
+    }
+
+    private fun renderHist(force: Boolean = false) {
+        val w = kw.text.toString().trim()
+        val list = loadHist().let { if (w.isBlank()) it else it.filter { h -> h.contains(w, true) } }
+        if (!force && w.isBlank() && !kw.hasFocus()) { histPanel.visibility = View.GONE; return }
+        if (list.isEmpty()) { histPanel.visibility = View.GONE; return }
+        histPanel.removeAllViews()
+        val hd = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(14, 8, 14, 8)
         }
+        hd.addView(TextView(this).apply { text = "搜索历史"; textSize = 11f; setTextColor(Color.parseColor("#8b8f99")) })
+        hd.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
+        hd.addView(TextView(this).apply {
+            text = "清空"; textSize = 12f; setTextColor(Color.parseColor("#ff5b5b"))
+            setOnClickListener { prefs.edit().putString(KEY_HIST, "[]").apply(); histPanel.visibility = View.GONE }
+        })
+        histPanel.addView(hd)
+        list.forEach { h ->
+            histPanel.addView(TextView(this).apply {
+                text = "🕘  $h"; textSize = 14f; setTextColor(Color.parseColor("#e9eaee"))
+                setPadding(14, 11, 14, 11)
+                setOnClickListener { kw.setText(h); histPanel.visibility = View.GONE; doSearch(h) }
+            })
+        }
+        histPanel.visibility = View.VISIBLE
+    }
+
+    // ==================== 源管理 ====================
+    private fun setupSources() {
+        simpleAdapter = SimpleAdapter()
+        findViewById<RecyclerView>(R.id.nvSrcList).apply {
+            layoutManager = LinearLayoutManager(this@NativeVideoActivity)
+            adapter = simpleAdapter
+        }
+        findViewById<View>(R.id.nvSrcMask).setOnClickListener { srcDrawer.visibility = View.GONE }
+        findViewById<View>(R.id.nvSrcAdd).setOnClickListener {
+            val name = findViewById<EditText>(R.id.nvSrcName).text.toString().trim()
+            val url = findViewById<EditText>(R.id.nvSrcUrl).text.toString().trim()
+            if (url.isBlank()) { toast("填订阅地址"); return@setOnClickListener }
+            val a = loadSourceRaw().apply { put(JSONObject().put("name", name.ifBlank { "自定义源" }).put("url", url)) }
+            prefs.edit().putString(KEY_SOURCES, a.toString()).apply()
+            findViewById<EditText>(R.id.nvSrcName).text.clear()
+            findViewById<EditText>(R.id.nvSrcUrl).text.clear()
+            refreshSourceList(); toast("已添加源")
+        }
+        refreshSourceList()
+    }
+
+    private fun loadSourceRaw(): JSONArray = try {
+        JSONArray(prefs.getString(KEY_SOURCES, null) ?: DEFAULT_SOURCES)
+    } catch (e: Exception) { JSONArray(DEFAULT_SOURCES) }
+
+    private fun refreshSourceList() {
+        val a = loadSourceRaw()
+        val items = (0 until a.length()).map { i ->
+            val o = a.optJSONObject(i) ?: JSONObject()
+            SimpleRow("☰", o.optString("name").ifBlank { "未命名" }, o.optString("url"), "删除") {
+                val b = JSONArray()
+                for (j in 0 until a.length()) if (j != i) b.put(a.opt(j))
+                prefs.edit().putString(KEY_SOURCES, b.toString()).apply()
+                refreshSourceList(); toast("已删除")
+            }
+        }
+        simpleAdapter.submit(items)
+    }
+
+    // ==================== 下载管理 ====================
+    private lateinit var dlAdapter: SimpleAdapter
+
+    private fun setupDownloads() {
+        dlAdapter = SimpleAdapter()
+        dlList.layoutManager = LinearLayoutManager(this)
+        dlList.adapter = dlAdapter
+        findViewById<View>(R.id.nvDlBack).setOnClickListener { dlPage.visibility = View.GONE }
+    }
+
+    private fun openDownloads() {
+        dlPage.visibility = View.VISIBLE
+        refreshDownloads()
+    }
+
+    private fun refreshDownloads() {
+        val arr = listDownloads()
+        val items = (0 until arr.length()).map { arr.optJSONObject(it) ?: JSONObject() }
+        dlEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        dlList.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        val rows = items.map { o ->
+            SimpleRow("🎬", o.optString("name"), fmtSize(o.optLong("size")), "▶") {
+                try {
+                    val i = Intent(Intent.ACTION_VIEW)
+                    i.setDataAndType(android.net.Uri.parse(o.optString("uri")), o.optString("mime"))
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(i)
+                } catch (e: Exception) { toast("没有能播放的 App") }
+            }
+        }
+        dlAdapter.submit(rows)
+    }
+
+    private fun listDownloads(): JSONArray {
+        val dirName = "从前慢"
+        val list = JSONArray()
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val proj = arrayOf(android.provider.MediaStore.Video.Media.DISPLAY_NAME,
+                    android.provider.MediaStore.Video.Media.SIZE, android.provider.MediaStore.Video.Media._ID)
+                val sel = "${android.provider.MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
+                contentResolver.query(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, proj, sel,
+                    arrayOf(android.os.Environment.DIRECTORY_MOVIES + "/$dirName%"),
+                    "${android.provider.MediaStore.Video.Media.DISPLAY_NAME} ASC")?.use { c ->
+                    val iN = c.getColumnIndexOrThrow(proj[0]); val iS = c.getColumnIndexOrThrow(proj[1]); val iI = c.getColumnIndexOrThrow(proj[2])
+                    while (c.moveToNext()) {
+                        val u = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(iI))
+                        list.put(JSONObject().put("name", c.getString(iN)).put("size", c.getLong(iS))
+                            .put("uri", u.toString()).put("mime", dlMime(c.getString(iN))))
+                    }
+                }
+            } else {
+                val dir = java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES), dirName)
+                dir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }?.forEach {
+                    list.put(JSONObject().put("name", it.name).put("size", it.length())
+                        .put("uri", android.net.Uri.fromFile(it).toString()).put("mime", dlMime(it.name)))
+                }
+            }
+        } catch (e: Exception) { Log.w(TAG, "listDownloads: ${e.message}") }
+        return list
+    }
+
+    private fun dlMime(n: String) = when {
+        n.contains(".m3u8", true) -> "application/x-mpegURL"
+        n.contains(".mp4", true) -> "video/mp4"
+        else -> "video/*"
+    }
+
+    private fun fmtSize(b: Long) = when {
+        b > 1024 * 1024 * 1024 -> String.format("%.1f GB", b / 1073741824.0)
+        b > 1024 * 1024 -> String.format("%.1f MB", b / 1048576.0)
+        else -> "${b / 1024} KB"
+    }
+
+    // ==================== 公共工具 ====================
+    private fun loadSites(): List<SiteInfo> {
+        val raw = prefs.getString(KEY_SOURCES, null) ?: DEFAULT_SOURCES
+        val out = ArrayList<SiteInfo>(); val seen = HashSet<String>()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val url = o.optString("url")
+                val asset = if (url.contains("摸鱼") || url.contains("moyu", true)) "tvbox/subs/moyu.json" else "tvbox/subs/box.json"
+                val cfg = JSONObject(assets.open(asset).bufferedReader(Charsets.UTF_8).use { it.readText() })
+                val sites = cfg.optJSONArray("sites") ?: continue
+                for (j in 0 until sites.length()) {
+                    val s = sites.optJSONObject(j) ?: continue
+                    val type = s.optInt("type", -1); val api = s.optString("api")
+                    if (type !in 0..1 || !api.startsWith("http", true)) continue
+                    if (!seen.add(api)) continue
+                    out.add(SiteInfo(s.optString("name").ifBlank { s.optString("key") }, api, s.optString("key")))
+                }
+            }
+        } catch (e: Exception) { Log.w(TAG, "loadSites: ${e.message}") }
+        return out
+    }
+
+    private fun setStat(t: String) { stat.text = t }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private val match = ViewGroup.LayoutParams.MATCH_PARENT
+    private val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
+
+    private fun toast(m: String) {
+        val t = findViewById<TextView>(R.id.nvToast)
+        t.text = m; t.visibility = View.VISIBLE; t.alpha = 1f
+        main.removeCallbacksAndMessages("toast")
+        main.postAtTime({ t.animate().alpha(0f).setDuration(250).withEndAction { t.visibility = View.GONE } }, "toast", SystemClock.uptimeMillis() + 1800)
+    }
+
+    private fun TextView.textColor(hex: String) = setTextColor(Color.parseColor(hex))
+
+    override fun onBackPressed() {
+        when {
+            sheet.visibility == View.VISIBLE -> sheet.visibility = View.GONE
+            srcDrawer.visibility == View.VISIBLE -> srcDrawer.visibility = View.GONE
+            dlPage.visibility == View.VISIBLE -> dlPage.visibility = View.GONE
+            histPanel.visibility == View.VISIBLE -> histPanel.visibility = View.GONE
+            searchPage.visibility == View.VISIBLE -> closeSearchPage()
+            else -> super.onBackPressed()
+        }
+    }
+
+    // ==================== Adapter ====================
+    private inner class DbAdapter(private val onClick: (DbItem) -> Unit) : RecyclerView.Adapter<DbAdapter.VH>() {
+        override fun getItemCount() = dbItems.size
+        override fun onCreateViewHolder(p: ViewGroup, t: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_nv_douban_row, p, false))
+        override fun onBindViewHolder(h: VH, p: Int) = h.bind(dbItems[p], p)
+        inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            private val no = v.findViewById<TextView>(R.id.nvNo)
+            private val pic = v.findViewById<ImageView>(R.id.nvPoster)
+            private val title = v.findViewById<TextView>(R.id.nvDbTitle)
+            private val meta = v.findViewById<TextView>(R.id.nvDbMeta)
+            private val score = v.findViewById<TextView>(R.id.nvScore)
+            fun bind(x: DbItem, i: Int) {
+                no.text = "${i + 1}"
+                no.setTextColor(Color.parseColor(if (i < 3) "#F55E1A" else "#8b8f99"))
+                title.text = x.title; meta.text = x.sub
+                if (x.rating > 0) { score.text = String.format("%.1f", x.rating); score.visibility = View.VISIBLE }
+                else { score.text = "暂无"; score.setTextColor(Color.parseColor("#8b8f99")); score.visibility = View.VISIBLE }
+                NativeImg.into(pic, x.pic, 0)
+                itemView.setOnClickListener { onClick(x) }
+            }
+        }
+    }
+
+    private inner class TabAdapter(private val onClick: (Int) -> Unit) : RecyclerView.Adapter<TabAdapter.VH>() {
+        override fun getItemCount() = groups.size
+        override fun onCreateViewHolder(p: ViewGroup, t: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_nv_src_tab, p, false))
+        override fun onBindViewHolder(h: VH, p: Int) = h.bind(groups[p], p)
+        inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            private val root = v.findViewById<View>(R.id.nvTabRoot)
+            private val name = v.findViewById<TextView>(R.id.nvTabName)
+            private val cnt = v.findViewById<TextView>(R.id.nvTabCnt)
+            fun bind(g: SearchGroup, i: Int) {
+                name.text = g.name; cnt.text = "${g.items.size} 条"
+                val on = i == tabSel
+                name.setTextColor(Color.parseColor(if (on) "#F55E1A" else "#8b8f99"))
+                cnt.setTextColor(Color.parseColor(if (on) "#ff7a3c" else "#8b8f99"))
+                root.setBackgroundColor(Color.parseColor(if (on) "#1a1c22" else "#22252d"))
+                root.setOnClickListener { onClick(i) }
+            }
+        }
+    }
+
+    private inner class VodAdapter(private val onClick: (Vod) -> Unit) : RecyclerView.Adapter<VodAdapter.VH>() {
+        private val data = ArrayList<Vod>()
+        fun submit(l: List<Vod>) { data.clear(); data.addAll(l); notifyDataSetChanged() }
         override fun getItemCount() = data.size
-        override fun onCreateViewHolder(p: ViewGroup, t: Int) =
-            VH(LayoutInflater.from(p.context).inflate(R.layout.item_native_video, p, false))
+        override fun onCreateViewHolder(p: ViewGroup, t: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_nv_vod, p, false))
         override fun onBindViewHolder(h: VH, p: Int) = h.bind(data[p])
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
-            private val root = v.findViewById<View>(R.id.nvRoot)
-            private val pic = v.findViewById<ImageView>(R.id.nvPic)
-            private val title = v.findViewById<TextView>(R.id.nvTitle)
-            private val meta = v.findViewById<TextView>(R.id.nvMeta)
-            private val site = v.findViewById<TextView>(R.id.nvSite)
+            private val root = v.findViewById<View>(R.id.nvVodRoot)
+            private val pic = v.findViewById<ImageView>(R.id.nvVodPic)
+            private val site = v.findViewById<TextView>(R.id.nvVodSite)
+            private val title = v.findViewById<TextView>(R.id.nvVodTitle)
+            private val meta = v.findViewById<TextView>(R.id.nvVodMeta)
+            private val rm = v.findViewById<TextView>(R.id.nvVodRemarks)
             fun bind(x: Vod) {
                 title.text = x.name
-                meta.text = listOf(x.year, x.area, x.typeName, x.remarks)
-                    .filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "影视资源" }
+                meta.text = listOf(x.year, x.area, x.typeName).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "影视资源" }
+                rm.text = x.remarks; rm.visibility = if (x.remarks.isBlank()) View.GONE else View.VISIBLE
                 site.text = x.siteName
-                VideoImg.into(pic, x.pic, R.drawable.bg_his_pic)
+                NativeImg.into(pic, x.pic, R.drawable.bg_his_pic)
                 root.setOnClickListener { onClick(x) }
             }
         }
     }
 
-    companion object {
-        private const val DEFAULT_SOURCES =
-            "[{\"name\":\"盒子迷多仓\",\"url\":\"https://盒子迷.top/禁止贩卖\"}," +
-                "{\"name\":\"盒子迷动漫仓\",\"url\":\"https://盒子迷.top/摸鱼\"}]"
+    private data class SimpleRow(val icon: String, val main: String, val sub: String, val action: String, val onAction: () -> Unit)
+    private inner class SimpleAdapter : RecyclerView.Adapter<SimpleAdapter.VH>() {
+        private val data = ArrayList<SimpleRow>()
+        fun submit(l: List<SimpleRow>) { data.clear(); data.addAll(l); notifyDataSetChanged() }
+        override fun getItemCount() = data.size
+        override fun onCreateViewHolder(p: ViewGroup, t: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_nv_simple_row, p, false))
+        override fun onBindViewHolder(h: VH, p: Int) = h.bind(data[p])
+        inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            private val icon = v.findViewById<TextView>(R.id.nvSimpleIcon)
+            private val main = v.findViewById<TextView>(R.id.nvSimpleMain)
+            private val sub = v.findViewById<TextView>(R.id.nvSimpleSub)
+            private val action = v.findViewById<TextView>(R.id.nvSimpleAction)
+            fun bind(x: SimpleRow) {
+                icon.text = x.icon; main.text = x.main
+                sub.text = x.sub; sub.visibility = if (x.sub.isBlank()) View.GONE else View.VISIBLE
+                action.text = x.action; action.visibility = View.VISIBLE
+                action.setOnClickListener { x.onAction() }
+            }
+        }
+    }
+}
+
+/** 带 header 的网络图加载（豆瓣图床要 iPhone UA + m.douban.com Referer），LruCache + 二次采样 */
+private object NativeImg {
+    private val mem = LruCache<String, Bitmap>(8 * 1024 * 1024)
+    private val pool = Executors.newFixedThreadPool(4) { r -> Thread(r, "native-img").apply { isDaemon = true } }
+    private val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build()
+
+    fun into(iv: ImageView, url: String?, ph: Int) {
+        if (ph != 0) iv.setImageResource(ph) else iv.setImageDrawable(null)
+        val u = url?.trim().orEmpty()
+        if (u.isEmpty()) return
+        mem.get(u)?.let { iv.setImageBitmap(it); return }
+        iv.tag = u
+        pool.execute {
+            val bm = decode(u) ?: return@execute
+            mem.put(u, bm)
+            iv.post { if (iv.tag == u) iv.setImageBitmap(bm) }
+        }
+    }
+
+    private fun decode(u: String): Bitmap? {
+        val douban = u.contains("doubanio.com", true)
+        fun open(): java.io.InputStream {
+            val b = Request.Builder().url(u)
+                .header("User-Agent", if (douban) "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15" else "okhttp/3.15.0")
+            if (douban) b.header("Referer", "https://m.douban.com/")
+            val resp = client.newCall(b.build()).execute()
+            if (!resp.isSuccessful) { resp.close(); throw java.io.IOException("http ${resp.code}") }
+            return resp.body!!.byteStream()
+        }
+        val w = try {
+            open().use { s -> BitmapFactory.Options().apply { inJustDecodeBounds = true; BitmapFactory.decodeStream(s, null, this) }.outWidth }
+        } catch (e: Exception) { return null }
+        if (w <= 0) return null
+        var sample = 1
+        while (w / sample > 240) sample *= 2
+        return try { open().use { s -> BitmapFactory.decodeStream(s, null, BitmapFactory.Options().apply { inSampleSize = sample }) } }
+        catch (e: Exception) { null }
     }
 }

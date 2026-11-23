@@ -466,6 +466,8 @@ class VideoActivity : AppCompatActivity() {
             "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
         /** 原生影视页（NativeVideoActivity）点选集后借壳本页播放：JSON 里带直链/剧集/元信息 */
         const val EXTRA_NATIVE_PLAY = "native_play_json"
+        /** 原生影视页下载：JSON 里带 {url, headers, title}，借壳本页的 m3u8/mp4 下载器 */
+        const val EXTRA_NATIVE_DOWNLOAD = "native_download_json"
     }
 
     /**
@@ -794,6 +796,27 @@ class VideoActivity : AppCompatActivity() {
                     }, 350)
                 }
             }.onFailure { Log.w("VidNative", "借壳起播参数解析失败: ${it.message}") }
+        }
+        // 原生影视对照版点选集 ⬇：跳过 WebView，直接借壳本页的原生下载器
+        intent.getStringExtra(EXTRA_NATIVE_DOWNLOAD)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                val url = o.optString("url")
+                if (url.isNotBlank()) {
+                    val h = parseHeaders(o.optString("headers"))
+                    Log.i("VidNative", "借壳下载 ${o.optString("title")} -> ${url.take(90)}")
+                    mainHandler.postDelayed({ startDownload(url, h, o.optString("title")) }, 350)
+                }
+            }.onFailure { Log.w("VidNative", "借壳下载参数解析失败: ${it.message}") }
+        }
+        // 原生版顶栏「WebView版 ›」切回时带回搜索词，落地后自动填框并搜一次
+        intent.getStringExtra("native_kw")?.takeIf { it.isNotBlank() }?.let { w ->
+            webView.postDelayed({
+                runCatching {
+                    safeEval("(function(){var e=document.getElementById('kw');if(e){e.value=" +
+                        JSONObject.quote(w) + ";if(typeof doSearch==='function')doSearch();}})()")
+                }
+            }, 1500)
         }
     }
 
@@ -1135,11 +1158,14 @@ class VideoActivity : AppCompatActivity() {
             }
         }
 
-        /** 切到原生影视对照页（抽屉里的「📺 原生版」），老版页面原样保留 */
+        /** 切到原生影视对照页（顶栏「原生版 ›」/ 抽屉入口），老版页面原样保留。
+         *  带当前搜索词过去，落地后原地同词搜索，A/B 对比不用重新输入。 */
         @JavascriptInterface
-        fun openNative() {
+        fun openNative(kw: String) {
             runOnUiThread {
-                startActivity(Intent(this@VideoActivity, NativeVideoActivity::class.java))
+                val i = Intent(this@VideoActivity, NativeVideoActivity::class.java)
+                if (kw.isNotBlank()) i.putExtra("kw", kw)
+                startActivity(i)
             }
         }
 

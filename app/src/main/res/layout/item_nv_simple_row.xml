@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通用单行：历史项 / 源管理项 / 下载项共用，图标 + 主文字 + 副文字 + 右侧动作 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/nvSimpleRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="11dp"
+    android:paddingBottom="11dp"
+    android:background="?attr/selectableItemBackground">
+
+    <TextView
+        android:id="@+id/nvSimpleIcon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="#8b8f99"/>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="10dp"
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/nvSimpleMain"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13.5sp"
+            android:textColor="#e9eaee"
+            android:maxLines="2"
+            android:ellipsize="end"/>
+        <TextView
+            android:id="@+id/nvSimpleSub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="11sp"
+            android:textColor="#8b8f99"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/nvSimpleAction"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:textSize="12sp"
+        android:textColor="#F55E1A"
+        android:visibility="gone"/>
+</LinearLayout>

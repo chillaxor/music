@@ -312,6 +312,7 @@
       <div class="iconbtn" onclick="openHistory()" title="播放历史">🕘</div>
       <div class="iconbtn" onclick="openSrcDrawer()">☰</div>
       <div class="iconbtn" onclick="openDlPage()" title="下载管理">📥</div>
+      <div class="scope" style="margin-left:auto;border-color:#F55E1A;color:#F55E1A" onclick="openNativeVideo()" title="切到纯原生实现，同界面对比速度">原生版 ›</div>
     </div>
     <div class="search">
       <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()" onfocus="showHistPanel()" onclick="showHistPanel()" onblur="setTimeout(hideHistPanel,180)">
@@ -725,8 +726,9 @@ function openSrcDrawer(){renderSrcDrawer();$('srcDrawer').classList.add('show');
 function closeSrcDrawer(){$('srcDrawer').classList.remove('show');}
 /** 顶栏 🎵 音乐：切到主 App 的音乐播放页 */
 function switchToMusic(){ if(window.Android&&Android.openMusic) Android.openMusic(); }
-/** 抽屉里的原生版入口：同一批订阅源，纯原生搜索链路，方便对比首屏速度 */
-function openNativeVideo(){ if(window.Android&&Android.openNative) Android.openNative(); }
+/** 顶栏 / 抽屉里的原生版入口：同一批订阅源，纯原生搜索链路，方便对比首屏速度。
+ *  带上当前搜索词，切过去原地同词搜索，A/B 对比不用重新输入。 */
+function openNativeVideo(){ if(window.Android&&Android.openNative) Android.openNative(($('kw')&&$('kw').value||'').trim()); }
 
 /* ============ 选源 → 拉配置 → 拉分类 ============ */
 /** 解析订阅响应，失败返回 null（404 HTML、半截 JSON 都算失败） */

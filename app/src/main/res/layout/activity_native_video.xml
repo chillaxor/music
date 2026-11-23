@@ -1,112 +1,556 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  原生影视对照版 —— 1:1 复刻 assets/video.html 的整套 UI，仅底层搜索/渲染改为原生。
+  配色与 video.html :root 保持一致（固定暗色影视风，与 App 12 套主题无关）：
+    bg #0e0f13 / card #1a1c22 / card2 #22252d / line #2c2f38
+    txt #e9eaee / sub #8b8f99 / accent #F55E1A / accent2 #ff7a3c
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="#0e0f13">
 
+    <!-- ============== 主页面（顶栏 + 豆瓣榜/影视仓列表） ============== -->
     <LinearLayout
+        android:id="@+id/nvMainPage"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/primary"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="22dp"
-        android:paddingBottom="14dp">
-        <TextView
-            android:id="@+id/nvBack"
-            android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- 顶栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="‹ 返回"
-            android:textSize="16sp"
-            android:textColor="@color/on_primary"
-            android:paddingEnd="12dp"/>
-        <TextView
-            android:layout_width="0dp"
+            android:orientation="vertical"
+            android:background="#15171c"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/nvMusic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:gravity="center"
+                    android:paddingStart="11dp"
+                    android:paddingEnd="11dp"
+                    android:text="🎵"
+                    android:textSize="16sp"
+                    android:textColor="#FFFFFF"
+                    android:background="@drawable/bg_pill_purple"/>
+
+                <TextView
+                    android:id="@+id/nvScope"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp"
+                    android:paddingStart="11dp"
+                    android:paddingEnd="11dp"
+                    android:text="全网"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="#F55E1A"
+                    android:background="@drawable/bg_pill_outline"/>
+
+                <TextView
+                    android:id="@+id/nvSpider"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp"
+                    android:paddingStart="11dp"
+                    android:paddingEnd="11dp"
+                    android:text="🕷"
+                    android:textSize="14sp"
+                    android:textColor="#8b8f99"
+                    android:background="@drawable/bg_pill_outline"/>
+
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
+
+                <TextView
+                    android:id="@+id/nvHistory"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:gravity="center"
+                    android:text="🕘"
+                    android:textSize="16sp"
+                    android:textColor="#e9eaee"
+                    android:background="@drawable/bg_pill_outline"/>
+
+                <TextView
+                    android:id="@+id/nvSources"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp"
+                    android:text="☰"
+                    android:textSize="16sp"
+                    android:textColor="#e9eaee"
+                    android:background="@drawable/bg_pill_outline"/>
+
+                <TextView
+                    android:id="@+id/nvDownloads"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp"
+                    android:text="📥"
+                    android:textSize="16sp"
+                    android:textColor="#e9eaee"
+                    android:background="@drawable/bg_pill_outline"/>
+
+                <TextView
+                    android:id="@+id/nvSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:gravity="center"
+                    android:layout_marginStart="8dp"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="WebView版 ›"
+                    android:textSize="11.5sp"
+                    android:textColor="#FFFFFF"
+                    android:background="@drawable/bg_pill_purple"/>
+            </LinearLayout>
+
+            <!-- 搜索框 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_nv_search">
+
+                <EditText
+                    android:id="@+id/nvKw"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:hint="搜电影 / 剧集 / 演员"
+                    android:textColorHint="#8b8f99"
+                    android:textColor="#e9eaee"
+                    android:singleLine="true"
+                    android:imeOptions="actionSearch"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="8dp"
+                    android:textSize="14sp"/>
+
+                <TextView
+                    android:id="@+id/nvGo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="14dp"
+                    android:text="搜索"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#F55E1A"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 豆瓣榜 chips 横滑 -->
+        <HorizontalScrollView
+            android:id="@+id/nvChipsScroll"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="原生影视"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:textColor="@color/on_primary"/>
-        <TextView
-            android:id="@+id/nvSwitch"
-            android:layout_width="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/nvChips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="4dp"/>
+        </HorizontalScrollView>
+
+        <!-- 状态条 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="WebView版 ›"
-            android:textSize="13sp"
-            android:textColor="@color/on_primary"
-            android:background="?attr/selectableItemBackground"
-            android:padding="8dp"/>
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
+            <TextView
+                android:id="@+id/nvStat"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="就绪"
+                android:textSize="12sp"
+                android:textColor="#8b8f99"/>
+            <TextView
+                android:id="@+id/nvLoad"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#ff7a3c"/>
+        </LinearLayout>
+
+        <!-- 主列表 -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/nvMainList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="16dp"/>
+
+            <TextView
+                android:id="@+id/nvEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="没有数据\n检查网络或点其他榜单"
+                android:textSize="14sp"
+                android:lineSpacingExtra="6dp"
+                android:textColor="#8b8f99"
+                android:visibility="gone"/>
+
+            <!-- 搜索历史下拉（覆盖在列表上方） -->
+            <LinearLayout
+                android:id="@+id/nvHistPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#1a1c22"
+                android:elevation="8dp"
+                android:visibility="gone"/>
+        </FrameLayout>
     </LinearLayout>
 
+    <!-- ============== 全网搜索结果页（左站点 tab + 右海报网格） ============== -->
     <LinearLayout
+        android:id="@+id/nvSearchPage"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:paddingTop="12dp">
-        <EditText
-            android:id="@+id/nvKw"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#0e0f13"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#1a1c22"
+            android:paddingStart="10dp"
+            android:paddingEnd="12dp">
+            <TextView
+                android:id="@+id/nvSpBack"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:text="‹"
+                android:textSize="22sp"
+                android:textColor="#e9eaee"
+                android:background="@drawable/bg_pill_outline"/>
+            <TextView
+                android:id="@+id/nvSpKw"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#e9eaee"
+                android:maxLines="1"
+                android:ellipsize="end"/>
+            <TextView
+                android:id="@+id/nvSpStat"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textSize="11sp"
+                android:textColor="#8b8f99"
+                android:maxLines="1"
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:hint="搜片名，如 庆余年"
-            android:singleLine="true"
-            android:imeOptions="actionSearch"
-            android:textSize="15sp"
-            android:textColor="?attr/colorOnSurface"
-            android:textColorHint="?attr/colorOnSurfaceVariant"
-            android:background="@drawable/bg_pill_glass"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"/>
+            android:orientation="horizontal">
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/nvSrcTabs"
+                android:layout_width="118dp"
+                android:layout_height="match_parent"
+                android:background="#22252d"/>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/nvSrcResults"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:padding="8dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ============== 详情 / 选集全屏页 ============== -->
+    <FrameLayout
+        android:id="@+id/nvSheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#e6000000"
+        android:visibility="gone">
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="28dp"
+            android:background="#1a1c22">
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="28dp">
+
+                    <TextView
+                        android:id="@+id/nvDClose"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:text="✕"
+                        android:textSize="22sp"
+                        android:textColor="#8b8f99"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="top">
+                        <ImageView
+                            android:id="@+id/nvDPic"
+                            android:layout_width="104dp"
+                            android:layout_height="150dp"
+                            android:scaleType="centerCrop"
+                            android:background="@drawable/bg_his_pic"/>
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:layout_marginStart="12dp">
+                            <TextView
+                                android:id="@+id/nvDTit"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textSize="18sp"
+                                android:textStyle="bold"
+                                android:textColor="#e9eaee"
+                                android:lineSpacingExtra="2dp"/>
+                            <TextView
+                                android:id="@+id/nvDInfo"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:textSize="12.5sp"
+                                android:textColor="#8b8f99"
+                                android:lineSpacingExtra="3dp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/nvDDesc"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:maxHeight="110dp"
+                        android:textSize="13sp"
+                        android:textColor="#b8bcc6"
+                        android:lineSpacingExtra="3dp"/>
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:scrollbars="none">
+                        <LinearLayout
+                            android:id="@+id/nvDetailTabs"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"/>
+                    </HorizontalScrollView>
+
+                    <TextView
+                        android:id="@+id/nvEpsHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textSize="13.5sp"
+                        android:textStyle="bold"
+                        android:textColor="#e9eaee"/>
+
+                    <GridLayout
+                        android:id="@+id/nvEpsGrid"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:columnCount="4"
+                        android:alignmentMode="alignMargins"
+                        android:layout_marginTop="6dp"/>
+                </LinearLayout>
+            </ScrollView>
+        </FrameLayout>
+    </FrameLayout>
+
+    <!-- ============== 下载管理页 ============== -->
+    <LinearLayout
+        android:id="@+id/nvDlPage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#0e0f13"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#1a1c22"
+            android:paddingStart="12dp">
+            <TextView
+                android:id="@+id/nvDlBack"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:text="‹"
+                android:textSize="22sp"
+                android:textColor="#e9eaee"
+                android:background="@drawable/bg_pill_outline"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="下载管理"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#e9eaee"/>
+        </LinearLayout>
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/nvDlList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:padding="10dp"/>
         <TextView
-            android:id="@+id/nvSearch"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
+            android:id="@+id/nvDlEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:gravity="center"
-            android:text="搜索"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:textColor="@color/on_primary"
-            android:background="@drawable/bg_pill_glass"
-            android:minWidth="72dp"
-            android:layout_marginStart="8dp"/>
+            android:text="还没有下载的视频\n点选集右上角 ⬇ 下载"
+            android:textSize="14sp"
+            android:lineSpacingExtra="6dp"
+            android:textColor="#8b8f99"
+            android:visibility="gone"/>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/nvStat"
+    <!-- ============== 源管理抽屉 ============== -->
+    <FrameLayout
+        android:id="@+id/nvSrcDrawer"
         android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+        <View
+            android:id="@+id/nvSrcMask"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#99000000"/>
+        <LinearLayout
+            android:layout_width="320dp"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="#1a1c22"
+            android:padding="16dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="接口源管理"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#e9eaee"/>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/nvSrcList"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="10dp"/>
+            <EditText
+                android:id="@+id/nvSrcName"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:hint="名称，如：盒子迷多仓"
+                android:textColor="#e9eaee"
+                android:textColorHint="#8b8f99"
+                android:background="@drawable/bg_nv_search"
+                android:paddingStart="12dp"
+                android:textSize="13sp"/>
+            <EditText
+                android:id="@+id/nvSrcUrl"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="8dp"
+                android:hint="订阅地址 .json"
+                android:textColor="#e9eaee"
+                android:textColorHint="#8b8f99"
+                android:background="@drawable/bg_nv_search"
+                android:paddingStart="12dp"
+                android:textSize="13sp"/>
+            <TextView
+                android:id="@+id/nvSrcAdd"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:gravity="center"
+                android:layout_marginTop="10dp"
+                android:text="添加源"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:background="@drawable/bg_pill_purple"/>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- toast -->
+    <TextView
+        android:id="@+id/nvToast"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="70dp"
+        android:background="#e6000000"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingTop="10dp"
-        android:paddingBottom="8dp"
-        android:text="就绪 · 点搜索开始（原生并发 12 路，结果边到边显示）"
-        android:textSize="12sp"
-        android:textColor="?attr/colorOnSurfaceVariant"/>
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/nvList"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="12dp"
-        android:clipToPadding="false"/>
-
-    <TextView
-        android:id="@+id/nvEmpty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="搜个片名试试\n结果会逐个站点实时出现，不等最慢的源"
-        android:textSize="15sp"
-        android:textColor="?attr/colorOnSurfaceVariant"
+        android:paddingBottom="10dp"
+        android:textSize="13sp"
+        android:textColor="#FFFFFF"
+        android:alpha="0"
         android:visibility="gone"/>
-</LinearLayout>
+</FrameLayout>
