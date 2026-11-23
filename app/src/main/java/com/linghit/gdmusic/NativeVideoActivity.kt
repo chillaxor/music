@@ -493,37 +493,46 @@ class NativeVideoActivity : AppCompatActivity() {
         searchPage.visibility = View.VISIBLE
         setStat("正在全网搜索 $totalCnt 个源…${if (spiderOn) "（含🕷爬虫）" else ""}")
         Log.i(TAG, "search start w=$word sites=$totalCnt spider=$spiderOn seq=$seq")
-        for (s in sites) {
+        // 有限并发 worker（对齐 WebView 版 searchSpiderAll 的 CONC=6）：
+        // 132 源一次性全 submit 会把 SpiderEngine 内部 4 线程池彻底堵死，
+        // 搜索期间点详情/播放的 detailAsync/playAsync 排不上队 → 14s 超时「详情加载失败」。
+        // 用共享队列 + 4 worker，同时在途不超过 4 个，给详情/播放留出线程。
+        val queue = java.util.concurrent.ConcurrentLinkedQueue(sites)
+        val workers = minOf(4, totalCnt.coerceAtLeast(1))
+        repeat(workers) {
             pool.execute {
-                if (seq != searchSeq) return@execute
-                val items = searchSite(s, word)
-                main.post {
-                    if (seq != searchSeq) return@post
-                    doneCnt++
-                    if (items.isNotEmpty()) {
-                        hitCnt++
-                        if (firstAt == 0L) {
-                            firstAt = SystemClock.elapsedRealtime() - startedAt
-                            Log.i(TAG, "FIRST RESULT ${firstAt}ms from ${s.name}")
+                while (true) {
+                    if (seq != searchSeq) return@execute
+                    val s = queue.poll() ?: return@execute
+                    val items = searchSite(s, word)
+                    main.post {
+                        if (seq != searchSeq) return@post
+                        doneCnt++
+                        if (items.isNotEmpty()) {
+                            hitCnt++
+                            if (firstAt == 0L) {
+                                firstAt = SystemClock.elapsedRealtime() - startedAt
+                                Log.i(TAG, "FIRST RESULT ${firstAt}ms from ${s.name}")
+                            }
+                            resultCnt += items.size
+                            groups.add(SearchGroup(s.name, s.api, items.toMutableList()))
+                            // 边到边：一个源回来就刷 tab（不自动切用户已选中的 tab）
+                            tabAdapter.notifyDataSetChanged()
+                            if (tabSel == groups.size - 1 || tabSel >= groups.size) {
+                                tabSel = groups.size - 1
+                                vodAdapter.submit(groups[tabSel].items)
+                            }
+                            empty.visibility = View.GONE
                         }
-                        resultCnt += items.size
-                        groups.add(SearchGroup(s.name, s.api, items.toMutableList()))
-                        // 边到边：一个源回来就刷 tab（不自动切用户已选中的 tab）
-                        tabAdapter.notifyDataSetChanged()
-                        if (tabSel == groups.size - 1 || tabSel >= groups.size) {
-                            tabSel = groups.size - 1
-                            vodAdapter.submit(groups[tabSel].items)
+                        spStat.text = "已搜 $doneCnt/$totalCnt · $hitCnt 源有结果"
+                        setStat("正在全网搜索… $doneCnt/$totalCnt（$hitCnt 个源有结果）")
+                        if (doneCnt == totalCnt) {
+                            val total = SystemClock.elapsedRealtime() - startedAt
+                            val msg = "全网搜索：直连 $hitCnt/$totalCnt · 共 $resultCnt 条 · 首条 ${firstAt}ms · 全部 ${total}ms"
+                            spStat.text = "共 $resultCnt 条"; setStat(msg)
+                            Log.i(TAG, "search DONE seq=$seq first=${firstAt}ms total=${total}ms hits=$hitCnt items=$resultCnt")
+                            if (groups.isEmpty()) vodAdapter.submit(emptyList())
                         }
-                        empty.visibility = View.GONE
-                    }
-                    spStat.text = "已搜 $doneCnt/$totalCnt · $hitCnt 源有结果"
-                    setStat("正在全网搜索… $doneCnt/$totalCnt（$hitCnt 个源有结果）")
-                    if (doneCnt == totalCnt) {
-                        val total = SystemClock.elapsedRealtime() - startedAt
-                        val msg = "全网搜索：直连 $hitCnt/$totalCnt · 共 $resultCnt 条 · 首条 ${firstAt}ms · 全部 ${total}ms"
-                        spStat.text = "共 $resultCnt 条"; setStat(msg)
-                        Log.i(TAG, "search DONE seq=$seq first=${firstAt}ms total=${total}ms hits=$hitCnt items=$resultCnt")
-                        if (groups.isEmpty()) vodAdapter.submit(emptyList())
                     }
                 }
             }

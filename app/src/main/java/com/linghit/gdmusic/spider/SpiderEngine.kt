@@ -70,6 +70,9 @@ class SpiderEngine private constructor(private val appCtx: Context) {
 
     /** 爬虫执行池：网络 IO 密集，4 线程足够（全网搜索并发 6 时会排队） */
     private val pool = Executors.newFixedThreadPool(4)
+    /** 详情/播放专用池：与搜索池隔离，避免 132 源搜索把 4 线程占满后，
+     *  点详情/播放的 detailContent/playerContent 排在搜索任务后面 → 14s 超时「详情加载失败」。 */
+    private val actionPool = Executors.newFixedThreadPool(3)
     /** 看门狗：单独线程等 Future，超时就取消，避免占满执行池导致超时永远不触发。
      *  每个 searchAsync/detailAsync/playAsync 都会占一个 watchdog 线程做 future.get(超时)，
      *  全网搜索 132 源时 2 线程会被搜索回调排队占满，导致搜索期间点详情/播放卡几十秒才回调。
@@ -115,7 +118,7 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     }
 
     fun detailAsync(jar: String, api: String, ext: String, key: String, ids: String, cb: (String?) -> Unit) {
-        submit(12_000, cb) {
+        submit(12_000, cb, useActionPool = true) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
             // TVBox 标准：detailContent 收的是 List<String>，多数 jar 只取 [0]=vod_id。
             // 旧逻辑按 ',' '#' '$' 一刀切，把 Ikanbot 的 "id$$$名称$$$封面" 与
@@ -134,7 +137,7 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     }
 
     fun playAsync(jar: String, api: String, ext: String, key: String, flag: String, id: String, cb: (String?) -> Unit) {
-        submit(15_000, cb) {
+        submit(15_000, cb, useActionPool = true) {
             val sp = spider(jar, api, ext, key) ?: return@submit null
             val r = runCatching { sp.playerContent(flag, id, emptyList()) }
                 .onFailure { Log.w(TAG, "playerContent 失败[$key/$api]: ${it.javaClass.simpleName}: ${it.message}") }
@@ -147,8 +150,8 @@ class SpiderEngine private constructor(private val appCtx: Context) {
     // ===================== 内部实现 =====================
 
     /** 提交任务到执行池，看门狗线程等待，超时取消；回调保证且仅保证一次 */
-    private fun submit(timeoutMs: Long, cb: (String?) -> Unit, body: () -> String?) {
-        val future = pool.submit(body)
+    private fun submit(timeoutMs: Long, cb: (String?) -> Unit, useActionPool: Boolean = false, body: () -> String?) {
+        val future = (if (useActionPool) actionPool else pool).submit(body)
         watchdog.schedule({
             try {
                 cb(future.get(timeoutMs, TimeUnit.MILLISECONDS))
