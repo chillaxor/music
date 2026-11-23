@@ -53,14 +53,18 @@ class NativeVideoActivity : AppCompatActivity() {
 
     private data class SiteInfo(
         val name: String, val api: String, val key: String,
-        val spider: Boolean = false, val jar: String = "", val ext: String = ""
+        val spider: Boolean = false, val jar: String = "", val ext: String = "",
+        // 订阅完整配置（parses/rules/spider），播放解析链要用；Web 版存 STATE.srcCfg[i]
+        val cfg: JSONObject = JSONObject()
     )
     private data class Vod(
         val id: String, val name: String, val pic: String, val year: String,
         val area: String, val typeName: String, val remarks: String,
         val siteName: String, val api: String,
         // 爬虫源上下文：搜索结果要带齐，详情/播放才能交给 SpiderEngine 解析
-        val spider: Boolean = false, val spiderJar: String = "", val spiderExt: String = "", val siteKey: String = ""
+        val spider: Boolean = false, val spiderJar: String = "", val spiderExt: String = "", val siteKey: String = "",
+        // 订阅配置（parses/rules）贯通到播放链，对齐 WebView 版 cfgOf(t)
+        val cfg: JSONObject = JSONObject()
     )
     private data class EpGroup(val from: String, val eps: List<Pair<String, String>>)
     private data class DbItem(val title: String, val rating: Double, val sub: String, val pic: String)
@@ -101,6 +105,8 @@ class NativeVideoActivity : AppCompatActivity() {
         Thread(r, "native-detail").apply { isDaemon = true }
     }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    // 播放解析链（直嗅 WebView → parses → 静态嗅探），与 WebView 版 playSpiderEp 同口径
+    private val resolver by lazy { VideoResolver(this) }
 
     // 视图
     private lateinit var kw: EditText
@@ -534,7 +540,8 @@ class NativeVideoActivity : AppCompatActivity() {
                     if (id.isBlank() || name.isBlank()) continue
                     out.add(Vod(id, name, o.optString("vod_pic"), o.optString("vod_year"),
                         o.optString("vod_area"), o.optString("vod_type_name").ifBlank { o.optString("vod_class") },
-                        o.optString("vod_remarks"), s.name, s.api))
+                        o.optString("vod_remarks"), s.name, s.api,
+                        cfg = s.cfg))
                 }
                 out
             }
@@ -560,10 +567,10 @@ class NativeVideoActivity : AppCompatActivity() {
                 val o = arr.optJSONObject(i) ?: continue
                 val id = o.optString("vod_id"); val name = o.optString("vod_name")
                 if (id.isBlank() || name.isBlank()) continue
-                out.add(Vod(id, name, o.optString("vod_pic"), o.optString("vod_year"),
-                    o.optString("vod_area"), o.optString("vod_type_name").ifBlank { o.optString("vod_class") },
-                    o.optString("vod_remarks"), "🕷${s.name}", s.api,
-                    true, s.jar, s.ext, s.key))
+                    out.add(Vod(id, name, o.optString("vod_pic"), o.optString("vod_year"),
+                        o.optString("vod_area"), o.optString("vod_type_name").ifBlank { o.optString("vod_class") },
+                        o.optString("vod_remarks"), "🕷${s.name}", s.api,
+                        true, s.jar, s.ext, s.key, cfg = s.cfg))
             }
             return out
         } catch (e: Exception) {
@@ -714,46 +721,24 @@ class NativeVideoActivity : AppCompatActivity() {
         return out
     }
 
+    /** 对齐 WebView 版 playSpiderEp：playerContent → 直嗅 → parses → 静态嗅探 → 缓存。
+     *  解析不出直链就提示换线路，绝不把加密串/非直链丢给 ExoPlayer。 */
     private fun play(v: Vod, g: EpGroup, idx: Int, ep: Pair<String, String>) {
         val rawUrl = ep.second
         setStat("正在解析播放地址：${ep.first}")
         detailPool.execute {
-            // 爬虫源：playerContent(flag, id) 解析出真直链 + header；
-            // 直连源：直链直接用，播放页用正则嗅探（对齐 VideoActivity.extractStream）。
-            var finalUrl = rawUrl
-            var playHeaders = JSONObject().put("Referer", refererOf(v.api)).put("User-Agent", SNIFF_UA)
-            if (v.spider) {
-                val latch = java.util.concurrent.CountDownLatch(1)
-                val holder = arrayOf<String?>(null)
-                SpiderEngine.get(this).playAsync(v.spiderJar, v.api, v.spiderExt, v.siteKey, g.from, rawUrl) { json ->
-                    holder[0] = json; latch.countDown()
-                }
-                if (latch.await(17, TimeUnit.SECONDS)) {
-                    val pc = runCatching { JSONObject(holder[0] ?: "{}") }.getOrNull()
-                    val u = pc?.optString("url").orEmpty()
-                    if (u.isNotBlank()) {
-                        finalUrl = u
-                        val h = pc?.optJSONObject("header") ?: pc?.optJSONObject("headers")
-                        if (h != null) {
-                            val merged = JSONObject().put("User-Agent", SNIFF_UA)
-                            h.keys().forEach { k -> merged.put(k, h.optString(k)) }
-                            var hasRef = false
-                            val ki = h.keys()
-                            while (ki.hasNext()) if (ki.next().equals("Referer", true)) hasRef = true
-                            if (!hasRef) merged.put("Referer", refererOf(v.api))
-                            playHeaders = merged
-                        }
-                        Log.i(TAG, "spider play ${ep.first} -> ${finalUrl.take(100)}")
-                    } else Log.w(TAG, "spider play 空 url: ${holder[0]?.take(200)}")
-                } else Log.w(TAG, "spider play timeout ${v.name}")
-            } else if (!isPlayableUrl(rawUrl)) {
-                finalUrl = sniffStream(rawUrl, refererOf(v.api)) ?: rawUrl
-                Log.i(TAG, "play resolve ${ep.first}: $rawUrl -> $finalUrl")
-            }
             val referer = refererOf(v.api)
+            val r = resolveEp(v, g, ep)
+            if (r == null || !resolver.isMediaUrl(r.url)) {
+                Log.w(TAG, "play 解析失败 ${ep.first}: raw=${rawUrl.take(90)}")
+                main.post { toast("这集解析失败，可换其他线路/源") }
+                return@execute
+            }
+            val finalUrl = r.url
+            val playHeaders = JSONObject()
+            r.headers.forEach { (k, value) -> playHeaders.put(k, value) }
+            Log.i(TAG, "play READY ${ep.first} by=${r.by} -> ${finalUrl.take(110)}")
             main.post {
-                if (!isPlayableUrl(finalUrl))
-                    toast("这集地址未解析成直链，已交给播放器尝试")
                 val eps = JSONArray().apply {
                     g.eps.forEachIndexed { i, (n, u) ->
                         put(JSONObject().put("name", n)
@@ -776,51 +761,69 @@ class NativeVideoActivity : AppCompatActivity() {
         }
     }
 
+    /** 播放/下载共用的解析入口（跑在 detailPool 线程，可阻塞等 jar/网络）。
+     *  返回 null 表示解析不出直链，调用方必须提示换线路，绝不把加密串丢给播放器。 */
+    private fun resolveEp(v: Vod, g: EpGroup, ep: Pair<String, String>): VideoResolver.Result? {
+        val referer = refererOf(v.api)
+        val rawUrl = ep.second
+        val seed = rawUrl // 缓存种子必须在回填前取（对齐 WebView e.url 回填前 resolveCKey）
+        var result: VideoResolver.Result? = null
+        if (v.spider) {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val holder = arrayOf<String?>(null)
+            SpiderEngine.get(this).playAsync(v.spiderJar, v.api, v.spiderExt, v.siteKey, g.from, rawUrl) { json ->
+                holder[0] = json; latch.countDown()
+            }
+            if (latch.await(17, TimeUnit.SECONDS)) {
+                val pc = runCatching { JSONObject(holder[0] ?: "{}") }.getOrNull()
+                val u = (pc?.optString("url") ?: "").ifBlank { pc?.optString("playUrl") ?: "" }
+                val parse = pc?.optBoolean("parse", false) ?: false
+                val jx = pc?.optInt("jx", 0) ?: 0
+                val h = pc?.let { it.optJSONObject("header") ?: it.optJSONObject("headers") }
+                val headers = LinkedHashMap<String, String>().apply {
+                    put("User-Agent", VideoResolver.SNIFF_UA)
+                    put("Referer", referer)
+                    if (h != null) {
+                        val it = h.keys()
+                        while (it.hasNext()) { val k = it.next(); put(k, h.optString(k)) }
+                    }
+                }
+                if (u.isNotBlank()) {
+                    Log.i(TAG, "spider play ${ep.first} -> ${u.take(110)} parse=$parse jx=$jx")
+                    result = resolver.resolve(u, parse, jx, headers, v.cfg, referer,
+                        "s", v.siteKey.ifBlank { v.api }, g.from, seed)
+                } else Log.w(TAG, "spider play 空 url: ${holder[0]?.take(200)}")
+            } else Log.w(TAG, "spider play timeout ${v.name}")
+        } else {
+            result = resolver.resolve(rawUrl, false, 0,
+                mapOf("User-Agent" to VideoResolver.SNIFF_UA, "Referer" to referer),
+                v.cfg, referer, "d", v.api, g.from, seed)
+        }
+        return result
+    }
+
     private fun refererOf(api: String): String = try {
         val u = android.net.Uri.parse(api); "${u.scheme}://${u.host}"
     } catch (e: Exception) { "" }
 
-    private fun isPlayableUrl(u: String): Boolean {
-        val path = u.substringBefore('?').substringBefore('#').lowercase()
-        return arrayOf(".m3u8", ".mp4", ".mpd", ".flv", ".ts", ".mkv", ".mov", ".avi", ".webm")
-            .any { path.endsWith(it) } || path.contains("/index.m3u8")
-    }
-
-    /** 与 VideoActivity.extractStream 同口径：从播放页 HTML 提取第一条媒体直链 */
-    private fun sniffStream(pageUrl: String, referer: String): String? = try {
-        val req = Request.Builder().url(pageUrl)
-            .header("User-Agent", SNIFF_UA)
-            .header("Accept", "*/*")
-            .apply { if (referer.isNotBlank()) header("Referer", referer) }
-            .build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            val html = resp.body?.string().orEmpty()
-            Regex("""var\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']""").find(html)?.let { return absUrl(it.groupValues[1], pageUrl) }
-            Regex("""mac_url\s*=\s*['"]([^'"]+)['"]""").find(html)?.let { m ->
-                val first = m.groupValues[1].split('#').firstOrNull()?.split('$')?.lastOrNull()?.trim()
-                if (!first.isNullOrBlank()) return absUrl(first, pageUrl)
-            }
-            Regex("""https?://[^"'\s\\]+\.(?:m3u8|mp4|flv|mpd)""").find(html)?.let { return absUrl(it.value, pageUrl) }
-            Regex("""var\s+\w*[Uu]rl\w*\s*=\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(html)?.let { return absUrl(it.groupValues[1], pageUrl) }
-            null
-        }
-    } catch (e: Exception) { Log.w(TAG, "sniffStream fail: ${e.message}"); null }
-
-    private fun absUrl(u: String, base: String): String = try {
-        if (u.startsWith("http", true)) u
-        else android.net.Uri.parse(base).let { "${it.scheme}://${it.host}" + if (u.startsWith("/")) u else "/$u" }
-    } catch (e: Exception) { u }
-
-    /** 借壳 VideoActivity 的原生下载器：直链 mp4/m3u8 都在那边统一处理（含 ts 合并） */
+    /** 借壳 VideoActivity 的原生下载器：与播放共用解析链（含爬虫源 spiderPlay/parses），再交给那边下载 */
     private fun downloadEp(v: Vod, g: EpGroup, ei: Int, ep: Pair<String, String>) {
-        val referer = try { val u = android.net.Uri.parse(v.api); "${u.scheme}://${u.host}" } catch (e: Exception) { "" }
-        val headers = JSONObject().put("Referer", referer).put("User-Agent", "okhttp/3.15.0").toString()
-        val json = JSONObject().put("url", ep.second).put("headers", headers)
-            .put("title", "${v.name}-${g.from}-${ep.first.ifBlank { ei + 1 }}").toString()
-        val i = Intent(this, VideoActivity::class.java).apply { putExtra(VideoActivity.EXTRA_NATIVE_DOWNLOAD, json) }
-        startActivity(i)
-        toast("已交给下载器：${ep.first.ifBlank { "第${ei + 1}集" }}")
+        detailPool.execute {
+            val r = resolveEp(v, g, ep)
+            if (r == null || !resolver.isMediaUrl(r.url)) {
+                main.post { toast("下载地址解析失败，可换其他线路/源") }
+                return@execute
+            }
+            val headers = JSONObject()
+            r.headers.forEach { (k, value) -> headers.put(k, value) }
+            val json = JSONObject().put("url", r.url).put("headers", headers.toString())
+                .put("title", "${v.name}-${g.from}-${ep.first.ifBlank { ei + 1 }}").toString()
+            main.post {
+                val i = Intent(this, VideoActivity::class.java).apply { putExtra(VideoActivity.EXTRA_NATIVE_DOWNLOAD, json) }
+                startActivity(i)
+                toast("已交给下载器：${ep.first.ifBlank { "第${ei + 1}集" }}")
+            }
+        }
     }
 
     // ==================== 搜索历史 ====================
@@ -993,7 +996,7 @@ class NativeVideoActivity : AppCompatActivity() {
                     val name = s.optString("name").ifBlank { key }
                     if (type in 0..1 && api.startsWith("http", true)) {
                         if (!seen.add(api)) continue
-                        out.add(SiteInfo(name, api, key))
+                        out.add(SiteInfo(name, api, key, cfg = cfg))
                     } else if (includeSpider && api.startsWith("csp_", true) && !deniedSpider(api)) {
                         // 爬虫源：jar 优先用站点自带的，否则用订阅级 spider
                         val ownJar = s.optString("jar")
@@ -1007,7 +1010,7 @@ class NativeVideoActivity : AppCompatActivity() {
                                 else -> v.toString()
                             }
                         }
-                        out.add(SiteInfo(name, api, key, true, jar, ext))
+                        out.add(SiteInfo(name, api, key, true, jar, ext, cfg = cfg))
                     }
                 }
             }
