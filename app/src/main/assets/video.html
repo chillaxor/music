@@ -312,7 +312,6 @@
       <div class="iconbtn" onclick="openHistory()" title="播放历史">🕘</div>
       <div class="iconbtn" onclick="openSrcDrawer()">☰</div>
       <div class="iconbtn" onclick="openDlPage()" title="下载管理">📥</div>
-      <div class="scope" style="margin-left:auto;border-color:#F55E1A;color:#F55E1A" onclick="openNativeVideo()" title="切到纯原生实现，同界面对比速度">原生版 ›</div>
     </div>
     <div class="search">
       <input id="kw" placeholder="搜电影 / 剧集 / 演员" onkeydown="if(event.key==='Enter')doSearch()" onfocus="showHistPanel()" onclick="showHistPanel()" onblur="setTimeout(hideHistPanel,180)">
@@ -365,7 +364,6 @@
       <h3>影视仓接口源<span id="curSrc" class="cur"></span></h3>
       <div id="srcList"></div>
       <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px">
-        <button class="btn" style="width:100%;margin-bottom:10px" onclick="openNativeVideo()">📺 打开原生影视版（速度对比）</button>
         <input id="newName" class="field" placeholder="名称，如：盒子迷多仓">
         <input id="newUrl" class="field" placeholder="接口地址，如：https://盒子迷.top/禁止贩卖">
         <div class="addbar">

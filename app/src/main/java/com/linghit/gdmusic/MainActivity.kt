@@ -559,6 +559,8 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
     private val fixedShortcuts = listOf(
         HomeShortcutStore.Item("page", "netasset", "记账", "📒"),
         HomeShortcutStore.Item("page", "video", "看片", "🎬"),
+        // 原生影视：与「看片」（WebView 版）完全独立的入口，走原生搜索 + 原生播放器
+        HomeShortcutStore.Item("page", "videonative", "原生影视", "📺"),
         HomeShortcutStore.Item("page", "novel", "小说", "📖"),
         HomeShortcutStore.Item("page", "mdviewer", "看MD", "📄"),
         HomeShortcutStore.Item("page", "favorites", "收藏", "❤"),

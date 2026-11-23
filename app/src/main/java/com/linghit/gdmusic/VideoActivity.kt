@@ -389,8 +389,6 @@ class VideoActivity : AppCompatActivity() {
     private var seekAfterReady: Long = 0
     /** 历史页点续播带回的记录 JSON：等 video.html 加载完交给 JS 重新起播 */
     private var pendingResumeJson: String? = null
-    /** 原生影视对照版借壳起播参数：等 video.html 铺好再起播，350ms 太早会被页面布局挤掉 overlay */
-    private var pendingNativePlayJson: String? = null
     private var pageReady = false
 
     // ===================== VIP 官网链接解析（阶段 3） =====================
@@ -466,10 +464,6 @@ class VideoActivity : AppCompatActivity() {
         /** 爬虫 dex jar 私自拉起的「所有文件访问」权限设置页（见 isSpiderPermissionIntent） */
         const val ACTION_MANAGE_ALL_FILES_ACCESS =
             "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
-        /** 原生影视页（NativeVideoActivity）点选集后借壳本页播放：JSON 里带直链/剧集/元信息 */
-        const val EXTRA_NATIVE_PLAY = "native_play_json"
-        /** 原生影视页下载：JSON 里带 {url, headers, title}，借壳本页的 m3u8/mp4 下载器 */
-        const val EXTRA_NATIVE_DOWNLOAD = "native_download_json"
     }
 
     /**
@@ -777,35 +771,6 @@ class VideoActivity : AppCompatActivity() {
         // 播放历史页点「继续看」会带 resume_json 拉起本页：先收下，等页面加载完再续播
         pendingResumeJson = intent.getStringExtra("resume_json")
         if (pendingResumeJson != null) Log.d("VidPlay", "收到续播记录，等页面就绪")
-        // 原生影视对照版点选集：跳过 WebView/JS 解析链，直接带直链起播。
-        // 延后一点等 WebView 铺好，避免播放器 overlay 被页面布局挤掉。
-        intent.getStringExtra(EXTRA_NATIVE_PLAY)?.let { json ->
-            // 页面还没铺好就起播，player overlay 会被 video.html 布局挤掉：
-            // 先收下，等 onPageFinished 再触发（与续播同一个时机）。
-            pendingNativePlayJson = json
-            Log.i("VidNative", "借壳起播参数已收下，等页面就绪")
-        }
-        // 原生影视对照版点选集 ⬇：跳过 WebView，直接借壳本页的原生下载器
-        intent.getStringExtra(EXTRA_NATIVE_DOWNLOAD)?.let { json ->
-            runCatching {
-                val o = JSONObject(json)
-                val url = o.optString("url")
-                if (url.isNotBlank()) {
-                    val h = parseHeaders(o.optString("headers"))
-                    Log.i("VidNative", "借壳下载 ${o.optString("title")} -> ${url.take(90)}")
-                    mainHandler.postDelayed({ startDownload(url, h, o.optString("title")) }, 350)
-                }
-            }.onFailure { Log.w("VidNative", "借壳下载参数解析失败: ${it.message}") }
-        }
-        // 原生版顶栏「WebView版 ›」切回时带回搜索词，落地后自动填框并搜一次
-        intent.getStringExtra("native_kw")?.takeIf { it.isNotBlank() }?.let { w ->
-            webView.postDelayed({
-                runCatching {
-                    safeEval("(function(){var e=document.getElementById('kw');if(e){e.value=" +
-                        JSONObject.quote(w) + ";if(typeof doSearch==='function')doSearch();}})()")
-                }
-            }, 1500)
-        }
     }
 
     /** 复用已存在的实例续播（历史页用 CLEAR_TOP|SINGLE_TOP 拉起） */
@@ -854,12 +819,11 @@ class VideoActivity : AppCompatActivity() {
                 // 续播要交给页面 JS（重新拉详情/重新解析），必须等页面就绪
                 pageReady = true
                 // 原生影视借壳起播：页面铺好后再起播，避免 overlay 被挤掉
-                pendingNativePlayJson?.let { fireNativePlay(it); pendingNativePlayJson = null }
-                    ?: pendingVipUrl?.let {
-                        pendingVipUrl = null
-                        pendingResumeJson = null
-                        fireVipParse(it)
-                    } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
+                pendingVipUrl?.let {
+                    pendingVipUrl = null
+                    pendingResumeJson = null
+                    fireVipParse(it)
+                } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
             }
 
             /**
@@ -1144,17 +1108,6 @@ class VideoActivity : AppCompatActivity() {
         fun openHistory() {
             runOnUiThread {
                 startActivity(Intent(this@VideoActivity, VideoHistoryActivity::class.java))
-            }
-        }
-
-        /** 切到原生影视对照页（顶栏「原生版 ›」/ 抽屉入口），老版页面原样保留。
-         *  带当前搜索词过去，落地后原地同词搜索，A/B 对比不用重新输入。 */
-        @JavascriptInterface
-        fun openNative(kw: String) {
-            runOnUiThread {
-                val i = Intent(this@VideoActivity, NativeVideoActivity::class.java)
-                if (kw.isNotBlank()) i.putExtra("kw", kw)
-                startActivity(i)
             }
         }
 
@@ -1551,27 +1504,6 @@ class VideoActivity : AppCompatActivity() {
             o.keys().forEach { k -> m[k] = o.optString(k, "") }
             m.filterValues { it.isNotBlank() }
         }.getOrDefault(emptyMap())
-    }
-
-    /** 原生影视对照版借壳起播：页面就绪后带完整 header 起播 */
-    private fun fireNativePlay(json: String) {
-        runCatching {
-            val o = JSONObject(json)
-            val url = o.optString("url")
-            if (url.isBlank()) { Log.w("VidNative", "借壳起播 url 为空"); return }
-            val headers = parseHeaders(o.optString("headers"))
-            Log.i("VidNative", "借壳起播(页面就绪) ${o.optString("title")} -> ${url.take(90)} headers=${headers.keys}")
-            startVideo(
-                url = url,
-                title = o.optString("title"),
-                referer = o.optString("referer"),
-                epsJson = o.optString("eps"),
-                idx = o.optInt("idx", -1),
-                metaJson = o.optString("meta"),
-                inline = false,
-                headers = headers
-            )
-        }.onFailure { Log.w("VidNative", "借壳起播失败: ${it.message}") }
     }
 
     /** 离屏 WebView 嗅探：影视仓 parses type:0 的等价实现。

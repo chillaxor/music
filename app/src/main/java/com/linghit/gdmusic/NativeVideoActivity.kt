@@ -105,6 +105,21 @@ class NativeVideoActivity : AppCompatActivity() {
         Thread(r, "native-detail").apply { isDaemon = true }
     }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    // 独立原生播放器：播完/切集回来时靠 lastVod/lastGroup 重新解析再拉起
+    private var lastVod: Vod? = null
+    private var lastGroup: EpGroup? = null
+    private val playerLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == android.app.Activity.RESULT_OK) {
+            val idx = res.data?.getIntExtra(NativePlayerActivity.RESULT_PICK_IDX, -1) ?: -1
+            val v = lastVod; val g = lastGroup
+            if (idx >= 0 && v != null && g != null && idx < g.eps.size) {
+                play(v, g, idx, g.eps[idx])
+            }
+        }
+    }
     // 播放解析链（直嗅 WebView → parses → 静态嗅探），与 WebView 版 playSpiderEp 同口径
     private val resolver by lazy { VideoResolver(this) }
 
@@ -284,12 +299,6 @@ class NativeVideoActivity : AppCompatActivity() {
         findViewById<View>(R.id.nvHistory).setOnClickListener { renderHist(true) }
         findViewById<View>(R.id.nvSources).setOnClickListener { srcDrawer.visibility = View.VISIBLE }
         findViewById<View>(R.id.nvDownloads).setOnClickListener { openDownloads() }
-        findViewById<View>(R.id.nvSwitch).setOnClickListener {
-            val i = Intent(this, VideoActivity::class.java)
-            if (kw.text.toString().isNotBlank()) i.putExtra("native_kw", kw.text.toString().trim())
-            startActivity(i)
-            finish()
-        }
     }
 
     // ==================== 首页 豆瓣榜 ====================
@@ -516,22 +525,34 @@ class NativeVideoActivity : AppCompatActivity() {
                             }
                             resultCnt += items.size
                             groups.add(SearchGroup(s.name, s.api, items.toMutableList()))
-                            // 边到边：一个源回来就刷 tab（不自动切用户已选中的 tab）
-                            tabAdapter.notifyDataSetChanged()
-                            if (tabSel == groups.size - 1 || tabSel >= groups.size) {
+                            // 增量插入 tab（不要全量 notifyDataSetChanged：搜索中每源刷一次会让
+                            // 左右两个列表不停重排，用户的点击在重排间隙被吞掉 → “点了没反应”）
+                            runCatching { tabAdapter.notifyItemInserted(groups.size - 1) }
+                                .onFailure { tabAdapter.notifyDataSetChanged() }
+                            // 第一组结果回来就立刻显示（用户搜完要马上看到结果，不用再点 tab）；
+                            // 之后新源回来只往左侧 tab 追加，右侧列表完全不动，保证点击稳定
+                            if (groups.size == 1 || tabSel >= groups.size) {
                                 tabSel = groups.size - 1
                                 vodAdapter.submit(groups[tabSel].items)
                             }
                             empty.visibility = View.GONE
                         }
-                        spStat.text = "已搜 $doneCnt/$totalCnt · $hitCnt 源有结果"
-                        setStat("正在全网搜索… $doneCnt/$totalCnt（$hitCnt 个源有结果）")
+                        // 状态行节流：132 个源每源都 setText 会反复 requestLayout，同样打断点击
+                        if (doneCnt == totalCnt || doneCnt % 8 == 0) {
+                            spStat.text = "已搜 $doneCnt/$totalCnt · $hitCnt 源有结果"
+                            setStat("正在全网搜索… $doneCnt/$totalCnt（$hitCnt 个源有结果）")
+                        }
                         if (doneCnt == totalCnt) {
                             val total = SystemClock.elapsedRealtime() - startedAt
                             val msg = "全网搜索：直连 $hitCnt/$totalCnt · 共 $resultCnt 条 · 首条 ${firstAt}ms · 全部 ${total}ms"
                             spStat.text = "共 $resultCnt 条"; setStat(msg)
                             Log.i(TAG, "search DONE seq=$seq first=${firstAt}ms total=${total}ms hits=$hitCnt items=$resultCnt")
                             if (groups.isEmpty()) vodAdapter.submit(emptyList())
+                            else if (vodAdapter.itemCount == 0) {
+                                // 兜底：确保搜索结束后右侧一定有结果可点
+                                tabSel = tabSel.coerceIn(0, groups.size - 1)
+                                vodAdapter.submit(groups[tabSel].items)
+                            }
                         }
                     }
                 }
@@ -780,14 +801,22 @@ class NativeVideoActivity : AppCompatActivity() {
                 val meta = JSONObject().put("key", "${if (v.spider) "s" else "d"}:${v.api}|${v.id}")
                     .put("pic", v.pic).put("epName", ep.first).put("vodId", v.id)
                     .put("siteApi", v.api).put("from", g.from).toString()
+                // 源上下文：播放器里切集要自己跑 spider playerContent + 解析链（parses 来自订阅 cfg），
+                // 不传的话切集只能回列表页解析，会闪一下搜索页（与 WebView 版原地切集不一致）
+                val ctx = JSONObject().put("spider", v.spider).put("jar", v.spiderJar)
+                    .put("api", v.api).put("ext", v.spiderExt).put("siteKey", v.siteKey)
+                    .put("from", g.from).put("referer", referer)
+                    .put("parses", v.cfg.optJSONArray("parses") ?: org.json.JSONArray())
                 val json = JSONObject().put("url", finalUrl).put("title", "${v.name} · ${g.from} · ${ep.first}")
                     .put("referer", referer).put("eps", eps).put("idx", idx).put("meta", meta)
-                    .put("headers", playHeaders.toString()).toString()
-                val i = Intent(this, VideoActivity::class.java).apply {
-                    putExtra(VideoActivity.EXTRA_NATIVE_PLAY, json)
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                startActivity(i)
+                    .put("ctx", ctx).put("headers", playHeaders.toString()).toString()
+                // 记住当前影片/线路，播放器里切集时靠它回来重新解析
+                lastVod = v; lastGroup = g
+                // 启动完全独立的原生播放器（不借壳 VideoActivity、不带 CLEAR_TOP），
+                // 避免把详情页清掉/跳回 WebView 主页
+                playerLauncher.launch(Intent(this, NativePlayerActivity::class.java).apply {
+                    putExtra(NativePlayerActivity.EXTRA_NATIVE_PLAY, json)
+                })
             }
         }
     }
@@ -837,7 +866,7 @@ class NativeVideoActivity : AppCompatActivity() {
         val u = android.net.Uri.parse(api); "${u.scheme}://${u.host}"
     } catch (e: Exception) { "" }
 
-    /** 借壳 VideoActivity 的原生下载器：与播放共用解析链（含爬虫源 spiderPlay/parses），再交给那边下载 */
+    /** 原生下载：与播放共用解析链（含爬虫源 spiderPlay/parses），解析出直链后交给独立的 NativeDownloader */
     private fun downloadEp(v: Vod, g: EpGroup, ei: Int, ep: Pair<String, String>) {
         detailPool.execute {
             val r = resolveEp(v, g, ep)
@@ -845,14 +874,10 @@ class NativeVideoActivity : AppCompatActivity() {
                 main.post { toast("下载地址解析失败，可换其他线路/源") }
                 return@execute
             }
-            val headers = JSONObject()
-            r.headers.forEach { (k, value) -> headers.put(k, value) }
-            val json = JSONObject().put("url", r.url).put("headers", headers.toString())
-                .put("title", "${v.name}-${g.from}-${ep.first.ifBlank { ei + 1 }}").toString()
+            val title = "${v.name}-${g.from}-${ep.first.ifBlank { ei + 1 }}"
             main.post {
-                val i = Intent(this, VideoActivity::class.java).apply { putExtra(VideoActivity.EXTRA_NATIVE_DOWNLOAD, json) }
-                startActivity(i)
-                toast("已交给下载器：${ep.first.ifBlank { "第${ei + 1}集" }}")
+                NativeDownloader.start(this, r.url, r.headers, title)
+                toast("开始下载：${ep.first.ifBlank { "第${ei + 1}集" }}")
             }
         }
     }
