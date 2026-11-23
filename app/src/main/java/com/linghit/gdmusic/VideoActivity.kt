@@ -389,6 +389,8 @@ class VideoActivity : AppCompatActivity() {
     private var seekAfterReady: Long = 0
     /** 历史页点续播带回的记录 JSON：等 video.html 加载完交给 JS 重新起播 */
     private var pendingResumeJson: String? = null
+    /** 原生影视对照版借壳起播参数：等 video.html 铺好再起播，350ms 太早会被页面布局挤掉 overlay */
+    private var pendingNativePlayJson: String? = null
     private var pageReady = false
 
     // ===================== VIP 官网链接解析（阶段 3） =====================
@@ -778,24 +780,10 @@ class VideoActivity : AppCompatActivity() {
         // 原生影视对照版点选集：跳过 WebView/JS 解析链，直接带直链起播。
         // 延后一点等 WebView 铺好，避免播放器 overlay 被页面布局挤掉。
         intent.getStringExtra(EXTRA_NATIVE_PLAY)?.let { json ->
-            runCatching {
-                val o = JSONObject(json)
-                val url = o.optString("url")
-                if (url.isNotBlank()) {
-                    Log.i("VidNative", "借壳起播 ${o.optString("title")} -> ${url.take(90)}")
-                    mainHandler.postDelayed({
-                        startVideo(
-                            url = url,
-                            title = o.optString("title"),
-                            referer = o.optString("referer"),
-                            epsJson = o.optString("eps"),
-                            idx = o.optInt("idx"),
-                            metaJson = o.optString("meta"),
-                            inline = false
-                        )
-                    }, 350)
-                }
-            }.onFailure { Log.w("VidNative", "借壳起播参数解析失败: ${it.message}") }
+            // 页面还没铺好就起播，player overlay 会被 video.html 布局挤掉：
+            // 先收下，等 onPageFinished 再触发（与续播同一个时机）。
+            pendingNativePlayJson = json
+            Log.i("VidNative", "借壳起播参数已收下，等页面就绪")
         }
         // 原生影视对照版点选集 ⬇：跳过 WebView，直接借壳本页的原生下载器
         intent.getStringExtra(EXTRA_NATIVE_DOWNLOAD)?.let { json ->
@@ -865,12 +853,13 @@ class VideoActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // 续播要交给页面 JS（重新拉详情/重新解析），必须等页面就绪
                 pageReady = true
-                // VIP 官网链接优先于历史续播：同一次启动只走一条
-                pendingVipUrl?.let {
-                    pendingVipUrl = null
-                    pendingResumeJson = null
-                    fireVipParse(it)
-                } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
+                // 原生影视借壳起播：页面铺好后再起播，避免 overlay 被挤掉
+                pendingNativePlayJson?.let { fireNativePlay(it); pendingNativePlayJson = null }
+                    ?: pendingVipUrl?.let {
+                        pendingVipUrl = null
+                        pendingResumeJson = null
+                        fireVipParse(it)
+                    } ?: pendingResumeJson?.let { fireResume(it); pendingResumeJson = null }
             }
 
             /**
@@ -1562,6 +1551,27 @@ class VideoActivity : AppCompatActivity() {
             o.keys().forEach { k -> m[k] = o.optString(k, "") }
             m.filterValues { it.isNotBlank() }
         }.getOrDefault(emptyMap())
+    }
+
+    /** 原生影视对照版借壳起播：页面就绪后带完整 header 起播 */
+    private fun fireNativePlay(json: String) {
+        runCatching {
+            val o = JSONObject(json)
+            val url = o.optString("url")
+            if (url.isBlank()) { Log.w("VidNative", "借壳起播 url 为空"); return }
+            val headers = parseHeaders(o.optString("headers"))
+            Log.i("VidNative", "借壳起播(页面就绪) ${o.optString("title")} -> ${url.take(90)} headers=${headers.keys}")
+            startVideo(
+                url = url,
+                title = o.optString("title"),
+                referer = o.optString("referer"),
+                epsJson = o.optString("eps"),
+                idx = o.optInt("idx", -1),
+                metaJson = o.optString("meta"),
+                inline = false,
+                headers = headers
+            )
+        }.onFailure { Log.w("VidNative", "借壳起播失败: ${it.message}") }
     }
 
     /** 离屏 WebView 嗅探：影视仓 parses type:0 的等价实现。
