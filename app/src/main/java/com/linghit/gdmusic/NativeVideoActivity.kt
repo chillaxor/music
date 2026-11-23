@@ -161,6 +161,28 @@ class NativeVideoActivity : AppCompatActivity() {
     private val groups = ArrayList<SearchGroup>()
     private var tabSel = 0
 
+    /**
+     * 与 VideoActivity / App 同款拦截：爬虫 jar（LocalFile / Market 等 init 里调
+     * Init.checkPermission()）用 Init.getActivity() 反射拿到「当前 Activity」拉起
+     * 系统「所有文件访问」设置页。原生影视页现在也跑 132 个爬虫源，必须在这里同样挡掉，
+     * 否则一开 🕷 就被甩到权限页。只挡这一个 action，页面自身跳转不受影响。
+     */
+    override fun startActivity(intent: Intent) {
+        if (intent.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 权限页(NativeVideoActivity): ${intent.action}")
+            return
+        }
+        super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        if (intent.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 权限页(NativeVideoActivity): ${intent.action}")
+            return
+        }
+        super.startActivity(intent, options)
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         ThemePrefs.applyTheme(this)
