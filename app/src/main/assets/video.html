@@ -364,6 +364,7 @@
       <h3>影视仓接口源<span id="curSrc" class="cur"></span></h3>
       <div id="srcList"></div>
       <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px">
+        <button class="btn" style="width:100%;margin-bottom:10px" onclick="openNativeVideo()">📺 打开原生影视版（速度对比）</button>
         <input id="newName" class="field" placeholder="名称，如：盒子迷多仓">
         <input id="newUrl" class="field" placeholder="接口地址，如：https://盒子迷.top/禁止贩卖">
         <div class="addbar">
@@ -724,6 +725,8 @@ function openSrcDrawer(){renderSrcDrawer();$('srcDrawer').classList.add('show');
 function closeSrcDrawer(){$('srcDrawer').classList.remove('show');}
 /** 顶栏 🎵 音乐：切到主 App 的音乐播放页 */
 function switchToMusic(){ if(window.Android&&Android.openMusic) Android.openMusic(); }
+/** 抽屉里的原生版入口：同一批订阅源，纯原生搜索链路，方便对比首屏速度 */
+function openNativeVideo(){ if(window.Android&&Android.openNative) Android.openNative(); }
 
 /* ============ 选源 → 拉配置 → 拉分类 ============ */
 /** 解析订阅响应，失败返回 null（404 HTML、半截 JSON 都算失败） */

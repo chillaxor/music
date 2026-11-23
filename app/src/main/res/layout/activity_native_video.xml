@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/primary"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="14dp">
+        <TextView
+            android:id="@+id/nvBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹ 返回"
+            android:textSize="16sp"
+            android:textColor="@color/on_primary"
+            android:paddingEnd="12dp"/>
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="原生影视"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_primary"/>
+        <TextView
+            android:id="@+id/nvSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WebView版 ›"
+            android:textSize="13sp"
+            android:textColor="@color/on_primary"
+            android:background="?attr/selectableItemBackground"
+            android:padding="8dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="12dp">
+        <EditText
+            android:id="@+id/nvKw"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:hint="搜片名，如 庆余年"
+            android:singleLine="true"
+            android:imeOptions="actionSearch"
+            android:textSize="15sp"
+            android:textColor="?attr/colorOnSurface"
+            android:textColorHint="?attr/colorOnSurfaceVariant"
+            android:background="@drawable/bg_pill_glass"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"/>
+        <TextView
+            android:id="@+id/nvSearch"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:text="搜索"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/on_primary"
+            android:background="@drawable/bg_pill_glass"
+            android:minWidth="72dp"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/nvStat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp"
+        android:text="就绪 · 点搜索开始（原生并发 12 路，结果边到边显示）"
+        android:textSize="12sp"
+        android:textColor="?attr/colorOnSurfaceVariant"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/nvList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="12dp"
+        android:clipToPadding="false"/>
+
+    <TextView
+        android:id="@+id/nvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="搜个片名试试\n结果会逐个站点实时出现，不等最慢的源"
+        android:textSize="15sp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone"/>
+</LinearLayout>

@@ -1630,6 +1630,7 @@ class MainActivity : AppCompatActivity(), PlayerUiListener {
             HomeShortcutStore.Item("page", "flow", "收支查询", "📊"),
             HomeShortcutStore.Item("page", "journal", "日志", "📖"),
             HomeShortcutStore.Item("page", "links", "链接收藏", "🔗"),
+            HomeShortcutStore.Item("page", "videonative", "原生影视", "📺"),
             HomeShortcutStore.Item("page", "rail", "高铁往返", "🚄"),
             HomeShortcutStore.Item("page", "reminder", "提醒", "⏰"),
             HomeShortcutStore.Item("page", "settings", "设置", "⚙"),

@@ -98,6 +98,9 @@
         <activity android:name=".VideoActivity" android:label="影视仓" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:supportsPictureInPicture="true"/>
+        <!-- 原生影视搜索（对照版）：不锁方向，exported 便于 adb 直启做 A/B 计时 -->
+        <activity android:name=".NativeVideoActivity" android:label="原生影视" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
         <!-- 高铁往返记录：独立 WebView 页面（仿净资产记账），数据走 SharedPreferences 落地 -->
         <activity android:name=".RailActivity" android:label="高铁往返" android:exported="false"/>
         <!-- 提醒：生日/节日/高铁票，离线闹钟 + 状态栏通知 -->

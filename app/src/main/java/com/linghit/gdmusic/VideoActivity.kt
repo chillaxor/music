@@ -464,6 +464,8 @@ class VideoActivity : AppCompatActivity() {
         /** 爬虫 dex jar 私自拉起的「所有文件访问」权限设置页（见 isSpiderPermissionIntent） */
         const val ACTION_MANAGE_ALL_FILES_ACCESS =
             "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
+        /** 原生影视页（NativeVideoActivity）点选集后借壳本页播放：JSON 里带直链/剧集/元信息 */
+        const val EXTRA_NATIVE_PLAY = "native_play_json"
     }
 
     /**
@@ -771,6 +773,28 @@ class VideoActivity : AppCompatActivity() {
         // 播放历史页点「继续看」会带 resume_json 拉起本页：先收下，等页面加载完再续播
         pendingResumeJson = intent.getStringExtra("resume_json")
         if (pendingResumeJson != null) Log.d("VidPlay", "收到续播记录，等页面就绪")
+        // 原生影视对照版点选集：跳过 WebView/JS 解析链，直接带直链起播。
+        // 延后一点等 WebView 铺好，避免播放器 overlay 被页面布局挤掉。
+        intent.getStringExtra(EXTRA_NATIVE_PLAY)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                val url = o.optString("url")
+                if (url.isNotBlank()) {
+                    Log.i("VidNative", "借壳起播 ${o.optString("title")} -> ${url.take(90)}")
+                    mainHandler.postDelayed({
+                        startVideo(
+                            url = url,
+                            title = o.optString("title"),
+                            referer = o.optString("referer"),
+                            epsJson = o.optString("eps"),
+                            idx = o.optInt("idx"),
+                            metaJson = o.optString("meta"),
+                            inline = false
+                        )
+                    }, 350)
+                }
+            }.onFailure { Log.w("VidNative", "借壳起播参数解析失败: ${it.message}") }
+        }
     }
 
     /** 复用已存在的实例续播（历史页用 CLEAR_TOP|SINGLE_TOP 拉起） */
@@ -1108,6 +1132,14 @@ class VideoActivity : AppCompatActivity() {
         fun openHistory() {
             runOnUiThread {
                 startActivity(Intent(this@VideoActivity, VideoHistoryActivity::class.java))
+            }
+        }
+
+        /** 切到原生影视对照页（抽屉里的「📺 原生版」），老版页面原样保留 */
+        @JavascriptInterface
+        fun openNative() {
+            runOnUiThread {
+                startActivity(Intent(this@VideoActivity, NativeVideoActivity::class.java))
             }
         }
 

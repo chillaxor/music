@@ -54,6 +54,7 @@ object ShortcutRouter {
             }
             else -> when (item.target) {
                 "video" -> go(Intent(ctx, VideoActivity::class.java))
+                "videonative" -> go(Intent(ctx, NativeVideoActivity::class.java))
                 "novel" -> go(Intent(ctx, NovelActivity::class.java))
                 "mdviewer" -> go(Intent(ctx, MdViewerActivity::class.java))
                 "voice" -> go(Intent(ctx, VoiceActivity::class.java))
