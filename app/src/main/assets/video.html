@@ -841,10 +841,28 @@ var dbNoMore=false;      // 已到底
 var dbReqId=0;           // 请求令牌：切榜后旧回包直接丢弃
 try{localStorage.removeItem('gd_douban_chart_v2');}catch(e){} // 清理旧版无 total 的缓存
 function dbToday(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+// 缓存长期有效（不再按天失效）：断网/代理挂掉时首页也能秒出内容；只有联网拉取成功才覆盖。
 function dbCacheGet(id){
   try{var c=JSON.parse(localStorage.getItem(DB_KEY)||'{}')[id];
-    if(c&&c.day===dbToday()&&c.items&&c.items.length)return c;}catch(e){}
+    if(c&&c.items&&c.items.length)return c;}catch(e){}
   return null;
+}
+// 内置豆瓣榜单快照：asset:// 离线可读，缓存 miss 时零网络秒出首屏。
+var dbFallbackAll=null;
+async function loadFallbackChart(id){
+  if(!dbFallbackAll){
+    var r=await get('asset://tvbox/douban_fallback.json');
+    if(r.ok&&r.text){try{dbFallbackAll=JSON.parse(r.text);}catch(e){dbFallbackAll={};}}
+    else dbFallbackAll={};
+    // 与在线 dbFetch 同一套副标题格式化，保证快照/在线显示一致
+    Object.keys(dbFallbackAll).forEach(function(k){
+      (dbFallbackAll[k].items||[]).forEach(function(x){
+        x.sub=(x.sub||'').replace(/\s*\/\s*/g,' · ');
+        if(x.sub.length>52)x.sub=x.sub.slice(0,52)+'…';
+      });
+    });
+  }
+  return dbFallbackAll[id]||null;
 }
 function dbCachePut(id){
   try{var all=JSON.parse(localStorage.getItem(DB_KEY)||'{}');all[id]={day:dbToday(),items:dbItems,total:dbTotal};
@@ -986,6 +1004,7 @@ async function loadDouban(id){
   var name=dbName(id);
   dbItems=[]; dbTotal=0; dbNoMore=false; dbMoreLoading=false;
   var myReq=++dbReqId;
+  // ① 本地缓存（已改长期有效）：命中就立刻渲染，零网络
   var cache=dbCacheGet(id);
   if(cache){
     dbItems=cache.items.slice(); dbTotal=cache.total||0;
@@ -993,15 +1012,34 @@ async function loadDouban(id){
     renderDoubanItems(dbItems);
     dbSetState(name);
     setTimeout(dbFillIfNeeded,60);
+    refreshDoubanInBg(id,name,myReq); // 后台静默刷新，成功后覆盖；失败不动 DOM
     return;
   }
-  setState('正在加载豆瓣「'+name+'」…');
-  var res=await dbFetch(id,0);
+  // ② 缓存没命中：先秒渲染内置快照（asset:// 离线可读），不让首页空等网络
+  var fb=await loadFallbackChart(id);
   if(myReq!==dbReqId)return;
+  if(fb&&fb.items&&fb.items.length){
+    dbItems=fb.items.slice(); dbTotal=fb.total||0;
+    dbNoMore=(dbTotal>0&&dbItems.length>=dbTotal);
+    renderDoubanItems(dbItems);
+    dbSetState(name+' · 内置快照');
+    console.log('douban fallback '+id+' '+dbItems.length+' 条（离线秒显）');
+  } else {
+    setState('正在加载豆瓣「'+name+'」…');
+  }
+  // ③ 后台拉在线数据；成功才覆盖快照+落缓存，失败保留快照
+  await refreshDoubanInBg(id,name,myReq);
+}
+/** 后台静默刷新豆瓣某一榜：成功覆盖 DOM+缓存，失败保留现有内容不动。 */
+async function refreshDoubanInBg(id,name,myReq){
+  var res=await dbFetch(id,0);
+  if(myReq!==dbReqId)return; // 已切榜，丢弃过期回包
   if(!res.items.length){
-    renderDoubanItems([]);
-    setState('豆瓣「'+name+'」加载失败（网络或限流），点其他榜重试');
-    console.log('douban FAIL '+id+' code='+res.code);
+    if(!dbItems.length){ // 连快照都没有，才提示失败
+      renderDoubanItems([]);
+      setState('豆瓣「'+name+'」加载失败（网络或限流），点其他榜重试');
+    }
+    console.log('douban 在线刷新失败，保留本地内容 '+id+' code='+res.code);
     return;
   }
   dbItems=res.items; dbTotal=res.total;
@@ -2671,15 +2709,14 @@ async function boot(){
   $('scopeBtn').textContent = STATE.searchScope==='all' ? '全网' : '本站';
   try{ STATE.spiderOn = localStorage.getItem('gd_video_spider')==='1'; }catch(e){}
   paintSpiderBtn();
-  // 影视仓源先加载（供点豆瓣条目后的全网搜索用），完成后再渲染首页豆瓣榜，
-  // 避免 selectSource 里的「正在加载接口…」状态/列表逻辑覆盖豆瓣 DOM。
-  selectSource().then(function(){
-    if(STATE.homeMode==='douban'){
-      $('grid').className='dchart';
-      renderDoubanChips();
-      loadDouban(STATE.doubanChart);
-    }
-  });
+  // 首页豆瓣榜独立渲染：不等影视仓订阅源（订阅挂了要 15s×N 超时），缓存/内置快照秒出。
+  // 影视仓源并行加载，只服务「点条目后的全网搜索」，与首页渲染解耦。
+  if(STATE.homeMode==='douban'){
+    $('grid').className='dchart';
+    renderDoubanChips();
+    loadDouban(STATE.doubanChart);
+  }
+  selectSource();
   preloadAllSources().then(function(){
     var n=collectDirectSites().length;
     console.log('preloadAllSources done: 直连站',n,'个');
