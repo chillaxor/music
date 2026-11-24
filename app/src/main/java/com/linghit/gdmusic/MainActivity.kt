@@ -76,6 +76,28 @@ fun sourceLabel(s:String) = when(s){
 }
 
 class MainActivity : AppCompatActivity(), PlayerUiListener {
+    /**
+     * 第四层兜底：爬虫 jar 的 Init.checkPermission() 反射拿的是「当前前台 Activity」，
+     * 全网搜索是异步的，用户可能在结果回来前退回首页；此时前台是 MainActivity，
+     * VideoActivity / NativeVideoActivity 的覆写都拦不到，jar 仍会把人甩到
+     * 系统「所有文件访问」设置页。这里只挡那一个 action，自有跳转不受影响。
+     */
+    override fun startActivity(intent: Intent) {
+        if (intent.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 权限页(MainActivity): ${intent.action}")
+            return
+        }
+        super.startActivity(intent)
+    }
+
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        if (intent.action == VideoActivity.ACTION_MANAGE_ALL_FILES_ACCESS) {
+            Log.w("VidSpider", "拦截爬虫 jar 权限页(MainActivity): ${intent.action}")
+            return
+        }
+        super.startActivity(intent, options)
+    }
+
     // 接口地址改为可配置：默认 GD 音乐台，用户可在「设置」里更换（防接口失效无需重装）
     private val api: String
         get() {
