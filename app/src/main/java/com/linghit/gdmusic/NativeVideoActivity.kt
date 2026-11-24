@@ -45,11 +45,53 @@ import java.util.concurrent.TimeUnit
  * 用于与 WebView 版做同界面速度对比。
  *
  * 页面：豆瓣榜首页（11 榜 / 按天缓存 / 左右滑切榜 / 滚动翻页）→ 全网搜索结果页
- * （左侧站点 tab + 右侧海报网格，边到边渲染）→ 详情选集 → 播放（借壳 VideoActivity）。
- * 顶栏：音乐 / 全网-本站 / 爬虫开关 / 历史 / 源管理 / 下载管理 / 切回 WebView 版。
+ * （左侧站点 tab + 右侧海报网格，边到边渲染）→ 详情选集 → 播放（详情页上半部内嵌）。
+ * 顶栏：音乐 / 全网-本站 / 爬虫开关 / 历史 / 源管理 / 下载管理。
  * 历史与源列表与老版共用 video_sources 这个 SharedPreferences，两个版本数据互通。
+ *
+ * 播放层：继承 [PlayerHostActivity]，与独立原生播放器共用同一份播放层布局与代码。
+ * 点选集 → 画面直接停靠在「详情页上半部」（16:9），下面照常看海报/简介/选集；
+ * 点全屏键 → 铺满横屏；按返回 → 收回详情页上半部继续播（进度不丢）。
  */
-class NativeVideoActivity : AppCompatActivity() {
+class NativeVideoActivity : PlayerHostActivity() {
+
+    // ===================== 播放器宿主钩子 =====================
+    /** 宿主布局：原生影视页自己的布局（内含同一份 view_player_overlay 播放层） */
+    override val hostLayoutRes: Int get() = R.layout.activity_native_video
+    /** 起播由本页在详情页里发起，不需要 intent 里的起播参数 */
+    override val hostNeedsPlayIntent: Boolean get() = false
+    /** 关播不退出页面：返回键由本页自己管（关详情页 / 回列表页） */
+    override val hostFinishOnClose: Boolean get() = false
+
+    /** 播放器停靠高度变化 → 详情页内容往下让位，别被画面盖住 */
+    override fun onInlineSpaceChanged(heightDp: Int) {
+        val h = (heightDp * resources.displayMetrics.density).toInt()
+        playerSpace.layoutParams = playerSpace.layoutParams.apply { height = h }
+        playerSpace.requestLayout()
+    }
+
+    /**
+     * 返回键：本页自己管。
+     *  - 全屏态 → 交回基类（收回详情页上半部继续播，不中断）
+     *  - 详情页开着 → 关详情页并停播（回到搜索结果页）
+     *  - 下载页/源抽屉开着 → 先关掉
+     *  - 都没有 → 交回基类（退出本页）
+     */
+    override fun onHostBackPressed(): Boolean {
+        // 全屏态 → 交回基类：收回详情页上半部继续播（不中断）
+        if (inlineExpanded) return false
+        // 详情页开着 → 关详情页并停播（画面就停在详情页上半部，关页面必须一起停）
+        if (isCompactInline || sheet.visibility == View.VISIBLE) {
+            hideSheet()
+            return true
+        }
+        if (srcDrawer.visibility == View.VISIBLE) { srcDrawer.visibility = View.GONE; return true }
+        if (dlPage.visibility == View.VISIBLE) { dlPage.visibility = View.GONE; return true }
+        if (histPanel.visibility == View.VISIBLE) { histPanel.visibility = View.GONE; return true }
+        if (searchPage.visibility == View.VISIBLE) { closeSearchPage(); return true }
+        // 都没有 → 交回基类：退出本页
+        return false
+    }
 
     private data class SiteInfo(
         val name: String, val api: String, val key: String,
@@ -90,8 +132,8 @@ class NativeVideoActivity : AppCompatActivity() {
         )
     }
 
-    private val prefs by lazy { getSharedPreferences(PREF, MODE_PRIVATE) }
-    private val client = OkHttpClient.Builder()
+    // prefs / resolver 复用播放宿主基类里的（同一个 video_sources 配置 + 同一个解析器实例）
+    private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
@@ -106,22 +148,9 @@ class NativeVideoActivity : AppCompatActivity() {
     }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
-    // 独立原生播放器：播完/切集回来时靠 lastVod/lastGroup 重新解析再拉起
+    // 当前正在播的影片/线路：详情页里切集、关播时都要用
     private var lastVod: Vod? = null
     private var lastGroup: EpGroup? = null
-    private val playerLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
-    ) { res ->
-        if (res.resultCode == android.app.Activity.RESULT_OK) {
-            val idx = res.data?.getIntExtra(NativePlayerActivity.RESULT_PICK_IDX, -1) ?: -1
-            val v = lastVod; val g = lastGroup
-            if (idx >= 0 && v != null && g != null && idx < g.eps.size) {
-                play(v, g, idx, g.eps[idx])
-            }
-        }
-    }
-    // 播放解析链（直嗅 WebView → parses → 静态嗅探），与 WebView 版 playSpiderEp 同口径
-    private val resolver by lazy { VideoResolver(this) }
 
     // 视图
     private lateinit var kw: EditText
@@ -149,6 +178,8 @@ class NativeVideoActivity : AppCompatActivity() {
     private lateinit var dlList: RecyclerView
     private lateinit var dlEmpty: TextView
     private lateinit var srcDrawer: View
+    /** 详情页顶部的播放器占位：播放器停靠时撑出等高空白，内容不被画面盖住 */
+    private lateinit var playerSpace: View
 
     // adapter
     private lateinit var dbAdapter: DbAdapter
@@ -199,9 +230,8 @@ class NativeVideoActivity : AppCompatActivity() {
     }
 
     override fun onCreate(b: Bundle?) {
+        // 播放宿主基类：初始化播放层（布局 = hostLayoutRes = activity_native_video，含同一份播放层）
         super.onCreate(b)
-        ThemePrefs.applyTheme(this)
-        setContentView(R.layout.activity_native_video)
         bindViews()
         setupHome()
         setupSearchPage()
@@ -244,6 +274,7 @@ class NativeVideoActivity : AppCompatActivity() {
         dlList = findViewById(R.id.nvDlList)
         dlEmpty = findViewById(R.id.nvDlEmpty)
         srcDrawer = findViewById(R.id.nvSrcDrawer)
+        playerSpace = findViewById(R.id.nvPlayerSpace)
     }
 
     private fun restoreState(b: Bundle) {
@@ -426,7 +457,7 @@ class NativeVideoActivity : AppCompatActivity() {
             val req = Request.Builder().url(url)
                 .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15")
                 .header("Referer", "https://m.douban.com/").build()
-            client.newCall(req).execute().use { resp ->
+            httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val j = JSONObject(resp.body?.string().orEmpty())
                 val total = j.optInt("total", 0)
@@ -582,7 +613,7 @@ class NativeVideoActivity : AppCompatActivity() {
         val url = s.api + sep + "ac=videolist&wd=" + URLEncoder.encode(w, "UTF-8") + "&pg=1"
         return try {
             val req = Request.Builder().url(url).header("User-Agent", "okhttp/3.15.0").header("Accept", "*/*").build()
-            client.newCall(req).execute().use { resp ->
+            httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return emptyList()
                 val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("list") ?: return emptyList()
                 val out = ArrayList<Vod>()
@@ -633,7 +664,14 @@ class NativeVideoActivity : AppCompatActivity() {
 
     // ==================== 详情 / 选集 ====================
     private fun setupDetail() {
-        findViewById<View>(R.id.nvDClose).setOnClickListener { sheet.visibility = View.GONE }
+        findViewById<View>(R.id.nvDClose).setOnClickListener { hideSheet() }
+    }
+
+    /** 关详情页：连播放器一起关掉（画面停靠在上半部，关页面就得停播），占位同步收回 */
+    private fun hideSheet() {
+        sheet.visibility = View.GONE
+        if (isPlayerVisible()) closeVideo()
+        onInlineSpaceChanged(0)
     }
 
     private fun openDetail(v: Vod) {
@@ -657,7 +695,7 @@ class NativeVideoActivity : AppCompatActivity() {
                     val sep = if (v.api.contains("?")) "&" else "?"
                     val url = v.api + sep + "ac=detail&ids=" + URLEncoder.encode(v.id, "UTF-8")
                     val req = Request.Builder().url(url).header("User-Agent", "okhttp/3.15.0").build()
-                    client.newCall(req).execute().use { resp ->
+                    httpClient.newCall(req).execute().use { resp ->
                         if (!resp.isSuccessful) null else {
                             val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("list")
                             if (arr != null && arr.length() > 0) arr.optJSONObject(0) else null
@@ -729,7 +767,8 @@ class NativeVideoActivity : AppCompatActivity() {
             text = ep.first.ifBlank { "第${ei + 1}集" }; textSize = 12f; gravity = Gravity.CENTER
             setTextColor(Color.parseColor("#e9eaee")); background = epBg(false)
             setPadding(4, 12, 4, 22)
-            setOnClickListener { play(v, g, ei, ep); sheet.visibility = View.GONE }
+            // 点集不关详情页：画面就停靠在详情页上半部，下面还能继续翻集/看简介
+            setOnClickListener { play(v, g, ei, ep) }
         }
         cell.addView(btn, FrameLayout.LayoutParams(match, match))
         val dl = TextView(this).apply {
@@ -787,15 +826,13 @@ class NativeVideoActivity : AppCompatActivity() {
                 return@execute
             }
             val finalUrl = r.url
-            val playHeaders = JSONObject()
-            r.headers.forEach { (k, value) -> playHeaders.put(k, value) }
             Log.i(TAG, "play READY ${ep.first} by=${r.by} -> ${finalUrl.take(110)}")
             main.post {
                 val eps = JSONArray().apply {
                     g.eps.forEachIndexed { i, (n, u) ->
                         put(JSONObject().put("name", n)
                             .put("url", if (i == idx) finalUrl else u)
-                            .put("spider", false))
+                            .put("spider", v.spider))
                     }
                 }.toString()
                 val meta = JSONObject().put("key", "${if (v.spider) "s" else "d"}:${v.api}|${v.id}")
@@ -807,16 +844,18 @@ class NativeVideoActivity : AppCompatActivity() {
                     .put("api", v.api).put("ext", v.spiderExt).put("siteKey", v.siteKey)
                     .put("from", g.from).put("referer", referer)
                     .put("parses", v.cfg.optJSONArray("parses") ?: org.json.JSONArray())
-                val json = JSONObject().put("url", finalUrl).put("title", "${v.name} · ${g.from} · ${ep.first}")
-                    .put("referer", referer).put("eps", eps).put("idx", idx).put("meta", meta)
-                    .put("ctx", ctx).put("headers", playHeaders.toString()).toString()
-                // 记住当前影片/线路，播放器里切集时靠它回来重新解析
+                // 记住当前影片/线路，关播/切集时靠它重新解析
                 lastVod = v; lastGroup = g
-                // 启动完全独立的原生播放器（不借壳 VideoActivity、不带 CLEAR_TOP），
-                // 避免把详情页清掉/跳回 WebView 主页
-                playerLauncher.launch(Intent(this, NativePlayerActivity::class.java).apply {
-                    putExtra(NativePlayerActivity.EXTRA_NATIVE_PLAY, json)
-                })
+                playCtx = ctx
+                // 直接在本页详情页里起播（inline=true）：画面停靠在详情页上半部，
+                // 下方海报/简介/选集照常看；点全屏键铺满横屏，按返回又收回这里继续播。
+                Log.i(TAG, "play 内嵌起播 ${v.name} · ${g.from} · ${ep.first}")
+                startVideo(
+                    finalUrl, "${v.name} · ${g.from} · ${ep.first}", referer,
+                    eps, idx, "", meta, inline = true, headers = r.headers
+                )
+                // 详情页保持打开（画面就在它上半部），内容往下让位
+                sheet.visibility = View.VISIBLE
             }
         }
     }
@@ -1093,17 +1132,6 @@ class NativeVideoActivity : AppCompatActivity() {
     }
 
     private fun TextView.textColor(hex: String) = setTextColor(Color.parseColor(hex))
-
-    override fun onBackPressed() {
-        when {
-            sheet.visibility == View.VISIBLE -> sheet.visibility = View.GONE
-            srcDrawer.visibility == View.VISIBLE -> srcDrawer.visibility = View.GONE
-            dlPage.visibility == View.VISIBLE -> dlPage.visibility = View.GONE
-            histPanel.visibility == View.VISIBLE -> histPanel.visibility = View.GONE
-            searchPage.visibility == View.VISIBLE -> closeSearchPage()
-            else -> super.onBackPressed()
-        }
-    }
 
     // ==================== Adapter ====================
     private inner class DbAdapter(private val onClick: (DbItem) -> Unit) : RecyclerView.Adapter<DbAdapter.VH>() {

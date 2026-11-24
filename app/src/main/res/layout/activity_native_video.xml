@@ -308,14 +308,21 @@
             <ScrollView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:paddingTop="16dp"
-                    android:paddingBottom="28dp">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="16dp"
+                        android:paddingBottom="28dp">
+
+                    <!-- 内嵌播放器占位：播放器停靠在详情页顶部时撑出等高空白，
+                         让海报/标题/选集都落到播放器下方，不被画面盖住。 -->
+                    <View
+                        android:id="@+id/nvPlayerSpace"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp" />
 
                     <TextView
                         android:id="@+id/nvDClose"
@@ -406,6 +413,19 @@
             </ScrollView>
         </FrameLayout>
     </FrameLayout>
+
+    <!-- 播放层占位 WebView：原生模式永不加载页面（webViewAlive=false），
+         但播放宿主基类要 findViewById 到它，故留一个 0 尺寸的占位。 -->
+    <WebView
+        android:id="@+id/videoWebView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <!-- ============== 视频播放层（与独立播放器共用同一份 view_player_overlay） ==============
+         放在「详情选集页」之后 → 详情页打开时，播放器停靠在页面顶部（详情页上半部），
+         盖在详情内容上面；点全屏键它会铺满横屏，按返回又收回顶部继续播。 -->
+    <include layout="@layout/view_player_overlay" />
 
     <!-- ============== 下载管理页 ============== -->
     <LinearLayout

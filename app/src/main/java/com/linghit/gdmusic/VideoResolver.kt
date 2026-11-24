@@ -31,6 +31,9 @@ import java.util.concurrent.atomic.AtomicReference
  *   4) sniffStream 静态正则兜底（var main / mac_url）
  *   5) 都不行 → 交回 null，由调用方提示「换线路」，绝不把非直链丢给播放器
  *
+ * 直连站（parse:0）的播放页地址另有一条路：静态正则先试（毫秒级），
+ * 抠不到再用离屏 WebView 直嗅（/share/xxx 这类 iframe 页面只有它能拿直链）。
+ *
  * 原版只有第 4 步，且会透传加密串给 ExoPlayer 导致 FileNotFoundException。
  */
 class VideoResolver(private val ctx: Context) {
@@ -328,20 +331,34 @@ class VideoResolver(private val ctx: Context) {
 
         var finalUrl = if (isMediaUrl(raw)) raw else ""
         var finalHeaders = headers
-        if (isParse && finalUrl.isEmpty()) {
-            if (jx == 0) {
-                webSniff(raw, headers, scriptsFor(cfg, raw))?.let {
-                    finalUrl = it.url; finalHeaders = mergeHeaders(headers, it.headers)
-                }
-            }
-            if (finalUrl.isEmpty()) {
-                resolveViaParses(raw, headers, cfg)?.let {
-                    finalUrl = it.url; finalHeaders = mergeHeaders(headers, it.headers)
-                }
-            }
-        }
         if (finalUrl.isEmpty()) {
-            sniffStatic(raw, headers["Referer"] ?: referer)?.let { finalUrl = it }
+            if (isParse) {
+                // 爬虫源：离屏 WebView 直嗅播放页（jx=0，真正渲染页面、跟 iframe、跑 rules 脚本）
+                //  → parses 接口逐个试 → 静态正则兜底（对齐 video.html playSpiderEp）
+                if (jx == 0) {
+                    webSniff(raw, headers, scriptsFor(cfg, raw))?.let {
+                        finalUrl = it.url; finalHeaders = mergeHeaders(headers, it.headers)
+                    }
+                }
+                if (finalUrl.isEmpty()) {
+                    resolveViaParses(raw, headers, cfg)?.let {
+                        finalUrl = it.url; finalHeaders = mergeHeaders(headers, it.headers)
+                    }
+                }
+                if (finalUrl.isEmpty()) {
+                    sniffStatic(raw, headers["Referer"] ?: referer)?.let { finalUrl = it }
+                }
+            } else {
+                // 直连站的播放页地址（/share/xxx 这类）：
+                //  ① 静态正则先试（量子 var main / MacCMS mac_url，一把命中，毫秒级）
+                //  ② 抠不到再离屏 WebView 直嗅（iframe / JS 拼接型页面只有它能拿直链）
+                sniffStatic(raw, headers["Referer"] ?: referer)?.let { finalUrl = it }
+                if (finalUrl.isEmpty()) {
+                    webSniff(raw, headers, scriptsFor(cfg, raw))?.let {
+                        finalUrl = it.url; finalHeaders = mergeHeaders(headers, it.headers)
+                    }
+                }
+            }
         }
         if (finalUrl.isEmpty() || !isMediaUrl(finalUrl)) {
             Log.w(TAG, "解析链未得到直链: ${raw.take(110)} -> ${finalUrl.take(110)}")

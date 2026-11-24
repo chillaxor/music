@@ -100,7 +100,7 @@
             android:supportsPictureInPicture="true"/>
         <!-- 原生影视搜索（对照版）：不锁方向，exported 便于 adb 直启做 A/B 计时 -->
         <activity android:name=".NativeVideoActivity" android:label="原生影视" android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"/>
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"/>
         <!-- 原生独立播放器：与 WebView 版 VideoActivity 完全解耦，不加载任何网页。
              布局/交互与 WebView 版一致（同 activity_video.xml 的播放层），支持 PiP -->
         <activity android:name=".NativePlayerActivity" android:label="原生播放" android:exported="false"
