@@ -377,7 +377,7 @@ class NativeVideoActivity : PlayerHostActivity() {
                 text = name
                 textSize = 13f
                 setTextColor(Color.parseColor(if (i == chartIdx) "#FFFFFF" else "#8b8f99"))
-                setPadding(14, 6, 14, 6)
+                setPadding(dp(14), dp(6), dp(14), dp(6))
                 background = chipBg(i == chartIdx)
                 setOnClickListener {
                     if (i == chartIdx) return@setOnClickListener
@@ -737,7 +737,7 @@ class NativeVideoActivity : PlayerHostActivity() {
             val t = TextView(this).apply {
                 text = "${g.from} (${g.eps.size})"; textSize = 13f
                 setTextColor(Color.parseColor(if (i == 0) "#FFFFFF" else "#8b8f99"))
-                setPadding(12, 8, 12, 8)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
                 setOnClickListener { select(i) }
             }
             detailTabs.addView(t)
@@ -751,13 +751,13 @@ class NativeVideoActivity : PlayerHostActivity() {
             this.text = text; textSize = 12f; gravity = Gravity.CENTER
             setTextColor(Color.parseColor("#e9eaee"))
             background = epBg(false)
-            setPadding(4, 12, 4, 12)
+            setPadding(dp(4), dp(12), dp(4), dp(12))
             if (click != null) setOnClickListener { click() }
         }
         grid.addView(t, android.widget.GridLayout.LayoutParams().apply {
             width = 0; height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT
             columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-            setMargins(4, 4, 4, 4)
+            setMargins(dp(4), dp(4), dp(4), dp(4))
         })
     }
 
@@ -766,7 +766,7 @@ class NativeVideoActivity : PlayerHostActivity() {
         val btn = TextView(this).apply {
             text = ep.first.ifBlank { "第${ei + 1}集" }; textSize = 12f; gravity = Gravity.CENTER
             setTextColor(Color.parseColor("#e9eaee")); background = epBg(false)
-            setPadding(4, 12, 4, 22)
+            setPadding(dp(4), dp(12), dp(4), dp(22))
             // 点集不关详情页：画面就停靠在详情页上半部，下面还能继续翻集/看简介
             setOnClickListener { play(v, g, ei, ep) }
         }
@@ -776,11 +776,11 @@ class NativeVideoActivity : PlayerHostActivity() {
             setTextColor(Color.parseColor("#ff7a3c")); background = epBg(false)
             setOnClickListener { downloadEp(v, g, ei, ep) }
         }
-        cell.addView(dl, FrameLayout.LayoutParams(dp(22), dp(22)).apply { gravity = Gravity.TOP or Gravity.END; setMargins(0, 2, 2, 0) })
+        cell.addView(dl, FrameLayout.LayoutParams(dp(22), dp(22)).apply { gravity = Gravity.TOP or Gravity.END; setMargins(0, dp(2), dp(2), 0) })
         grid.addView(cell, android.widget.GridLayout.LayoutParams().apply {
             width = 0; height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT
             columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-            setMargins(4, 4, 4, 4)
+            setMargins(dp(4), dp(4), dp(4), dp(4))
         })
     }
 
@@ -939,7 +939,7 @@ class NativeVideoActivity : PlayerHostActivity() {
         if (list.isEmpty()) { histPanel.visibility = View.GONE; return }
         histPanel.removeAllViews()
         val hd = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; setPadding(14, 8, 14, 8)
+            orientation = LinearLayout.HORIZONTAL; setPadding(dp(14), dp(8), dp(14), dp(8))
         }
         hd.addView(TextView(this).apply { text = "搜索历史"; textSize = 11f; setTextColor(Color.parseColor("#8b8f99")) })
         hd.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
@@ -951,7 +951,7 @@ class NativeVideoActivity : PlayerHostActivity() {
         list.forEach { h ->
             histPanel.addView(TextView(this).apply {
                 text = "🕘  $h"; textSize = 14f; setTextColor(Color.parseColor("#e9eaee"))
-                setPadding(14, 11, 14, 11)
+                setPadding(dp(14), dp(11), dp(14), dp(11))
                 setOnClickListener { kw.setText(h); histPanel.visibility = View.GONE; doSearch(h) }
             })
         }
